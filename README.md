@@ -4,6 +4,8 @@
 
 ![A Figma screen composited onto a photographed iPhone](docs/hero.png)
 
+![The fitting workbench: photo with the screen quad on the left, live composite on the right, and a magnified strip across the edge below](docs/social-preview.png)
+
 Every device mockup is a compromise. Templates give you three angles and someone
 else's lighting. Generative tools give you a screen that looks *like* your design
 without being it — text reflowed, a button moved, a logo subtly wrong.
@@ -53,7 +55,18 @@ your browser, you fit the edges, press Save, and the composite lands in your
 project folder. Nothing is uploaded anywhere; the page is served from
 `127.0.0.1`.
 
-## Or use it directly
+## Or use it without Claude
+
+```bash
+npx screengraft --out-dir ./mockups
+```
+
+npm is a delivery mechanism here, not a claim about the language: the tool is
+Python and OpenCV, and `bin/screengraft.js` is a launcher. It installs nothing
+behind your back — if the engine is missing it prints the one command that
+builds it (`npx screengraft --install`) and exits.
+
+From a clone:
 
 ```bash
 python3 scripts/preflight.py --install        # one-time: creates the venv

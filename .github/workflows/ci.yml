@@ -48,5 +48,10 @@ jobs:
       # places; nothing else notices when they drift.
       - name: Marketplace catalog
         run: python scripts/check_marketplace.py
+      # Reads the pack listing rather than trusting the config: npm's `files`
+      # overrides .npmignore, and compiled bytecode carries absolute paths
+      # past any text search. Both shipped in the first tarball built here.
+      - name: npm package contents
+        run: python scripts/check_package.py
       - name: Leak check
         run: python scripts/check_leaks.py

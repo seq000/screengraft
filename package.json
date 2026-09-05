@@ -1,0 +1,59 @@
+{
+  "name": "screengraft",
+  "version": "0.13.1",
+  "description": "Put a UI screenshot onto a photographed device screen with the perspective exactly right \u2014 a homography you confirm by hand, not a generative guess.",
+  "keywords": [
+    "mockup",
+    "device-frame",
+    "homography",
+    "perspective",
+    "compositing",
+    "screenshot",
+    "design",
+    "portfolio",
+    "figma"
+  ],
+  "homepage": "https://github.com/seq000/screengraft#readme",
+  "bugs": "https://github.com/seq000/screengraft/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seq000/screengraft.git"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Dariusz Fraczyk",
+    "url": "https://fraczyk.design"
+  },
+  "type": "commonjs",
+  "bin": {
+    "screengraft": "bin/screengraft.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "ui/",
+    "mcp/",
+    "skills/",
+    "README.md",
+    "LICENSE",
+    "!scripts/build-plugin.sh",
+    "!scripts/deadcode.py",
+    "!scripts/check_leaks.py",
+    "!scripts/check_marketplace.py",
+    "!scripts/check_package.py",
+    "!scripts/leak-patterns.local",
+    "!scripts/contrast_audit.py",
+    "!**/__pycache__/**",
+    "!**/*.pyc"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "scripts": {
+    "start": "node bin/screengraft.js"
+  }
+}
