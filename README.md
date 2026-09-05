@@ -2,7 +2,7 @@
 
 **Put a UI screenshot onto a photographed screen so the perspective is exactly right.**
 
-![A Figma screen composited onto a photographed iPhone](docs/hero.png)
+![A sign-up screen designed in Figma, sitting on a photographed iPhone leaning against a wall — the perspective, the corner radius and the light all matching the photo](docs/hero.jpg)
 
 ![The fitting workbench: photo with the screen quad on the left, live composite on the right, and a magnified strip across the edge below](docs/social-preview.png)
 
