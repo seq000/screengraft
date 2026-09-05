@@ -44,5 +44,9 @@ jobs:
         run: python scripts/deadcode.py
       # Nothing personal or project-local may ship. Scans the files the packager
       # includes, so it measures the artefact rather than the working tree.
+      # The marketplace entry and plugin.json state the same facts in two
+      # places; nothing else notices when they drift.
+      - name: Marketplace catalog
+        run: python scripts/check_marketplace.py
       - name: Leak check
         run: python scripts/check_leaks.py

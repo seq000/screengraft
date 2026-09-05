@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "fraczyk-tools",
+  "description": "Design tools built by Dariusz Fraczyk. Small, exact, and meant to be used by other designers.",
+  "owner": {
+    "name": "Dariusz Fraczyk",
+    "url": "https://fraczyk.design"
+  },
+  "plugins": [
+    {
+      "name": "screengraft",
+      "source": "./",
+      "category": "design",
+      "tags": [
+        "mockup",
+        "compositing",
+        "homography",
+        "device-frame",
+        "portfolio",
+        "case-study"
+      ]
+    }
+  ]
+}

@@ -36,12 +36,22 @@ same output, every time.
 without it. The installer provisions an isolated venv at `~/.screengraft/venv`
 and never touches your system Python.
 
-## Install as a Claude/Cowork plugin
+## Install as a Claude Code / Cowork plugin
 
-Install `screengraft-<version>.plugin`, then ask Claude to inject a screenshot
-onto a photo. It opens a local page in your browser, you fit the edges, press
-Save, and the composite lands in your project folder. Nothing is uploaded
-anywhere; the page is served from `127.0.0.1`.
+```
+/plugin marketplace add seq000/screengraft
+/plugin install screengraft@fraczyk-tools
+```
+
+That route tracks versions and updates itself. If you would rather not add a
+marketplace, download `screengraft-<version>.plugin` from
+[the latest release](https://github.com/seq000/screengraft/releases/latest) and
+open it, or clone this repo and point Claude Code at the folder.
+
+Then ask Claude to inject a screenshot onto a photo. It opens a local page in
+your browser, you fit the edges, press Save, and the composite lands in your
+project folder. Nothing is uploaded anywhere; the page is served from
+`127.0.0.1`.
 
 ## Or use it directly
 
