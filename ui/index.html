@@ -499,7 +499,17 @@
   select:focus-visible,input[type=text]:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
   /* The slider is the one thing you drag continuously — give it a real track
      and a real thumb rather than the browser default in a box. */
-  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent}
+  /* margin:0 is load-bearing. The UA sheet gives a range input `margin:2px`,
+     so `width:100%` makes it 4px wider than its box — it overflows, and
+     .sect-body{overflow:hidden} (there to clip the collapse animation) cuts
+     whatever sticks out. In the Realism section the wrapper is
+     justify-items:end, which put the whole overflow on the LEFT, so the thumb
+     at minimum was sliced by the section's edge. Reported from Safari, which
+     insets the thumb less than Chromium and so cut visibly more of it.
+     padding-inline gives the thumb's 1px border and drop shadow somewhere to
+     land, since the thumb travels inside the track's content box. */
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;
+        margin:0;padding-inline:2px;background:transparent;box-sizing:border-box}
   input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:999px;transition:var(--t-all);
         background:linear-gradient(to right, var(--acc) 0 calc(var(--p,0) * 100%), var(--sunk) calc(var(--p,0) * 100%) 100%);
         box-shadow:inset 0 0 0 1px var(--line)}
@@ -1538,6 +1548,7 @@ function setSwitch(btn, on){
    in front of the user. */
 let sectionsBooted = false;
 function setSectionOpen(sect, on){
+  const was = sect.dataset.on;
   sect.dataset.on = on ? '1' : '0';
   const body = sect.querySelector('.sect-body');
   if (!body) return;
@@ -1552,6 +1563,14 @@ function setSectionOpen(sect, on){
     body.style.transition = '';
     return;
   }
+  // Already open (or already closed) and settled: there is nothing to animate.
+  // Without this the section re-plays its whole open animation — collapse to 0,
+  // grow back to target — on every call. paintGrade() calls setSwitch() on every
+  // `input` event, so dragging the Realism slider made the rail jump under the
+  // cursor once per tick. Settled means the cap is at its resting value; a
+  // pixel value means a previous animation was interrupted, so re-run it.
+  const settled = body.style.maxHeight === (on ? 'none' : '0px');
+  if (was === sect.dataset.on && settled) return;
   // Always animate FROM a real number. Going from `none` or from an interrupted
   // value is what left a section stuck: max-height:0 with data-on="1".
   if (on){
