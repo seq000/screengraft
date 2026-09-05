@@ -2,9 +2,9 @@
 
 **Put a UI screenshot onto a photographed screen so the perspective is exactly right.**
 
-![A sign-up screen designed in Figma, sitting on a photographed iPhone leaning against a wall — the perspective, the corner radius and the light all matching the photo](docs/hero.jpg)
+![The fitting workbench: photo with the screen quad on the left, live composite on the right, and a magnified strip across the edge below](docs/workbench.png)
 
-![The fitting workbench: photo with the screen quad on the left, live composite on the right, and a magnified strip across the edge below](docs/social-preview.png)
+![A sign-up screen designed in Figma, sitting on a photographed iPhone leaning against a wall — the perspective, the corner radius and the light all matching the photo](docs/hero.jpg)
 
 Every device mockup is a compromise. Templates give you three angles and someone
 else's lighting. Generative tools give you a screen that looks *like* your design
