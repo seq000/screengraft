@@ -1,0 +1,1883 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>screengraft</title>
+<style>
+  /* Tokens — see the project's visual-language notes.
+     SURFACES STEP: well (recessed) < bg < sunk < card < raise < float. The
+     previous build used one tone for the top bar, rail, dock, popovers AND
+     buttons, so nothing read as a control sitting on a panel — it read as
+     regions of one sheet divided by lines. Depth now comes from tone steps
+     plus a 1px top inner highlight (--hi), which is what actually separates
+     a raised control from a div in a dark UI; shadow is reserved for things
+     that genuinely float.
+     Status colours keep three distinct LUMINANCE steps, not three hues —
+     measured, --ok and --warn once differed by 1.01:1, invisible in greyscale
+     and to red-green colour blindness. --line divides; --edge bounds anything
+     clickable and clears the 3:1 non-text bar. See the project's visual-critique notes */
+  :root{
+    /* Ported by hand from the project's Figma design file
+       (4 Sep 2026). Figma is where visual changes start; there is no
+       sync, so these names mirror the variable collection deliberately:
+       surface/* -> --well/--bg/--sunk/--card/--raise/--raise-hi,
+       border/*  -> --line/--edge/--edge-hi, text/* -> --ink/--mute/--faint.
+
+       DARK ONLY. The light palette was dropped rather than invented: the
+       design is dark throughout, and a light counterpart for a #ec4c13 accent
+       needs a different shade to pass contrast on white — a decision that
+       belongs in Figma, not guessed here. */
+    --well:#0a0a0b; --bg:#111112; --sunk:#141415; --card:#161618;
+    /* A four-step raised ladder, added in the design file to fix two collapsed chip states: hover used to
+       step DOWN to --float and selected-hover had collapsed onto --edge. */
+    --raise:#2b2b30; --raise-mid:#333337; --raise-hi:#3a3a40; --raise-highest:#46464e;
+    --panel:#161618;
+    /* surface/float is a real token (#26262b, the chip hover surface). The
+       canvas overlay is a separate thing and gets its own name. */
+    --float:#26262b;
+    --overlay:rgba(17,17,18,.98);
+    --ink:#e9ecf1; --mute:#8f939a; --faint:#8f939ab2;
+    --line:#1d1e20; --edge:#3a3b41; --edge-mid:#494a50; --edge-hi:#6d6f79;
+
+    /* Accent, per the Button variant matrix (4:14). Primary at REST is the
+       accent at 85%, not solid — solid is the hover state. */
+    /* accent/acc + accent/acc_btn_rest re-picked in Figma 5 Sep:
+       #ec4c13 -> #f23b0d. --acc-soft is derived from the accent, so it follows. */
+    --acc:#f23b0d; --acc-btn-rest:rgba(242,59,13,.85); --acc-press:#bb2b00;
+    --acc-stroke:#ff6833; --acc-ink:#fbf9f9; --acc-soft:rgba(242,59,13,.14);
+    /* Neutral button hover/pressed are explicit surfaces in Figma, not a
+       brightness filter on the rest state. */
+    --btn-hover:#333337; --btn-hover-edge:#3f4045;
+    --btn-press:#1c1c20; --btn-press-edge:#2b2c31;
+    /* Accent disabled keeps the label READABLE rather than fading the whole
+       button — the Button component in Figma says so explicitly. */
+    --acc-dis:#bb2b00b2; --acc-dis-edge:#ff6833b2; --acc-dis-ink:#fbf9f966;
+
+    --warn:#f0c375;
+    /* --ok is status/ok, re-picked in the design file (#8fe3c0 -> #4fbf8b).
+       --err has no counterpart in the collection (the Status pill has only OK and
+       Warn variants), so it stays chosen here.
+
+       Status is encoded by glyph + weight + LUMINANCE, never hue alone. What the
+       new green bought, measured (scripts/contrast_audit.py, before -> after):
+         ok|warn   normal 1.09 -> 1.39   deuteranopia 1.01 -> 1.67   trit 1.21 -> 1.99
+       That pair is the one an earlier finding raised, and it is the one that matters: ok and
+       warn are the two outcomes of the SAME detection, so they appear in
+       sequence and get compared.
+
+       Two shortfalls remain, both accepted with reasons, both still printed by
+       the audit on every run:
+       - ok|warn under PROTANOPIA is 1.24, essentially unmoved (1.23 before). A
+         red-blind viewer sees the amber lose its red and drift toward the green.
+       - ok|err regressed (2.45 -> 1.61 normal, 1.62 -> 1.01 tritanopia) because
+         the new green sits in the same luminance band as any usable error red.
+         Searched, not assumed: of 7056 candidate reds/pinks meeting 4.5:1 on
+         --card, exactly 59 clear the 1.35 floor and every one is a saturated
+         magenta — not an error colour, and it fights the accent. Accepted
+         because ok and err are mutually exclusive states of one pill and are
+         never on screen together.
+       Don't "fix" either by moving --ok back; that reopens the pair that counts. */
+    --ok:#4fbf8b; --err:#e5534b;
+
+    --hi:inset 0 1px 0 rgba(255,255,255,.06);
+    --shadow:0 16px 40px rgba(0,0,0,.55), 0 3px 10px rgba(0,0,0,.4);
+    --r-sm:6px; --r-md:8px; --r-lg:12px;
+    --s2:8px; --s3:12px; --s4:16px; --s6:24px; --s9:48px;
+    /* 120ms originally, per the visual-language notes. asked for a bit
+       slower on 5 Sep — one token, so retuning is a one-line change. */
+    --t:180ms cubic-bezier(.2,0,0,1);
+    --t-pop:220ms cubic-bezier(.2,0,0,1);   /* popovers travel further */
+    /* Every control animates the SAME four properties on the same curve. Kept as
+       one token because the failure mode here is a control that transitions its
+       border but snaps its fill. */
+    --t-all:background-color var(--t), border-color var(--t), box-shadow var(--t), color var(--t);
+  }
+  @media (prefers-reduced-motion:reduce){ *{transition:none !important} }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:13px/1.45 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;overflow:hidden}
+
+  /* The shell IS the viewport. Nothing scrolls except the canvas, so the
+     fitting surface can never be pushed off-screen by finished work. */
+  .app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;
+       padding-bottom:32px;background:var(--bg)}
+
+  .topbar{display:flex;align-items:center;gap:8px;padding:0 12px 0 var(--s4);height:56px;
+          background:var(--card);border-bottom:1px solid var(--line);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 1px 0 rgba(0,0,0,.25)}
+  .tb-left{display:flex;align-items:center;gap:var(--s9)}
+  .tb-chips{display:flex;align-items:center;gap:var(--s2)}
+  .tb-arrow{color:var(--mute)}
+  .tb-actions{display:flex;align-items:center;gap:var(--s2)}
+  /* Mona Sans is the brand face in Figma; it is not installed on a stock Mac,
+     so it degrades to the system UI face rather than to a serif. */
+  /* The wordmark ships WITH the plugin. Mona Sans is the brand face in Figma and
+     it happened to be installed locally, which was the only reason it ever rendered —
+     on any other designer's machine the logo silently became SF Pro Display, ~24px
+     narrower. This is a variable subset containing only the letters of
+     "Screengraft" (6.2KB, vs 349KB for the full family), inlined so the page stays
+     a single self-contained file and needs no new server route. SIL OFL; the
+     licence travels in ui/fonts/OFL.txt.
+     Figma 6:5 is Mona Sans SemiBold 20px at wdth 125. font-stretch:125% does NOT
+     reach the wdth axis — measured 115.81px against the real instance's 128.26px —
+     so the axis is driven explicitly. */
+  @font-face{
+    font-family:"Mona Sans Wordmark";
+    src:url(data:font/woff2;base64,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) format("woff2");
+    font-weight:100 900; font-stretch:75% 125%; font-display:block;
+  }
+  .brand{font-family:"Mona Sans Wordmark","Mona Sans","SF Pro Display",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+         font-weight:600;font-size:20px;font-stretch:125%;letter-spacing:.1px;
+         font-variation-settings:"wdth" 125}
+  .brand span{color:var(--mute);font-weight:400;margin-left:8px;font-size:12px;
+              font-variant-numeric:tabular-nums}
+  .spacer{flex:1}
+  .gap-3{width:var(--s3)}
+  /* One state model for every control: rest / hover / active / focus /
+     selected / disabled. Active genuinely depresses (darker than rest, no top
+     highlight, half-pixel down) instead of doing nothing. */
+  /* ------------------------------------------------------------------
+     Button — the full variant matrix from Figma 4:14.
+     Default : raise surface,  hover #333337/#3f4045,  pressed #1c1c20/#2b2c31
+     Primary : accent at 85%,  hover solid #ec4c13,    pressed #bb2b00
+     Sizes   : Md 28px/12px/13px (the default), Sm 24px/9px/12px.
+     Hover and pressed are explicit SURFACES in the design, not a brightness
+     filter over the rest state — a filter shifts hue and cannot be measured
+     against a token.
+     ------------------------------------------------------------------ */
+  button{font:inherit;color:var(--ink);background:var(--raise);
+         border:1px solid var(--edge);border-radius:var(--r-sm);
+         padding:0 var(--s3);height:28px;font-size:13px;cursor:pointer;box-shadow:var(--hi);
+         transition:var(--t-all), transform var(--t)}
+  button:hover{background:var(--btn-hover);border-color:var(--btn-hover-edge)}
+  button:active{background:var(--btn-press);border-color:var(--btn-press-edge);
+                box-shadow:none;transform:translateY(.5px)}
+  button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  /* Default disabled keeps the raised surface and dims only the LABEL — the
+     component description is explicit that opacity is not the mechanism. */
+  button[disabled]{background:var(--raise);border-color:var(--edge);
+                   color:var(--faint);cursor:default;font-weight:400;
+                   box-shadow:none;transform:none}
+  button[disabled]:hover{background:var(--raise);border-color:var(--edge)}
+  button.sm{height:24px;padding:0 9px;font-size:12px;border-radius:var(--r-sm)}
+  button.sm[disabled]{color:var(--mute)}
+
+  /* Primary. The accent means exactly one thing: the next action, so only one
+     of these is lit at a time (see the accent hand-off in the JS). */
+  button.primary{background:var(--acc-btn-rest);color:var(--acc-ink);
+                 border-color:var(--acc-stroke);font-weight:600;
+                 border-radius:var(--r-md);box-shadow:none}
+  button.primary:hover{background:var(--acc);border-color:var(--acc-stroke)}
+  button.primary:active{background:var(--acc-press);border-color:var(--acc-dis-edge);
+                        transform:translateY(.5px)}
+  button.primary.sm{border-radius:var(--r-sm)}
+  /* An accent-family button that is enabled but is NOT the next action reads
+     as an ordinary neutral control. */
+  button.accent:not(:disabled):not(.primary){
+    background:var(--raise); color:var(--ink); border-color:var(--edge);
+    font-weight:400; box-shadow:var(--hi); border-radius:var(--r-md)}
+  button.accent:disabled,button.primary:disabled{
+    background:var(--acc-dis); border-color:var(--acc-dis-edge);
+    color:var(--acc-dis-ink); font-weight:600;
+    border-radius:var(--r-md); box-shadow:none; opacity:1}
+
+  /* ------------------------------------------------------------------
+     Chip (Figma 5:6). Selection is a raised neutral surface plus a lighter
+     border — deliberately NOT accent-filled, because the accent is reserved
+     for the next action. The old accent ring is gone for that reason.
+     ------------------------------------------------------------------ */
+  .chip{border-radius:999px;padding:0 var(--s3);height:28px;font-size:12px;
+        background:var(--raise);border-color:var(--edge);box-shadow:var(--hi)}
+  /* Chip state matrix, ported from the Chip component set. Every state now
+     steps in the direction it should: hover UP from rest, pressed DOWN from it,
+     and selected-hover up again from selected-rest. Before the new tokens
+     existed, unselected hover stepped down onto --float and selected hover had
+     converged with --edge — reported and fixed. */
+  .chip:hover{background:var(--raise-mid);border-color:var(--edge-mid)}
+  .chip:active{background:var(--raise);border-color:var(--edge-mid)}
+  .chip.on{background:var(--raise-hi);border-color:var(--edge-hi);
+           color:var(--ink);font-weight:600;box-shadow:var(--hi)}
+  .chip.on:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
+  .chip.on:active{background:var(--raise-mid);border-color:var(--edge-hi)}
+  .chip[disabled]{opacity:.5;color:var(--mute);background:var(--raise);border-color:var(--edge)}
+  .chip.on[disabled]{background:var(--raise-hi);border-color:var(--edge-hi)}
+
+  /* A two-way choice should LOOK like one: a recessed track with a raised
+     thumb, not two identical buttons that happen to be adjacent. */
+  /* Segmented control — Figma 5:21 / 7:68: 146 x 28 overall, which is
+     2 padding + 70 + 2 gap + 70 + 2 padding. It is a CONTROL, not a field, so
+     it hugs that width. `inline-flex` alone did not achieve this: the rail is
+     a grid and stretches its children, so the track spread to the full 272px
+     column and read like a segmented *bar*. justify-self:start is what
+     actually holds it to its content width. */
+
+  /* A stepper should look joined. */
+  /* Stepper (Figma 28:816). NOT a bespoke control: it is ordinary Default
+     buttons butted together, so every state — hover, pressed, disabled — is
+     the button's own. The previous version was borderless, transparent and
+     24px tall, which is exactly why +/- read as a different species from the
+     buttons beside them. Only the corner radii and the shared middle border
+     are special. */
+  .stepper{display:inline-flex;align-items:center}
+  .stepper button{border-radius:0}
+  .stepper button:first-child{border-top-left-radius:var(--r-sm);border-bottom-left-radius:var(--r-sm)}
+  .stepper button:last-child{border-top-right-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
+  /* One border between neighbours rather than two stacked. */
+  .stepper button + button{margin-left:-1px}
+  .stepper button:hover,.stepper button:focus-visible{position:relative;z-index:1}
+  /* The dock's stepper is Sm height but keeps 12px padding (Figma 8:31/8:33). */
+  .dock-step button{padding:0 var(--s3)}
+  /* Input chip (Figma 5:14 / 5:20). Surface and shadow are declared here rather
+   than inherited from the base button rule, so the filled state is explicit and
+   the .is-empty override below has something definite to override.
+   NOTE the modifier is `is-empty`, not `empty`: `.empty` is already the
+   centred placeholder-paragraph class (padding:24px), and the chip was
+   silently inheriting it and rendering 50px tall instead of 32. */
+  .inputchip{display:inline-flex;align-items:center;gap:var(--s2);max-width:300px;
+             height:32px;padding:0 12px 0 6px;border-radius:999px;
+             background:var(--raise);border:1px solid var(--edge);box-shadow:var(--hi)}
+  .inputchip .sw{width:22px;height:22px;border-radius:999px;flex:none;
+                 background:var(--sunk);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+  .inputchip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+  /* Empty is the SAME box as filled — 32px tall, same padding, same 22px
+     avatar. Only the surface, border style and label colour change. It was
+     reading oversized because it had no surface to sit in. */
+  .inputchip.is-empty{background:var(--card);border-style:dashed;
+                   color:var(--mute);box-shadow:none}
+  .inputchip.is-empty .sw{box-shadow:inset 0 0 0 1px var(--line)}
+
+  /* Status carries meaning in THREE channels: glyph, weight, luminance —
+     never hue alone. */
+  /* Status pill (Figma 5:13): h22, px10, gap 6, sunk surface, line border.
+     Glyph 11px and label 12px; WHICH of the two is semibold flips between OK
+     and Warn, which is a third encoding channel on top of glyph and colour. */
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mute);
+          height:22px;padding:0 10px;border-radius:999px;background:var(--sunk);
+          border:1px solid var(--line);box-shadow:none;transition:var(--t-all)}
+  .status::before{font-size:11px}
+  .status.ok{color:var(--ok);font-weight:400} .status.ok::before{content:"\2713";font-weight:600}
+  .status.warn{color:var(--warn);font-weight:600} .status.warn::before{content:"!";font-weight:400}
+  .status.err{color:var(--err);font-weight:600} .status.err::before{content:"\00d7"}
+  /* A real spinner, not a static glyph. The old "\22ef" ellipsis never moved,
+     so a wait that genuinely was in progress looked identical to a dead UI —
+     which is exactly what it felt like while the agent wasn't running. */
+  .status.busy::before{content:"";width:9px;height:9px;border-radius:50%;
+          border:1.5px solid var(--line);border-top-color:var(--accent);
+          animation:sg-spin .7s linear infinite}
+  @keyframes sg-spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){
+    .status.busy::before{animation-duration:2.4s}
+  }
+  .status .el{opacity:.65;font-variant-numeric:tabular-nums}
+  .hintline{font-size:11px;color:var(--mute);margin-top:6px;line-height:1.5}
+  .hintline b{color:var(--fg);font-weight:600}
+
+  /* 304px wrapped "desktop" onto a second line. The rail is sized to the
+     content it must hold — four device chips in one row — rather than to a
+     round number. */
+  .stage{display:grid;grid-template-columns:minmax(0,1fr) 344px;min-height:0;overflow:hidden}
+  .stage.compare{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 344px}
+  #types{flex-wrap:nowrap}
+  .pane{min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);
+        position:relative;   /* the frame the corner bar is anchored to */
+        border-right:1px solid var(--line)}
+  .panehead{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);background:var(--card);
+            box-shadow:inset 0 -1px 0 var(--line);font-size:12px;flex-wrap:wrap;min-height:48px}
+  /* The Fit header pads 12px vertically around 28px controls (Figma 7:13),
+     which makes it 52px — deliberately taller than the Result header's 48. */
+  /* nowrap matches the design, but a long detection message must not be able
+     to widen the grid column — that is the v0.3.1 blowout, where an
+     unconstrained child forced the fixed rail off-screen. The pill truncates
+     instead; min-width:0 is what actually lets it. */
+  .fit-head{justify-content:space-between;flex-wrap:nowrap}
+  /* Both pane headers are the same height: they sit side by side, and 4px of
+     difference reads as a misalignment rather than as a hierarchy. */
+  .panehead{padding:var(--s3) var(--s4);min-height:52px}
+  .fit-head > .status{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+                      display:inline-block;line-height:20px}
+  .fit-head > .status::before{margin-right:6px}
+  .ph-left{display:flex;align-items:center;gap:var(--s6);min-width:0}
+  .ph-left-1{display:flex;align-items:center;gap:var(--s4)}
+  .ph-left-2{display:flex;align-items:center;gap:var(--s2)}
+  .zoomval{color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums;min-width:38px}
+  .lbl{color:var(--ink);text-transform:uppercase;letter-spacing:.06em;font-size:11px;font-weight:600}
+  .scroller{overflow:auto;background:var(--well);display:grid;
+            min-height:0;min-width:0;
+            box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+  canvas#c{display:block;touch-action:none;cursor:crosshair;margin:auto}
+
+  /* Corner-jump bar floating over the canvas (Figma 16:121). position:sticky
+     inside the scroller would drift with pan; fixed-to-the-pane absolute
+     keeps it where the eye expects while the picture moves under it. */
+  /* max-width so a narrow pane (compare view on a small window) can never
+     push the bar outside the frame it is anchored to. */
+  .cvbar{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;z-index:3;
+         max-width:calc(100% - 32px);overflow-x:auto;
+         display:flex;align-items:center;gap:var(--s6);
+         padding:var(--s2) var(--s2) var(--s2) var(--s3);
+         background:var(--overlay);backdrop-filter:blur(5px);
+         -webkit-backdrop-filter:blur(5px);
+         border-radius:var(--r-lg);box-shadow:var(--shadow)}
+  .cvbar-actions{display:flex;align-items:center;gap:var(--s2);flex-wrap:nowrap}
+  .cvbar{white-space:nowrap}
+  /* `hidden` is a UA display:none, which any explicit display beats — and
+     .cvbar sets display:flex. Without this the bar stays visible while the
+     photo is chosen but the screenshot is not, offering corners to fit
+     nothing. */
+  .cvbar[hidden]{display:none}
+
+  /* Preview popover: the composite at whatever size fits, on the sunk surface
+     so the image edge is unambiguous against the panel. */
+  #previewWrap{margin-top:10px;background:var(--well);border-radius:var(--r-md);
+               box-shadow:inset 0 1px 3px rgba(0,0,0,.5);display:grid;
+               place-items:center;min-height:200px;max-height:70vh;overflow:auto}
+  #previewImg{display:block;max-width:100%;height:auto}
+
+  /* Switch — the full 8-variant matrix from Figma 17:61
+     (State Rest/Hover/Pressed/Disabled x Selected No/Yes).
+
+     The correction that mattered: THE TRACK NEVER FILLS WITH ACCENT. It stays
+     surface/bg in every state; selection is carried by the HANDLE turning
+     accent and the border stepping up to edge-hi. The previous version filled
+     the track orange and made the handle white, which is why it did not look
+     like the design.
+
+     Geometry: track 47x22 r5; handle 18x18 r3 inset 2px, and it STRETCHES to
+     20px while pressed — that stretch is the press feedback, in place of a
+     colour change. The state word rides opposite the handle. */
+  /* Switch — rebuilt from the Figma component set 17:61 (8 variants:
+     State × Selected). The previous build was a 47×22 track with an 18px square
+     handle and an ON/OFF text label; none of that is in the component. What the
+     component actually specifies:
+       hit area 48×28, track 48×22 centred, radius 6, 1px border
+       handle    24×20, radius 4, inset 1px, left when off / right when on
+       grip      a bar ON the handle — 4×6 dark when off, 2×12 accent when on
+     Pressed widens the handle to 26px (it squashes toward the far side) and
+     nudges the grip 1px with it. There is no text label in the component; state
+     reads from colour + handle side + grip. role=switch + aria-checked still
+     carry it for assistive tech, and the visible label above the control says
+     what it toggles. */
+  button.switch{background:none;border:none;box-shadow:none;padding:0;
+                width:48px;height:28px;display:inline-flex;align-items:center}
+  button.switch:hover{background:none}
+  button.switch:active{background:none;border:none;box-shadow:none;transform:none}
+
+  .sw-track{position:relative;display:block;width:48px;height:22px;border-radius:6px;
+            background:var(--bg);border:1px solid var(--edge);
+            transition:var(--t-all), box-shadow var(--t)}
+  .sw-handle{position:absolute;top:1px;bottom:1px;left:1px;width:24px;border-radius:4px;
+             background:var(--raise-hi);
+             transition:left var(--t), right var(--t), width var(--t), background-color var(--t), opacity var(--t)}
+  .sw-grip{position:absolute;border-radius:1px;background:var(--sunk);
+           left:11px;width:4px;top:8px;bottom:8px;
+           transition:left var(--t), width var(--t), top var(--t), bottom var(--t), background-color var(--t)}
+
+  /* --- OFF ------------------------------------------------------------- */
+  button.switch:hover .sw-handle{background:var(--float)}
+  button.switch:active .sw-handle{width:26px;background:var(--raise-hi)}
+  button.switch:active .sw-grip{left:12px}
+
+  /* --- ON -------------------------------------------------------------- */
+  button.switch[aria-checked="true"] .sw-track{background:var(--acc-btn-rest);border-color:var(--acc-stroke)}
+  button.switch[aria-checked="true"] .sw-handle{left:auto;right:1px;background:var(--acc-ink)}
+  button.switch[aria-checked="true"] .sw-grip{left:32px;width:2px;top:5px;bottom:5px;
+                                              background:var(--acc-btn-rest)}
+  button.switch[aria-checked="true"]:hover .sw-track{background:var(--acc);border-color:var(--acc-stroke)}
+  button.switch[aria-checked="true"]:hover .sw-grip{background:var(--acc)}
+  button.switch[aria-checked="true"]:active .sw-track{background:var(--acc-press);border-color:var(--acc-stroke)}
+  button.switch[aria-checked="true"]:active .sw-handle{width:26px;opacity:.8}
+  button.switch[aria-checked="true"]:active .sw-grip{left:31px;background:var(--acc-press)}
+
+  /* --- disabled --------------------------------------------------------
+     The component uses opacity here, against the project's usual rule. Kept as
+     designed rather than reinvented; it is a control you cannot operate, which
+     is the case WCAG 1.4.3 exempts. */
+  button.switch[disabled]{cursor:default}
+  button.switch[disabled] .sw-track{background:var(--bg);border-color:var(--line)}
+  button.switch[disabled] .sw-handle{background:var(--raise-hi);opacity:.4}
+  button.switch[disabled][aria-checked="true"] .sw-handle{background:var(--acc-dis);opacity:.4}
+  button.switch[disabled][aria-checked="true"] .sw-grip{display:none}
+
+  button.switch:focus-visible{outline:none}
+  button.switch:focus-visible .sw-track{box-shadow:0 0 0 3px var(--acc-soft);border-color:var(--acc)}
+
+  #outPane{display:none}
+  .stage.compare #outPane{display:grid}
+  #outWrap{overflow:auto;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+  #outImg{display:block;margin:auto}
+  .empty{color:var(--mute);font-size:12px;padding:24px;text-align:center;align-self:center;justify-self:center;max-width:320px}
+
+  .rail{min-width:0;overflow:auto;padding:0;display:grid;align-content:start;background:var(--card)}
+  .rail > div{padding:var(--s4);border-bottom:1px solid var(--line);display:grid;gap:0;align-content:start}
+  .sect-top + *{margin-top:var(--s4)}
+  .rail > div:last-child{border-bottom:none}
+  .rail h4{margin:0;font-size:11px;color:var(--mute);text-transform:uppercase;
+           letter-spacing:.06em;font-weight:600}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  /* --- rail sections (Figma 7:46) -------------------------------------
+     Every section but Device is a switch with a body that only exists when the
+     switch is on. The description that used to sit permanently under each
+     control moved into a tooltip on the info icon: five paragraphs of
+     explanation made the rail a wall of prose you stopped reading after the
+     first fit, which is the opposite of what a reference panel is for. */
+  .sect-top{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+  .sect-left{display:flex;align-items:center;gap:var(--s2);min-width:0}
+  /* Collapsible body. `display:none` can't be transitioned and neither can
+     height:auto, so the height is MEASURED and animated in pixels by
+     setSectionOpen().
+     The obvious modern answer — transitioning grid-template-rows 1fr -> 0fr —
+     was tried and abandoned: WebKit reports support via CSS.supports() and then
+     leaves the transition stuck at the start value, so a section would collapse
+     once and afterwards just sit there open with data-on="0". Verified it was
+     the transition and not the rule: with `transition:none` the same rule
+     collapsed instantly. A measured pixel height is duller and always works.
+     Max-height is set back to `none` once open, so a body whose content grows
+     (a longer caption) is not clipped by a stale measurement.
+     The section's own gap is 0 and the spacing lives on the body's margin, or a
+     collapsed section leaves a 16px hole where its body used to be. */
+  .sect-body{overflow:hidden;max-height:none;
+             transition:max-height var(--t-pop), opacity var(--t), margin-top var(--t-pop)}
+  .sect-body-in{display:grid;gap:var(--s4);align-content:start}
+  .sect[data-on="0"] .sect-body{opacity:0;margin-top:0}
+  @media (prefers-reduced-motion:reduce){ .sect-body{transition:opacity 120ms} }
+
+  /* Info icon + tooltip. A button, not a span: it has to be reachable by
+     keyboard, and the tooltip shows on focus as well as hover — a hover-only
+     tooltip hides the only copy of the explanation from anyone not using a
+     mouse. */
+  .info{flex:none;width:16px;height:16px;padding:0;border:none;
+        background:none;box-shadow:none;color:var(--edge-hi);cursor:help;line-height:0}
+  .info svg{display:block;width:16px;height:16px}
+  .info:hover, .info:focus-visible{color:var(--mute)}
+  /* The tooltip is anchored to the section HEADER, not to the 16px icon, and
+     spans its full width. Anchored to the icon it extended past the rail's left
+     edge and .rail{overflow:auto} clipped it — half the sentence was cut off,
+     which a screenshot showed and the geometry did not. Spanning the header can
+     never overflow the rail, whatever the section or the icon's position. */
+  .sect-top{position:relative;z-index:2}
+  .sect-body{position:relative;z-index:1}
+  /* Tooltips live at BODY level, positioned by JS — not inside their section.
+     Nesting them was wrong twice over: .rail{overflow:auto} clipped one anchored
+     to the icon, and once .sect-top got a z-index to beat its own slider, that
+     z-index became a STACKING CONTEXT which trapped the tooltip inside it. Two
+     sections' headers then both sat at z-index 2 and the later one in the DOM
+     won, so Compare view's switch painted straight through Floating edge view's
+     tooltip. No amount of z-index inside a trapped context can escape it.
+     At body level with position:fixed there is no ancestor to be trapped by and
+     nothing to be clipped by — the same reason the toasts moved out of .pane. */
+  .tip{position:fixed;width:264px;max-width:calc(100vw - 32px);
+       padding:8px 10px;border-radius:var(--r-md);
+       background:var(--float);border:1px solid var(--edge);
+       box-shadow:var(--shadow), var(--hi);
+       color:var(--ink);font-size:12px;font-weight:400;line-height:1.45;
+       letter-spacing:normal;text-transform:none;text-align:left;white-space:normal;
+       z-index:70;opacity:0;visibility:hidden;pointer-events:none;
+       transform:translateY(-2px);
+       transition:opacity var(--t), transform var(--t), visibility 0s linear var(--t)}
+  .tip.on{opacity:1;visibility:visible;transform:none;
+          transition:opacity var(--t), transform var(--t), visibility 0s}
+
+  /* Device chips share the rail equally rather than sizing to their labels —
+     four ragged pills read as a list, four equal ones read as a choice. */
+  .chips{display:flex;gap:8px;width:100%}
+  .chips .chip{flex:1 1 0;min-width:0;padding:0 6px}
+  select,input[type=text]{width:100%;font:inherit;height:28px;padding:0 8px;
+        border-radius:var(--r-md);border:1px solid var(--edge);background:var(--sunk);color:var(--ink);
+        transition:var(--t-all)}
+  /* appearance:none is not cosmetic here. A native <select> is drawn by the
+     platform, and macOS paints its chevron ABOVE positioned web content — the
+     section tooltip has z-index 40 and the native arrow still sat on top of it.
+     Drawing our own chevron puts the control back under our own stacking rules,
+     and matches the design, which has no native control in it anywhere. */
+  select{appearance:none;-webkit-appearance:none;padding-right:26px;
+         background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238f939a' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+         background-repeat:no-repeat;background-position:right 9px center}
+  select:hover,input[type=text]:hover{border-color:var(--edge-hi)}
+  select:focus-visible,input[type=text]:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  /* The slider is the one thing you drag continuously — give it a real track
+     and a real thumb rather than the browser default in a box. */
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent}
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:999px;transition:var(--t-all);
+        background:linear-gradient(to right, var(--acc) 0 calc(var(--p,0) * 100%), var(--sunk) calc(var(--p,0) * 100%) 100%);
+        box-shadow:inset 0 0 0 1px var(--line)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;
+        margin-top:-5px;border-radius:999px;background:var(--raise);border:1px solid var(--edge-hi);
+        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4);transition:var(--t-all)}
+  input[type=range]:hover::-webkit-slider-thumb{border-color:var(--acc)}
+  input[type=range]:focus-visible{outline:none}
+  input[type=range]:focus-visible::-webkit-slider-thumb{outline:2px solid var(--acc);outline-offset:2px}
+  /* Captions are text/faint in Figma. The port had quietly used --mute
+     instead; now they follow the token as designed. At the brightened
+     #8f939ab2 that measures 3.48:1 on card — up from 2.42:1, still under the
+     4.5:1 AA needs for 12px text. a deliberate call, recorded rather than
+     silently re-deviated. */
+  .hint{color:var(--faint);font-size:12px;margin:8px 0 0;line-height:1.5}
+
+  /* Figma 8:28: 198px tall — 16 padding, 28 header, 8 gap, 130 strip, 16
+     padding. It is a fixed band and must never absorb leftover height. */
+  .dock{background:var(--card);padding:var(--s4);display:grid;gap:var(--s2);
+        grid-template-rows:28px 130px;flex:none;
+        /* The rule is an inset shadow, not a border, so it does not add a
+           pixel to the band's height: 16+28+8+130+16 = 198 exactly. */
+        box-shadow:inset 0 1px 0 var(--line), inset 0 2px 0 rgba(255,255,255,.04)}
+  .dock.hidden{display:none}
+  /* Figma 8:29 is a 28px header holding 24px buttons — the header does not
+     shrink to hug them. */
+  .striphead{display:flex;align-items:center;gap:8px;font-size:12px;min-height:28px}
+  canvas#strip{display:block;width:100%;height:130px;border-radius:var(--r-md);
+        background:var(--well);box-shadow:inset 0 0 0 1px var(--line), inset 0 1px 3px rgba(0,0,0,.5)}
+  /* Floating mode: the loupe follows the edge instead of taking a permanent band. */
+  .floatloupe{position:fixed;z-index:40;display:none;padding:8px;border-radius:var(--r-lg);
+              background:var(--float);border:1px solid var(--edge);box-shadow:var(--shadow), var(--hi)}
+  .floatloupe.on{display:block}
+  .floatloupe canvas{display:block;width:340px;height:104px;border-radius:var(--r-sm);
+        background:var(--well);box-shadow:inset 0 0 0 1px var(--line)}
+  .floatloupe .cap{font-size:11px;color:var(--mute);padding-top:4px;max-width:340px}
+
+  /* Toast, with Sonner's stacking behaviour (5 Sep).
+     Sonner itself is React-only — sonner@2.0.8 ships a single React build with
+     a react/react-dom peer dep, and React 19 no longer publishes UMD, so taking
+     it literally meant ~1MB of vendored JS and a React runtime inside a 75KB
+     stdlib-served page. What makes Sonner feel like Sonner is the behaviour,
+     and that ports cleanly: a COLLAPSED STACK that expands on hover,
+     swipe-to-dismiss, and neighbours that glide rather than jump.
+
+     Layout: the container is zero-height and every toast sits on the same top
+     baseline, so a toast's place in the stack is purely a transform — which is
+     why re-layout animates for free.
+
+     TOP CENTRE, fixed to the viewport (5 Sep). It was bottom-left inside the
+     canvas pane; centred at the top it is clear of both the 56px top bar and the
+     52px pane headers, so it covers only the canvas — and being viewport-fixed
+     it no longer has to dodge the corner bar, which is why the ResizeObserver
+     that measured it is gone. */
+  .toasts{position:fixed;top:116px;left:50%;transform:translateX(-50%);
+          z-index:60;width:min(380px, calc(100vw - 32px));height:0;
+          pointer-events:none}
+  .toast{position:absolute;left:0;top:0;width:100%;box-sizing:border-box;
+         display:flex;align-items:flex-start;gap:8px;padding:10px 12px;
+         border-radius:var(--r-md);background:var(--float);
+         border:1px solid var(--edge);box-shadow:var(--shadow), var(--hi);
+         font-size:12px;line-height:1.45;color:var(--ink);
+         pointer-events:auto;touch-action:none;transform-origin:50% 0;
+         will-change:transform,opacity;
+         overflow:hidden;
+         transition:transform 380ms cubic-bezier(.21,1.02,.73,1),
+                    height 380ms cubic-bezier(.21,1.02,.73,1),
+                    opacity 260ms cubic-bezier(.21,1.02,.73,1),
+                    background-color var(--t), border-color var(--t)}
+  /* No easing while a finger is down — a drag must track the pointer exactly. */
+  .toast[data-dragging="true"]{transition:none;cursor:grabbing}
+  .toast[data-gone="true"]{opacity:0}
+  @media (prefers-reduced-motion:reduce){ .toast{transition:opacity 120ms} }
+
+  /* Same three-channel encoding as .status — glyph, weight, luminance — so a
+     toast and a status pill never disagree, and meaning survives without hue. */
+  .toast .g{flex:none;font-weight:600;line-height:1.45}
+  .toast.ok  .g{color:var(--ok)}    .toast.ok  .g::before{content:"\2713"}
+  .toast.warn .g{color:var(--warn)} .toast.warn .g::before{content:"!"}
+  .toast.err .g{color:var(--err)}   .toast.err .g::before{content:"\00d7"}
+  .toast.info .g{color:var(--mute)} .toast.info .g::before{content:"\2022"}
+  /* Error toast: the CONTAINER stays quiet — stroke close to its fill, the same
+     relationship a standard button has — and the message carries the colour,
+     rather than a tinted stroke and glyph shouting around neutral text. */
+  .toast.err{border-color:var(--edge)}
+  .toast.err .g, .toast.err .msg{color:var(--warn)}
+  .toast .msg{min-width:0;word-break:break-word}
+  .toast .x{flex:none;margin:-4px -4px 0 4px;width:22px;height:22px;padding:0;
+            background:none;border:none;box-shadow:none;color:var(--mute);
+            font-size:14px;line-height:22px;border-radius:var(--r-sm);opacity:0;
+            transition:opacity var(--t), background-color var(--t), color var(--t)}
+  /* Close is stack-level furniture: it shows when the stack is open, so a
+     resting stack stays clean. Always available to keyboard users. */
+  .toasts[data-expanded="true"] .toast .x, .toast .x:focus-visible{opacity:1}
+  .toast .x:hover{background:var(--raise);color:var(--ink)}
+
+  /* Popovers animate both ways. `display` can't be transitioned, so visibility
+     carries the hit-testing (it IS transitionable, discretely) while opacity and
+     transform carry the motion — no timers, no class-removal races. */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;
+         opacity:0;visibility:hidden;
+         transition:opacity var(--t-pop), visibility 0s linear var(--t-pop)}
+  .scrim.on{opacity:1;visibility:visible;transition:opacity var(--t-pop), visibility 0s}
+  .pop{position:fixed;z-index:51;width:640px;max-width:calc(100vw - 24px);
+       max-height:78vh;overflow:auto;background:var(--float);border:1px solid var(--edge);
+       border-radius:var(--r-lg);box-shadow:var(--shadow), var(--hi);padding:16px;
+       opacity:0;visibility:hidden;transform:translateY(6px) scale(.985);
+       transform-origin:50% 0;
+       transition:opacity var(--t-pop), transform var(--t-pop),
+                  visibility 0s linear var(--t-pop)}
+  .pop.on{opacity:1;visibility:visible;transform:none;
+          transition:opacity var(--t-pop), transform var(--t-pop), visibility 0s}
+  @media (prefers-reduced-motion:reduce){
+    .pop{transform:none}
+  }
+  .pop h3{margin:0 0 4px;font-size:14px;font-weight:600}
+  .pop .sub{color:var(--mute);font-size:12px;margin:0 0 16px;line-height:1.5}
+  .picker{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;align-items:start}
+  .rail2{display:flex;flex-direction:column;gap:4px;max-height:300px;overflow:auto;padding:2px}
+  .th{display:flex;align-items:center;gap:10px;padding:6px;border-radius:var(--r-md);cursor:pointer;
+      border:1px solid transparent;background:var(--sunk);
+      transition:var(--t-all)}
+  .th:hover{border-color:var(--edge-hi);background:var(--raise)}
+  .th img{width:40px;height:40px;object-fit:cover;border-radius:6px;flex:none;background:var(--card)}
+  .th .cap{font-size:11.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .th.sel{border-color:var(--acc);background:var(--acc-soft)}
+  /* The preview frame sits INSIDE the popover, so --well (#0a0a0b, the canvas
+     tone) read as a hole punched in it. --sunk is the system's recessed surface:
+     lighter than the well, still clearly below --float, and it matches the
+     thumbnail rail beside it. The stroke moves to --edge so the frame still has
+     an edge now that its fill is closer to the surface behind it. */
+  .pv{border-radius:var(--r-md);background:var(--sunk);min-height:210px;
+      display:grid;place-items:center;overflow:hidden;box-shadow:inset 0 0 0 1px var(--edge)}
+  .pv img{max-width:100%;max-height:300px;object-fit:contain;display:block}
+  .drop{border:1px dashed var(--edge);border-radius:var(--r-md);padding:14px;text-align:center;
+        color:var(--mute);cursor:pointer;margin-top:12px;font-size:12px;
+        transition:var(--t-all)}
+  .drop:hover{border-color:var(--edge-hi);color:var(--ink)}
+  .drop.over{border-color:var(--acc);color:var(--ink);background:var(--acc-soft)}
+  .sm{font-size:12px}
+  code{font:12px ui-monospace,Menlo,monospace;background:var(--sunk);padding:2px 6px;
+       border-radius:var(--r-sm);box-shadow:inset 0 0 0 1px var(--line)}
+  kbd{border:1px solid var(--edge);border-bottom-width:2px;border-radius:var(--r-sm);
+      padding:1px 5px;font:11px/1.6 inherit;color:var(--mute);background:var(--sunk)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top bar (Figma 6:3). Two things moved OUT in the an earlier finding pass: the detection
+       status pill went to the Fit pane header, where the thing it describes
+       actually is, and Compare became a switch in the rail rather than a chip
+       competing with the actions. What is left is identity, inputs, actions. -->
+  <header class="topbar">
+    <div class="tb-left">
+      <span class="brand">Screengraft</span><span id="sess" hidden></span>
+      <div class="tb-chips">
+        <button class="inputchip is-empty" id="chip1"><span class="sw" id="sw1"></span><span class="nm">Choose a photo…</span></button>
+        <span class="tb-arrow">&rarr;</span>
+        <button class="inputchip is-empty" id="chip2"><span class="sw" id="sw2"></span><span class="nm">Choose a screenshot…</span></button>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <div class="tb-actions">
+      <button id="preview" hidden>Preview</button>
+      <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
+      <button id="save" class="accent" disabled>Preview first</button>
+    </div>
+  </header>
+
+  <div class="stage" id="stage">
+    <section class="pane">
+      <!-- Structure is Figma 7:13 exactly: a Left group (gap 24) holding
+           Left-1 (gap 16: label, stepper, zoom %) and Left-2 (gap 8: Fit,
+           100%), with the status pill pushed to the far end by
+           justify-between. Buttons are Md — the same size as every other
+           button on screen, which is the point of the change. -->
+      <div class="panehead fit-head">
+        <div class="ph-left">
+          <div class="ph-left-1">
+            <span class="lbl">Fit</span>
+            <span class="stepper"><button id="czOut">&minus;</button><button id="czIn">+</button></span>
+            <span id="czSt" class="zoomval"></span>
+          </div>
+          <div class="ph-left-2">
+            <button id="czFit">Fit</button>
+            <button id="cz100">100%</button>
+          </div>
+        </div>
+        <span class="status" id="detSt"></span>
+      </div>
+      <div class="scroller" id="scroller">
+        <canvas id="c"></canvas>
+      </div>
+      <!-- Corner jump. It is a SIBLING of the scroller, not a child: anything
+           positioned inside a scroll container scrolls with the content, so
+           when it lived over the canvas it slid out of view the moment you
+           zoomed in. Anchored to the pane it stays put while the picture moves
+           underneath, which is what a floating control should do. -->
+      <div class="cvbar" id="cvbar">
+        <span class="sm" style="color:var(--mute)">Select corner</span>
+        <span class="cvbar-actions">
+          <span class="stepper"><button class="sm" data-jump="0">TL</button><button class="sm" data-jump="1">TR</button><button class="sm" data-jump="2">BR</button><button class="sm" data-jump="3">BL</button></span>
+          <button class="sm" id="redetect">Re-detect</button>
+        </span>
+      </div>
+    </section>
+
+    <section class="pane" id="outPane">
+      <div class="panehead">
+        <span class="lbl">Result</span>
+        <span class="gap-3"></span>
+        <span class="sm" id="outSt" style="color:var(--mute)">Press Preview</span>
+        <span class="spacer"></span>
+        <span class="sm" style="color:var(--mute)">shares zoom &amp; pan</span>
+      </div>
+      <div id="outWrap"><span class="empty" id="outEmpty">Press Preview — or turn on Compare view and this updates as you drag.</span><img id="outImg" alt="" hidden></div>
+    </section>
+
+    <aside class="rail">
+      <div class="sect" id="secDevice" data-on="1">
+        <div class="sect-top"><div class="sect-left"><h4>Device</h4></div></div>
+        <div class="chips" id="types"></div>
+      </div>
+      <div class="sect" id="secRadius" data-on="1">
+        <div class="sect-top">
+          <div class="sect-left">
+            <h4>Corner radius</h4>
+            <button class="info" type="button" aria-label="About corner radius"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Rounds the injected screen so it follows the device's own bezel. Measured from the photo when it can be, otherwise from a device preset. Off gives square corners.</span></button>
+          </div>
+          <button class="switch" id="radBtn" role="switch" aria-checked="true" aria-label="Corner radius">
+            <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
+          </button>
+        </div>
+        <div class="sect-body"><div class="sect-body-in">
+          <select id="preset" aria-label="Corner radius device preset"></select>
+          <input type="range" id="radius" min="0" max="0.25" step="0.002" value="0" aria-label="Corner radius, percent of screen width">
+          <p class="hint" id="radSt"></p>
+          </div></div>
+      </div>
+      <div class="sect" id="secRealism" data-on="1">
+        <div class="sect-top">
+          <div class="sect-left">
+            <h4>Realism</h4>
+            <button class="info" type="button" aria-label="About realism"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Matches the screen's white balance and grain to the light around it, so it stops reading as pasted. Off keeps the screenshot's colour exactly — right when the UI's own colour is what you're reviewing.</span></button>
+          </div>
+          <button class="switch" id="gradeBtn" role="switch" aria-checked="true" aria-label="Realism">
+            <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
+          </button>
+        </div>
+        <div class="sect-body"><div class="sect-body-in">
+          <div style="display:grid;gap:var(--s2);justify-items:end">
+            <span class="sm" id="gradeVal" style="font-variant-numeric:tabular-nums"></span>
+            <input type="range" id="gradeAmt" min="0.1" max="1" step="0.05" value="0.35" aria-label="Realism strength">
+          </div>
+          </div></div>
+      </div>
+      <div class="sect" id="secEdge" data-on="1">
+        <div class="sect-top">
+          <div class="sect-left">
+            <h4>Floating edge view</h4>
+            <button class="info" type="button" aria-label="About floating edge view"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">The magnified strip follows the edge you're dragging, so your eye doesn't travel. Off docks it under the canvas in a fixed band.</span></button>
+          </div>
+          <button class="switch" id="edgeBtn" role="switch" aria-checked="true" aria-label="Floating edge view">
+            <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
+          </button>
+        </div>
+      </div>
+      <div class="sect" id="secCompare" data-on="1">
+        <div class="sect-top">
+          <div class="sect-left">
+            <h4>Compare view</h4>
+            <button class="info" type="button" aria-label="About compare view"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Shows the fit and the composite side by side, sharing zoom and pan, so a corner can be judged against the same corner.</span></button>
+          </div>
+          <button class="switch" id="cmpBtn" role="switch" aria-checked="true" aria-label="Compare view">
+            <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
+          </button>
+        </div>
+      </div>
+      <div class="sect" id="secKeys" data-on="1">
+        <div class="sect-top"><div class="sect-left"><h4>Keys</h4></div></div>
+        <p class="hint"><kbd>&larr;&uarr;&rarr;&darr;</kbd> nudge 1px · <kbd>&#8679;</kbd>+arrow 10px · <kbd>Tab</kbd> next edge</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="dock" id="dock">
+    <div class="striphead">
+      <span class="lbl">Edge view</span>
+      <span class="stepper dock-step"><button class="sm" id="stripOut">&minus;</button><button class="sm" id="stripIn">+</button></span>
+      <span class="sm" id="stripZ" style="color:var(--mute);font-variant-numeric:tabular-nums"></span>
+      <span class="spacer"></span>
+      <span class="sm" id="stripSt" style="color:var(--mute)"></span>
+    </div>
+    <canvas id="strip" width="1280" height="130"></canvas>
+  </footer>
+</div>
+
+<div class="floatloupe" id="floatLoupe">
+  <canvas id="stripF" width="680" height="208"></canvas>
+  <div class="cap" id="stripFCap"></div>
+</div>
+
+<!-- Toasts. Viewport-fixed at top centre, so they live at body level: parented
+     inside .pane they still positioned correctly, but any future transform or
+     filter on an ancestor would silently turn position:fixed into
+     position:absolute and move them without warning.
+     aria-live=polite announces confirmations without interrupting; individual
+     error toasts set role="alert" for themselves. -->
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<div class="scrim" id="scrim"></div>
+
+
+<div class="pop" id="previewPop" style="width:min(900px,calc(100vw - 24px))">
+  <h3>Preview</h3>
+  <p class="sub" id="previewSt">Rendering…</p>
+  <div id="previewWrap"><img id="previewImg" alt="" hidden></div>
+</div>
+
+<div class="pop" id="pop1">
+  <h3>Photo of the device</h3>
+  <p class="sub">Recent images from Desktop and Downloads — click one. Or browse, drop a file, or paste a path.</p>
+  <div class="picker">
+    <div class="rail2" id="recent1"></div>
+    <div class="pv" id="pv1"><span class="empty">Select a recent image</span></div>
+  </div>
+  <div class="drop" id="drop1">Drop a photo here or click to browse</div>
+  <input type="file" id="file1" accept="image/*" hidden>
+</div>
+
+<div class="pop" id="pop2">
+  <h3>Screenshot to put on the screen</h3>
+  <p class="sub">A PNG/JPG of the UI — or paste a Figma frame link and Claude will export it for you.</p>
+  <div class="row" style="margin-bottom:8px"><input type="text" id="figma" placeholder="https://www.figma.com/design/…?node-id=…" style="flex:1"><button id="figmaBtn">Export from Figma</button></div>
+  <div class="status sm" id="figmaSt" style="margin-bottom:10px"></div>
+  <div class="hintline" id="figmaHint" hidden style="margin-bottom:10px"></div>
+  <div class="picker">
+    <div class="rail2" id="recent2"></div>
+    <div class="pv" id="pv2"><span class="empty">Select a recent image</span></div>
+  </div>
+  <div class="drop" id="drop2">Drop a screenshot here or click to browse</div>
+  <input type="file" id="file2" accept="image/*" hidden>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let previewHinted = false;   // the preview nudge is orientation, shown once
+
+
+/* Tooltips. Each .info keeps its own <span class="tip"> in the markup so the
+   text stays associated with the control for assistive tech, but at boot every
+   tip is MOVED to <body> and shown by JS. Positioned in place it was clipped by
+   the rail's overflow, and once its section needed a z-index it was trapped in
+   that section's stacking context and painted under the next section's switch.
+   A body-level fixed element has neither problem.
+   Shown on hover AND focus: :focus-visible is a heuristic that misses, and this
+   is the only copy of each explanation. */
+(() => {
+  const place = (btn, tip) => {
+    const r = btn.getBoundingClientRect();
+    const w = tip.offsetWidth, gap = 8;
+    // Prefer left-aligned to the icon; pull back inside the viewport if needed.
+    let left = Math.min(r.left, innerWidth - w - 16);
+    left = Math.max(16, left);
+    let top = r.bottom + gap;
+    if (top + tip.offsetHeight > innerHeight - 16) top = Math.max(16, r.top - gap - tip.offsetHeight);
+    tip.style.left = Math.round(left) + 'px';
+    tip.style.top  = Math.round(top) + 'px';
+  };
+  document.querySelectorAll('.info').forEach((btn, i) => {
+    const tip = btn.querySelector('.tip');
+    if (!tip) return;
+    tip.id = tip.id || ('tip-' + i);
+    btn.setAttribute('aria-describedby', tip.id);
+    document.body.appendChild(tip);                 // out of every stacking context
+    const show = () => { tip.classList.add('on'); place(btn, tip); };
+    const hide = () => tip.classList.remove('on');
+    btn.addEventListener('pointerenter', show);
+    btn.addEventListener('pointerleave', hide);
+    btn.addEventListener('focus', show);
+    btn.addEventListener('blur', hide);
+  });
+  addEventListener('scroll', () => document.querySelectorAll('.tip.on').forEach(t => t.classList.remove('on')), true);
+})();
+
+
+/* ===== toasts (Sonner-style behaviour) ====================================
+   One sink for every transient outcome: saved, sent to Claude, exported from
+   Figma, and the failures of each. Before this they lived in #actSt, which the
+   v0.8.2 layout left permanently hidden.
+
+   Sonner is React-only (measured: sonner@2.0.8 has react/react-dom peer deps
+   and one React build; React 19 dropped UMD), so its BEHAVIOUR is ported rather
+   than the package: toasts collapse into a stack, hovering expands them, a left
+   swipe dismisses, and removing one glides the rest into place.
+
+   Rules that make it a tool's toast rather than a website's:
+   - successes and info clear themselves; ERRORS DO NOT. A failure you missed
+     because it timed out is exactly the bug this class is made of.
+   - hovering the stack pauses every countdown in it, so a long path in a Save
+     confirmation can actually be read.
+   - glyph + weight + colour, matching .status, so colour is never load-bearing. */
+const TOASTS = { max: 3, ok: 4200, info: 6000, warn: 8000 };   // err: sticky
+const T_STACK = { peek: 14, scale: .06, gap: 8, swipe: 60 };
+let toastItems = [];      // newest first
+let toastHover = 0;
+
+function layoutToasts(expanded) {
+  const wrap = $('#toasts');
+  if (!wrap) return;
+  wrap.dataset.expanded = expanded ? 'true' : 'false';
+
+  // Measure natural heights first, with any imposed height released. Messages
+  // differ in length, so the cards differ in height — and on a shared bottom
+  // baseline that made the ones behind poke out above the front one at random.
+  // Sonner's answer, and this one: while collapsed every card takes the FRONT
+  // card's height, so the stack reads as one object. Heights are always set in
+  // px (never auto) so the change can be transitioned.
+  toastItems.forEach(it => { it.el.style.height = 'auto'; });
+  toastItems.forEach(it => { it.h = it.el.offsetHeight; });
+  const front = toastItems.length ? toastItems[0].h : 0;
+
+  let stacked = 0;
+  toastItems.forEach((it, i) => {
+    // Anchored at the top, so the stack grows DOWNWARD: older toasts sit below
+    // and behind the newest one.
+    const y  = expanded ? stacked : i * T_STACK.peek;
+    const sc = expanded ? 1 : Math.max(0, 1 - i * T_STACK.scale);
+    it.el.style.height = (expanded ? it.h : front) + 'px';
+    it.el.style.transform =
+      `translate3d(${it.dx || 0}px, ${y + (it.dy || 0)}px, 0) scale(${sc})`;
+    it.el.style.opacity = i >= TOASTS.max ? '0' : '1';
+    it.el.style.zIndex = String(100 - i);
+    stacked += it.h + T_STACK.gap;
+  });
+}
+
+function toast(kind, html, opts = {}) {
+  const wrap = $('#toasts');
+  if (!wrap) return null;
+
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  if (kind === 'err') el.setAttribute('role', 'alert');
+  el.innerHTML = `<span class="g" aria-hidden="true"></span><div class="msg"></div>`;
+  el.querySelector('.msg').innerHTML = html;
+
+  const life = opts.ms !== undefined ? opts.ms : TOASTS[kind];
+  const item = { el, gone: false, dx: 0, dy: 0, timer: null };
+
+  item.disarm = () => clearTimeout(item.timer);
+  item.arm = () => { if (life && !item.gone) { clearTimeout(item.timer); item.timer = setTimeout(item.close, life); } };
+  item.close = () => {
+    if (item.gone) return;
+    item.gone = true;
+    clearTimeout(item.timer);
+    el.dataset.gone = 'true';
+    el.style.pointerEvents = 'none';
+    toastItems = toastItems.filter(t => t !== item);
+    layoutToasts(toastHover > 0);          // survivors glide into place
+    setTimeout(() => el.remove(), 420);
+  };
+
+  const x = document.createElement('button');
+  x.className = 'x'; x.type = 'button'; x.setAttribute('aria-label', 'Dismiss');
+  x.textContent = '×'; x.onclick = item.close;
+  el.appendChild(x);
+
+  /* Swipe to dismiss. Centred at the top, the nearest edges are up and to
+     either side, so all three dismiss; dragging DOWN rubber-bands, because
+     there is nowhere down for it to go. */
+  let startX = 0, startY = 0, dragging = false;
+  el.addEventListener('pointerdown', e => {
+    if (e.target.closest('.x')) return;
+    dragging = true; startX = e.clientX; startY = e.clientY;
+    el.dataset.dragging = 'true';
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  el.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const rawY = e.clientY - startY;
+    item.dx = e.clientX - startX;
+    item.dy = rawY < 0 ? rawY : rawY * .25;
+    layoutToasts(toastHover > 0);
+  });
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    delete el.dataset.dragging;
+    if (item.dy < -T_STACK.swipe || Math.abs(item.dx) > T_STACK.swipe) {
+      if (item.dy < -T_STACK.swipe) item.dy = -200;
+      else item.dx = item.dx > 0 ? 440 : -440;
+      layoutToasts(toastHover > 0); item.close();
+    } else { item.dx = 0; item.dy = 0; layoutToasts(toastHover > 0); }
+  };
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+
+  // Hover expands the stack and pauses every countdown in it.
+  el.addEventListener('pointerenter', () => {
+    toastHover++; toastItems.forEach(t => t.disarm()); layoutToasts(true);
+  });
+  el.addEventListener('pointerleave', () => {
+    toastHover = Math.max(0, toastHover - 1);
+    if (!toastHover) { toastItems.forEach(t => t.arm()); layoutToasts(false); }
+  });
+
+  wrap.appendChild(el);
+  toastItems.unshift(item);
+  // Start just above the baseline and let the first layout carry it down.
+  el.style.transform = 'translate3d(0,-14px,0) scale(.96)';
+  el.style.opacity = '0';
+  requestAnimationFrame(() => layoutToasts(toastHover > 0));
+
+  // Trim past the visible depth, oldest first.
+  while (toastItems.length > TOASTS.max + 1) toastItems[toastItems.length - 1].close();
+
+  item.arm();
+  return item;
+}
+
+const api = async (p, body, raw) => {
+  const r = await fetch(p, body===undefined ? {} : {method:'POST', headers: raw ? raw.headers : {'Content-Type':'application/json'}, body: raw ? raw.body : JSON.stringify(body)});
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
+};
+const fileURL = p => '/file?path=' + encodeURIComponent(p);
+const st = {photo:null, shot:null, corners:null, frac:0, type:null, preset:null, measured:null, presets:[]};
+const remember = (k,v) => { try{ localStorage.setItem('sg.'+k, v); }catch(e){} };
+const recall = (k,d) => { try{ const v = localStorage.getItem('sg.'+k); return v===null?d:v; }catch(e){ return d; } };
+
+/* ===== overlay drawing =====================================================
+   A flat stroke colour cannot survive an arbitrary photograph. Swept against
+   greys 0-255, the old iOS red bottomed out at 1.00:1 on mid-grey and the
+   yellow at 1.02:1 on a bright wall — invisible on exactly the material this
+   tool is for. So every overlay strokes TWICE: a dark casing, then a light
+   core. Whatever is underneath, one of the two contrasts. State is carried by
+   WEIGHT (thicker = active), not by hue alone. */
+/* Figma 33:856 draws the whole quad in the accent, so the accent is the core
+   everywhere and STATE IS CARRIED BY WEIGHT, not hue — which is what v0.6.0
+   concluded anyway. CORE_IDLE stays for the rectified strip's own rule. */
+/* Overlay cores, from Figma 33:856 (5 Sep). That frame carries TWO accent
+   tokens, and the overlay has two jobs, so they map one to one:
+     accent/acc       #f23b0d  the quad you are placing — edges and handles
+     accent/acc_light #f5623d  the secondary aids — dashed guide, corner dots,
+                               the strip's own rule
+   The dark casing underneath is NOT optional and stays: flat accent measures
+   ~1.06:1 against mid-tone photography, which is the failure the casing was
+   introduced to fix. CORE_IDLE stays white for the strip's idle rule. */
+const CASE_A = 'rgba(0,0,0,.62)', CORE_IDLE = 'rgba(255,255,255,.92)';
+const CORE_ACTIVE = '#f5623d';
+const CORE_QUAD = '#f23b0d';
+function cased(c, path, coreW, coreColor, dash){
+  c.save();
+  if (dash) c.setLineDash(dash);
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = CASE_A; c.lineWidth = coreW + 2.5; path(); c.stroke();
+  c.strokeStyle = coreColor; c.lineWidth = coreW; path(); c.stroke();
+  c.restore();
+}
+/* A FILLED handle, still cased. cased() strokes twice; a disc has to fill the
+   core and put the dark casing around its rim, or the handle loses the
+   readability guarantee that makes markers survive an arbitrary photograph. */
+function casedDisc(c, x, y, r, coreColor){
+  c.save();
+  c.strokeStyle = CASE_A; c.lineWidth = 2.5;
+  c.beginPath(); c.arc(x, y, r + 0.75, 0, Math.PI*2); c.stroke();
+  c.fillStyle = coreColor;
+  c.beginPath(); c.arc(x, y, r, 0, Math.PI*2); c.fill();
+  c.restore();
+}
+function casedText(c, text, x, y, color){
+  c.save();
+  c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,.75)'; c.lineJoin = 'round';
+  c.strokeText(text, x, y);
+  c.fillStyle = color; c.fillText(text, x, y);
+  c.restore();
+}
+
+/* ===== pickers (popovers over the canvas) ===== */
+async function loadRecent(){
+  const {items} = await api('/api/recent?days=14&limit=40');
+  for (const id of ['recent1','recent2']){
+    const g = $('#'+id); g.innerHTML='';
+    for (const it of items){
+      const d = document.createElement('div'); d.className='th'; d.title = it.path;
+      d.innerHTML = `<img src="${it.thumb ? fileURL(it.thumb) : ''}" alt=""><div class="cap">${it.name}</div>`;
+      d.onclick = () => choose(id==='recent1'?'photo':'screenshot', it.path, d);
+      g.appendChild(d);
+    }
+    if (!items.length) g.innerHTML = '<span class="sm" style="color:var(--mute)">No recent images on Desktop/Downloads (last 14 days).</span>';
+  }
+}
+async function choose(role, path, el){
+  try{ const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, el); }
+  catch(e){ alert(e.message); }
+}
+function setChosen(role, path, size, el){
+  const n = role==='photo'?1:2;
+  document.querySelectorAll('#recent'+n+' .th').forEach(x=>x.classList.remove('sel'));
+  if (el) el.classList.add('sel');
+  $('#pv'+n).innerHTML = `<img src="${fileURL(path)}" alt="">`;
+  const chip = $('#chip'+n);
+  chip.classList.remove('is-empty');
+  chip.querySelector('.nm').textContent = `${path.split('/').pop()} · ${size[0]}×${size[1]}`;
+  $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(path)}")`;
+  if (role==='photo'){ st.photo = path; st.corners = null; } else st.shot = path;
+  closePop();
+  maybeStart();
+}
+async function upload(role, file){
+  const buf = await file.arrayBuffer();
+  const r = await api('/api/upload', null, {headers:{'X-Filename':encodeURIComponent(file.name),'X-Role':role}, body:buf});
+  setChosen(role, r.path, r.size, null);
+}
+for (const [n, role] of [[1,'photo'],[2,'screenshot']]){
+  const drop = $('#drop'+n), file = $('#file'+n);
+  drop.onclick = () => file.click();
+  file.onchange = () => file.files[0] && upload(role, file.files[0]);
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) upload(role, f); };
+  $('#chip'+n).onclick = () => openPop(n);
+}
+/* One popover mechanic for every popover: anchor it under whatever opened it,
+   clamped into the viewport. The pickers and the preview both use it. */
+function openPopAt(pop, anchor){
+  closePop();
+  pop.classList.add('on'); $('#scrim').classList.add('on');
+  const w = pop.offsetWidth;
+  pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, anchor.left)) + 'px';
+  pop.style.top = (anchor.bottom + 8) + 'px';
+}
+function openPop(n){ openPopAt($('#pop'+n), $('#chip'+n).getBoundingClientRect()); }
+function closePop(){
+  document.querySelectorAll('.pop').forEach(p=>p.classList.remove('on'));
+  $('#scrim').classList.remove('on');
+}
+$('#scrim').onclick = closePop;
+
+/* The Figma export is the one step the page cannot do itself — it has no
+   Figma credentials, the agent does. So this enqueues a request and waits.
+
+   Two things this used to get wrong. It claimed "(it watches this job)",
+   which was false: the agent runs in turns and was not watching anything, so
+   the user waited on something that would never happen unless they typed in
+   chat. And it polled forever with no escape, so there was no point at which
+   the page admitted it was stuck. Both are fixed here: the agent now parks in
+   the MCP server's wait_for_job and is reached within ~150ms, and if that is
+   somehow not running we say so and offer the manual route rather than
+   spinning indefinitely. */
+const NUDGE_AFTER = 12;    // seconds before we stop assuming and start explaining
+
+/* Wait for the agent to answer the current job.
+
+   LONG POLL, deliberately not setInterval. Chrome throttles timers to about
+   once a minute in a hidden tab, and this page is hidden for exactly the
+   workflow it serves: paste a Figma link, switch to Figma. Measured 4 Sep
+   2026 — the agent answered in ~200ms and the page kept spinning, because its
+   poll had been throttled. A pending fetch is not throttled, so the answer
+   arrives when it exists. /api/job/wait blocks server-side and returns early
+   the moment the status changes. */
+async function awaitJob({onDone, onError, cancelled}) {
+  while (!cancelled()) {
+    let j;
+    try {
+      j = await api('/api/job/wait?timeout=25');
+    } catch (e) {
+      // Server restarted or a transient blip: pause, then keep waiting rather
+      // than declaring failure at the user.
+      await new Promise(r => setTimeout(r, 1200));
+      continue;
+    }
+    if (cancelled()) return;
+    if (j.status === 'done') return onDone(j);
+    if (j.status === 'error') return onError(j);
+    if (j.status === 'none') {
+      // The job file is gone — a wiped session, or a restarted server. The
+      // server answers 'none' instantly, so looping on it would spin as fast
+      // as the network allows. Stop and say so instead of hammering.
+      return onError({message: 'the request disappeared (was the UI restarted?). Try again.'});
+    }
+    // 'pending' with waited:true — the long poll timed out server-side; go again.
+  }
+}
+$('#figmaBtn').onclick = async () => {
+  const url = $('#figma').value.trim(); if (!url) return;
+  const s = $('#figmaSt'), hint = $('#figmaHint');
+  const btn = $('#figmaBtn'); btn.disabled = true;
+  const t0 = Date.now();
+  let finished = false;
+  const paint = () => {
+    const el = Math.round((Date.now() - t0) / 1000);
+    s.className = 'status sm busy';
+    s.innerHTML = `Exporting from Figma <span class="el">${el}s</span>`;
+    if (el >= NUDGE_AFTER && hint.hidden) {
+      hint.hidden = false;
+      hint.innerHTML = 'Taking longer than usual. Claude picks this up automatically while it\'s ' +
+                       'waiting on the job — if it\'s busy in another task it will arrive when that ' +
+                       'finishes. <b>Or export the frame as PNG yourself and drop it above</b> — ' +
+                       'that always works and needs nobody.';
+    }
+  };
+  paint();
+  const tick = setInterval(paint, 1000);
+  // The elapsed counter is a timer and so is throttled while hidden; repaint on
+  // return so the number is right the moment the designer looks at it again.
+  document.addEventListener('visibilitychange', paint);
+  const stop = (cls, text) => {
+    finished = true;
+    clearInterval(tick);
+    document.removeEventListener('visibilitychange', paint);
+    btn.disabled = false; hint.hidden = true;
+    s.className = 'status sm ' + cls; s.textContent = text;
+    // The popover is usually closed by now — the in-place line would go unread.
+    toast(cls === 'ok' ? 'ok' : 'err', cls === 'ok' ? 'Screenshot exported from Figma.' : text);
+  };
+  try { await api('/api/figma', {url}); }
+  catch (e) { return stop('err', 'Could not queue the export: ' + e.message); }
+  await awaitJob({
+    cancelled: () => finished,
+    onDone: async () => {
+      try {
+        const r = await api('/api/job/adopt', {});
+        stop('ok', 'Exported');
+        setChosen('screenshot', r.path, r.size, null);
+      } catch (e) { stop('err', 'Exported, but the file could not be read: ' + e.message); }
+    },
+    onError: (j) => stop('err', 'Export failed: ' + (j.message || '')),
+  });
+};
+
+/* ===== fitting the quad ====================================================
+   EDGES are the grab targets. A rounded screen corner has no point to aim at;
+   the two straight edges either side of it are unambiguous. Dragging edge i
+   moves only its LINE — corners i and i+1 are recomputed as intersections
+   with the two UNCHANGED adjacent lines. Corner handles stay for edges that
+   run off-frame or sit behind an occluder. */
+const cv = $('#c'), ctx = cv.getContext('2d');
+const strip = $('#strip'), sctx = strip.getContext('2d');
+const stripF = $('#stripF'), fctx = stripF.getContext('2d');
+const img = new Image();
+let scale = 1, fitScale = 1, drag = null, hover = null, pick = null;
+let stripHalf = 14, loupeMode = recall('loupe','dock'), lastPointer = [0,0];
+const LBL = ['TL','TR','BR','BL'], EDGE_LBL = ['top','right','bottom','left'];
+
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1]], add=(a,b)=>[a[0]+b[0],a[1]+b[1]];
+const mul=(a,k)=>[a[0]*k,a[1]*k], vlen=a=>Math.hypot(a[0],a[1]);
+const unit=a=>{const l=vlen(a)||1;return [a[0]/l,a[1]/l];};
+function interLines(p,d,q,e){
+  const den = d[0]*e[1]-d[1]*e[0];
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((q[0]-p[0])*e[1]-(q[1]-p[1])*e[0])/den;
+  return [p[0]+d[0]*t, p[1]+d[1]*t];
+}
+function distToSeg(p,a,b){
+  const ab=sub(b,a), L2=ab[0]*ab[0]+ab[1]*ab[1];
+  let t = L2 ? ((p[0]-a[0])*ab[0]+(p[1]-a[1])*ab[1])/L2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return {d: vlen(sub(p, add(a, mul(ab,t)))), t};
+}
+
+async function maybeStart(){
+  if (!st.photo) return;
+  const ready = !!st.shot;           // the screenshot gates the fit, not the photo
+  img.onload = () => {
+    computeFit(); setCanvasZoom(fitScale);
+    if (!ready){
+      // Photo only: show it immediately so choosing one visibly does
+      // something. No quad yet — there is nothing to fit into it.
+      draw();
+      $('#cvbar').hidden = true;
+      $('#detSt').className = 'status';
+      $('#detSt').textContent = 'Now choose the screenshot to place on the screen.';
+      return;
+    }
+    $('#cvbar').hidden = false;
+    if (!st.corners) detect(); else { draw(); drawStrip(); }
+  };
+  img.src = fileURL(st.photo);
+}
+function computeFit(){
+  const box = $('#scroller');
+  const w = box.clientWidth || 800, h = box.clientHeight || 600;
+  fitScale = Math.min(1, Math.min(w / img.naturalWidth, h / img.naturalHeight));
+}
+function setCanvasZoom(z, focus){
+  const prev = scale;
+  scale = Math.max(0.05, Math.min(4, z));
+  cv.width = Math.round(img.naturalWidth * scale);
+  cv.height = Math.round(img.naturalHeight * scale);
+  $('#czSt').textContent = Math.round(scale*100) + '%';
+  draw();
+  const sc = $('#scroller');
+  if (focus){
+    sc.scrollLeft = focus[0]*scale - sc.clientWidth/2;
+    sc.scrollTop  = focus[1]*scale - sc.clientHeight/2;
+  } else if (prev && prev !== scale){
+    const cx = (sc.scrollLeft + sc.clientWidth/2)/prev, cy = (sc.scrollTop + sc.clientHeight/2)/prev;
+    sc.scrollLeft = cx*scale - sc.clientWidth/2;
+    sc.scrollTop  = cy*scale - sc.clientHeight/2;
+  }
+  syncOut();
+}
+$('#czFit').onclick = () => { computeFit(); setCanvasZoom(fitScale); };
+$('#cz100').onclick = () => setCanvasZoom(1);
+$('#czIn').onclick  = () => setCanvasZoom(scale*1.5);
+$('#czOut').onclick = () => setCanvasZoom(scale/1.5);
+document.querySelectorAll('[data-jump]').forEach(b => {
+  b.onclick = () => { if (!st.corners) return; const i=+b.dataset.jump;
+    pick = {kind:'corner', i}; setCanvasZoom(Math.max(1, scale), st.corners[i]); drawStrip(); };
+});
+
+async function detect(){
+  const s = $('#detSt'); s.className='status busy'; s.textContent = 'Detecting…';
+  const r = await api('/api/detect', {});
+  if (r.found){
+    st.corners = r.corners; st.measured = r.corner_radius;
+    const corroborated = r.confidence === 'corroborated';
+    s.className = 'status ' + (corroborated ? 'ok' : 'warn');
+    s.textContent = corroborated ? `Both detectors agree (${r.method})`
+                                 : `Unconfirmed ${r.method} guess — check all four edges`;
+    if (!st.type) setType(r.type_guess || 'phone');
+    if (r.corner_radius && r.corner_radius.confident){ setFrac(r.corner_radius.frac_of_width, 'measured from the photo'); }
+    else { applyPreset(); $('#radSt').textContent = 'Radius not measurable here — using the device preset.'; }
+  } else {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    st.corners = [[w*.3,h*.2],[w*.7,h*.2],[w*.7,h*.8],[w*.3,h*.8]];
+    s.className='status warn'; s.textContent = 'No screen found — place the edges by hand';
+    if (!st.type) setType('phone'); applyPreset();
+  }
+  pick = {kind:'edge', i:0};
+  draw(); drawStrip();
+  autoPreview();   // if the compare pane is open, fill it straight away
+}
+$('#redetect').onclick = detect;
+
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if (!img.naturalWidth) return;
+  ctx.drawImage(img, 0,0, cv.width, cv.height);
+  if (!st.corners) return;
+  const P = st.corners.map(([x,y]) => [x*scale, y*scale]);
+  const active = drag || hover || pick;
+
+  /* Overlay geometry ported from Figma 33:856 — 1px edge, 9px hollow ring
+     handles, 0.8px dashed guide, and the edge BREAKING 13px around each
+     handle so the ring reads as a grab target rather than a bead on a wire.
+
+     The colour is the one deliberate deviation. The frame draws every element
+     flat #EC4C13 over one photo that suits it; measured against real material
+     the accent alone is 1.06:1 on mid grey, 1.07:1 on terracotta and 1.35:1 on
+     the wood table — invisible on exactly the photos this tool is for, which
+     is the same trap v0.6.0 found with the old yellow at 1.02:1. So the accent
+     is the CORE and the dark casing stays underneath: the casing carries light
+     backgrounds (6.19:1 on white), the accent carries dark ones (5.29:1 on
+     black), and one of the two always separates. Deliberate. */
+  // Handle sizing, 5 Sep. Corners went 4.5 -> 5.5 and are now FILLED rather than
+  // hollow; the pivot pips went 2.5 -> 3.5 and are filled too, staying visibly
+  // smaller than a corner so the two never read as the same control. The gap the
+  // edge leaves for each corner grows with it, or the disc sits on the line.
+  const HANDLE_R = 5.5, PIVOT_R = 3.5, HANDLE_GAP = 7.5;
+
+  // Guide: the active edge extended to infinity, so you can see the line it
+  // is really on. Thinner and dashed — it is a reference, not a handle.
+  if (active && active.kind === 'edge'){
+    const a=P[active.i], b=P[(active.i+1)%4], d=unit(sub(b,a)), big=4000;
+    cased(ctx, () => { ctx.beginPath();
+      ctx.moveTo(a[0]-d[0]*big, a[1]-d[1]*big); ctx.lineTo(b[0]+d[0]*big, b[1]+d[1]*big); },
+      0.8, CORE_ACTIVE, [2,6]);
+  }
+
+  for (let i=0;i<4;i++){
+    const a=P[i], b=P[(i+1)%4];
+    const on = active && active.kind==='edge' && active.i===i;
+    const d = unit(sub(b,a)), L = vlen(sub(b,a));
+    // Break the edge around both of its corner handles. Guard the degenerate
+    // case where the edge is shorter than the two gaps, or the trimmed start
+    // would overshoot the end and draw the segment backwards.
+    const gap = Math.min(HANDLE_GAP, L/2 - 0.5);
+    const s0 = add(a, mul(d, Math.max(0, gap)));
+    const s1 = add(a, mul(d, Math.max(0, L - gap)));
+    if (L > 1){
+      cased(ctx, () => { ctx.beginPath(); ctx.moveTo(s0[0],s0[1]); ctx.lineTo(s1[0],s1[1]); },
+            on ? 2 : 1, CORE_QUAD);
+    }
+    // Pivot pips on the active edge keep their meaning: grab near an end to
+    // rotate. Filled, like the corners, but deliberately smaller — size is what
+    // separates "rotate this edge" from "move this corner".
+    if (on){
+      for (const t of [0.16, 0.84]){
+        const q = add(a, mul(d, L*t));
+        casedDisc(ctx, q[0], q[1], PIVOT_R, CORE_ACTIVE);
+      }
+    }
+  }
+
+  // Corner handles: FILLED discs, 11px, 13px while dragging.
+  // These were hollow rings so the pixels under the handle stayed visible, which
+  // matters when you are aiming at a point. filled was requested, and it holds
+  // up because the ring was solving a problem the tool solves better elsewhere:
+  // the strip loupe is the precision instrument, and it shows the boundary
+  // rectified and magnified rather than through a 9px hole. A filled disc is
+  // easier to see and to hit; the loupe is where you actually judge alignment.
+  ctx.font='600 11px system-ui'; ctx.textBaseline='alphabetic';
+  P.forEach(([x,y],i) => {
+    const on = active && active.kind==='corner' && active.i===i;
+    casedDisc(ctx, x, y, on ? HANDLE_R + 1 : HANDLE_R, CORE_QUAD);
+    casedText(ctx, LBL[i], x+13, y-11, 'rgba(255,255,255,.95)');
+  });
+}
+
+function pos(e){
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX-r.left)*cv.width/r.width/scale, (e.clientY-r.top)*cv.height/r.height/scale];
+}
+function hitTest(p){
+  if (!st.corners) return null;
+  const tolC = 12/scale, tolE = 10/scale;
+  let best=null, bd=tolC;
+  st.corners.forEach((c,i) => { const d=vlen(sub(c,p)); if (d<bd){ bd=d; best={kind:'corner', i}; } });
+  if (best) return best;
+  bd = tolE;
+  for (let i=0;i<4;i++){
+    const {d,t} = distToSeg(p, st.corners[i], st.corners[(i+1)%4]);
+    if (d < bd){ bd = d; best = {kind:'edge', i, mode: t<0.25?'rotB':(t>0.75?'rotA':'translate')}; }
+  }
+  return best;
+}
+function moveEdge(C, i, mode, delta){
+  const A=C[i], B=C[(i+1)%4], P=C[(i+3)%4], Q=C[(i+2)%4];
+  const dPrev=sub(A,P), dNext=sub(Q,B);
+  const u=unit(sub(B,A)), n=[-u[1],u[0]];
+  let p0, d;
+  if (mode==='translate'){
+    const off = delta[0]*n[0]+delta[1]*n[1];
+    p0 = add(A, mul(n,off)); d = u;
+  } else {
+    const pivot = mode==='rotA' ? A : B, moving = mode==='rotA' ? B : A;
+    p0 = pivot; d = unit(sub(add(moving,delta), pivot));
+  }
+  const nA = interLines(p0,d,P,dPrev), nB = interLines(p0,d,Q,dNext);
+  if (!nA || !nB || ![...nA,...nB].every(Number.isFinite)) return null;
+  const out = C.map(c => c.slice());
+  out[i] = nA; out[(i+1)%4] = nB;
+  return out;
+}
+
+cv.onpointerdown = e => {
+  const p = pos(e), h = hitTest(p);
+  if (!h){ pick = null; draw(); drawStrip(); return; }
+  drag = {...h, grab: p, start: st.corners.map(c => c.slice())};
+  pick = {kind:h.kind, i:h.i};
+  cv.setPointerCapture(e.pointerId);
+  lastPointer = [e.clientX, e.clientY];
+  draw(); drawStrip();
+};
+cv.onpointermove = e => {
+  const p = pos(e);
+  lastPointer = [e.clientX, e.clientY];
+  if (!drag){
+    const h = hitTest(p);
+    const changed = JSON.stringify(h) !== JSON.stringify(hover);
+    hover = h;
+    cv.style.cursor = h ? (h.kind==='corner' ? 'grab' : (h.mode==='translate' ? 'move' : 'crosshair')) : 'default';
+    if (changed){ draw(); drawStrip(); }
+    return;
+  }
+  const delta = sub(p, drag.grab);
+  if (drag.kind === 'corner'){
+    const C = drag.start.map(c => c.slice());
+    C[drag.i] = [Math.max(0,Math.min(img.naturalWidth, p[0])), Math.max(0,Math.min(img.naturalHeight, p[1]))];
+    st.corners = C;
+  } else {
+    const C = moveEdge(drag.start, drag.i, drag.mode, delta);
+    if (C) st.corners = C;
+  }
+  draw(); drawStrip(); markStale();
+};
+cv.onpointerup = cv.onpointercancel = () => { drag = null; draw(); drawStrip(); autoPreview(); };
+cv.onpointerleave = () => { if (!drag){ hover = null; draw(); drawStrip(); } };
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){ closePop(); return; }
+  if (!st.corners || document.querySelector('.pop.on')) return;
+  if (e.key === 'Tab'){
+    e.preventDefault();
+    const i = pick && pick.kind==='edge' ? (pick.i+1)%4 : 0;
+    pick = {kind:'edge', i}; draw(); drawStrip(); return;
+  }
+  if (!pick) return;
+  const step = e.shiftKey ? 10 : 1;
+  const d = {ArrowLeft:[-step,0], ArrowRight:[step,0], ArrowUp:[0,-step], ArrowDown:[0,step]}[e.key];
+  if (!d) return;
+  e.preventDefault();
+  if (pick.kind === 'corner'){
+    const C = st.corners.map(c => c.slice()); C[pick.i] = add(C[pick.i], d); st.corners = C;
+  } else {
+    const C = moveEdge(st.corners, pick.i, 'translate', d); if (C) st.corners = C;
+  }
+  draw(); drawStrip(); markStale(); autoPreview();
+});
+
+/* ===== the rectified strip: the selected edge mapped onto the horizontal and
+   magnified perpendicular, so misalignment reads as a wedge across its whole
+   length. One affine setTransform + drawImage. ===== */
+$('#stripIn').onclick  = () => { stripHalf = Math.max(3, Math.round(stripHalf/1.6)); drawStrip(); };
+$('#stripOut').onclick = () => { stripHalf = Math.min(80, Math.round(stripHalf*1.6)); drawStrip(); };
+/* Edge view is a switch now, not a two-way segmented control: ON = floating,
+   OFF = docked. The segmented control implied two peers; in practice docked is
+   the resting state and floating is the thing you turn on while working a
+   corner, which is what a switch says. */
+function setLoupeMode(m){
+  loupeMode = m; remember('loupe', m);
+  setSwitch($('#edgeBtn'), m === 'float');
+  $('#dock').classList.toggle('hidden', m!=='dock');
+  if (m!=='float') $('#floatLoupe').classList.remove('on');
+  if (img.naturalWidth){
+    const wasFit = Math.abs(scale-fitScale)<1e-6;
+    computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
+  }
+  drawStrip();
+}
+/* One place that paints a switch and the section it governs, so a section's
+   body cannot get out of step with its own switch. */
+function setSwitch(btn, on){
+  if (!btn) return;
+  btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  const sect = btn.closest('.sect');
+  if (sect) setSectionOpen(sect, on);
+}
+
+/* Open/close a section's body by animating a MEASURED height. See the CSS note
+   for why this isn't grid-template-rows. `booting` skips the animation on the
+   first paint, so a section that starts closed doesn't visibly collapse itself
+   in front of the user. */
+let sectionsBooted = false;
+function setSectionOpen(sect, on){
+  sect.dataset.on = on ? '1' : '0';
+  const body = sect.querySelector('.sect-body');
+  if (!body) return;
+  const inner = body.querySelector('.sect-body-in');
+  const target = inner ? inner.scrollHeight : body.scrollHeight;
+  clearTimeout(body._relax);
+
+  if (!sectionsBooted){                    // no animation before the first paint
+    body.style.transition = 'none';
+    body.style.maxHeight = on ? 'none' : '0px';
+    void body.offsetHeight;
+    body.style.transition = '';
+    return;
+  }
+  // Always animate FROM a real number. Going from `none` or from an interrupted
+  // value is what left a section stuck: max-height:0 with data-on="1".
+  if (on){
+    body.style.maxHeight = '0px';
+    void body.offsetHeight;
+    body.style.maxHeight = target + 'px';
+    // Release the cap once open so a body whose content grows isn't clipped by
+    // a stale measurement. A timer, not transitionend — an interrupted
+    // transition never fires it, and then the section stays capped for ever.
+    body._relax = setTimeout(() => {
+      if (sect.dataset.on === '1') body.style.maxHeight = 'none';
+    }, 300);
+  } else {
+    body.style.maxHeight = target + 'px';
+    void body.offsetHeight;
+    body.style.maxHeight = '0px';
+  }
+}
+
+/* Realism (M2). ON by default from 5 Sep — a composite that ignores the light it
+   sits in is the thing this pass exists to fix, so the default should be the
+   corrected one. Off stays a first-class choice: it keeps the screenshot's own
+   colour exactly, which is what you want when the UI's colour is the thing under
+   review. Strength is a slider because the right amount is a judgement about the
+   photograph, not a constant. */
+let gradeOn  = recall('grade','1') === '1';
+let gradeAmt = parseFloat(recall('gradeAmt','0.35')) || 0.35;
+function gradeValue(){ return gradeOn ? gradeAmt : 0; }
+function paintGrade(){
+  setSwitch($('#gradeBtn'), gradeOn);          // hides the slider when off
+  $('#gradeVal').textContent = Math.round(gradeAmt * 100) + '%';
+  const sl = $('#gradeAmt');
+  sl.value = gradeAmt;
+  sl.style.setProperty('--p', (gradeAmt - 0.1) / 0.9);
+}
+function setGrade(on, amt){
+  gradeOn = on;
+  if (amt !== undefined) gradeAmt = amt;
+  remember('grade', on ? '1' : '0'); remember('gradeAmt', String(gradeAmt));
+  paintGrade();
+}
+$('#gradeBtn').onclick = () => { setGrade(!gradeOn); autoPreview(); };
+// Repaint live while dragging, re-render only on release: a full compose per
+// input event would queue renders faster than they finish.
+$('#gradeAmt').oninput  = e => { gradeAmt = parseFloat(e.target.value); paintGrade(); };
+$('#gradeAmt').onchange = e => { setGrade(true, parseFloat(e.target.value)); autoPreview(); };
+
+$('#edgeBtn').onclick = () => setLoupeMode(loupeMode === 'float' ? 'dock' : 'float');
+
+function paintStrip(c, W, H, i){
+  c.setTransform(1,0,0,1,0,0);
+  c.fillStyle = '#0c0c0b'; c.fillRect(0,0,W,H);
+  const A = st.corners[i], B = st.corners[(i+1)%4];
+  const L = vlen(sub(B,A));
+  if (L < 2) return;
+  const u = unit(sub(B,A)), n = [-u[1], u[0]];
+  const k1 = W / L, k2 = H / (2*stripHalf);
+  c.save();
+  c.setTransform(k1*u[0], k2*n[0], k1*u[1], k2*n[1],
+                 -k1*(u[0]*A[0] + u[1]*A[1]),
+                 -k2*(n[0]*A[0] + n[1]*A[1]) + k2*stripHalf);
+  c.imageSmoothingEnabled = true;
+  c.drawImage(img, 0, 0);
+  c.restore();
+  cased(c, () => { c.beginPath(); c.moveTo(0, H/2); c.lineTo(W, H/2); }, 1.25, CORE_ACTIVE);
+  cased(c, () => { c.beginPath();
+    for (const f of [0.25,0.5,0.75]){ c.moveTo(W*f, H/2-9); c.lineTo(W*f, H/2+9); } },
+    1, 'rgba(255,255,255,.7)');
+  const centre = st.corners.reduce((acc,cc)=>[acc[0]+cc[0]/4, acc[1]+cc[1]/4],[0,0]);
+  const inwardIsDown = (n[0]*(centre[0]-A[0]) + n[1]*(centre[1]-A[1])) > 0;
+  c.font = '600 11px system-ui'; c.textBaseline = 'middle';
+  casedText(c, 'screen', 9, inwardIsDown ? H/2 + 15 : H/2 - 15, 'rgba(255,255,255,.95)');
+  casedText(c, 'outside', 9, inwardIsDown ? H/2 - 15 : H/2 + 15, 'rgba(255,255,255,.62)');
+}
+function drawStrip(){
+  const a = drag || hover || pick;
+  const has = !!(st.corners && a && a.kind === 'edge' && img.naturalWidth);
+  $('#stripZ').textContent = '±' + stripHalf + 'px';
+  if (loupeMode === 'dock'){
+    $('#floatLoupe').classList.remove('on');
+    const W = strip.width, H = strip.height;
+    if (!has){
+      sctx.setTransform(1,0,0,1,0,0); sctx.fillStyle='#0c0c0b'; sctx.fillRect(0,0,W,H);
+      $('#stripSt').textContent = 'Hover or drag an edge — this straightens it, so misalignment shows as a wedge.';
+      return;
+    }
+    paintStrip(sctx, W, H, a.i);
+    $('#stripSt').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px · ${(H/(2*stripHalf)).toFixed(1)}× across the boundary — flat on the rule means aligned`;
+  } else {
+    const fl = $('#floatLoupe');
+    if (!has){ fl.classList.remove('on'); return; }
+    paintStrip(fctx, stripF.width, stripF.height, a.i);
+    $('#stripFCap').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px — flat on the rule means aligned`;
+    fl.classList.add('on');
+    const w = fl.offsetWidth || 356, h = fl.offsetHeight || 130;
+    let x = lastPointer[0] + 26, y = lastPointer[1] - h - 18;
+    if (x + w > window.innerWidth - 8) x = lastPointer[0] - w - 26;
+    if (y < 8) y = lastPointer[1] + 26;
+    fl.style.left = Math.max(8, x) + 'px';
+    fl.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, y)) + 'px';
+  }
+}
+
+/* ===== device / radius ===== */
+function setType(t){
+  st.type = t;
+  document.querySelectorAll('#types .chip').forEach(c => c.classList.toggle('on', c.dataset.t===t));
+  const sel = $('#preset'); sel.innerHTML='';
+  st.presets.filter(p=>p.type===t).forEach(p => { const o=document.createElement('option'); o.value=p.id; o.textContent=`${p.label} (${(p.frac*100).toFixed(1)}%)`; sel.appendChild(o); });
+  st.preset = sel.value;
+}
+function applyPreset(){ const p = st.presets.find(p=>p.id===$('#preset').value); if (p) setFrac(p.frac, 'preset: '+p.label); }
+function setFrac(f, why){ st.frac = f; $('#radius').value = f; syncSlider();
+  $('#radSt').textContent = `${(f*100).toFixed(1)}% of screen width — ${why}`; markStale(); }
+$('#preset').onchange = () => { applyPreset(); autoPreview(); };
+$('#radius').oninput = e => { setFrac(parseFloat(e.target.value), 'manual'); autoPreview(); };
+
+/* Corner radius on/off. ON by default, because almost every device this tool is
+   pointed at has rounded glass — square corners are the exception, not the
+   resting state.
+   Off does NOT throw the radius away: `st.frac` keeps its value and `radiusValue()`
+   reports 0 while the switch is off, so turning it back on restores exactly the
+   number you had rather than a preset guess. Same contract as Realism's
+   strength — a toggle that forgets is a toggle you avoid using. */
+let radiusOn = recall('radiusOn','1') === '1';
+function radiusValue(){ return radiusOn ? st.frac : 0; }
+function setRadiusOn(on){
+  radiusOn = on; remember('radiusOn', on ? '1' : '0');
+  setSwitch($('#radBtn'), on);
+}
+$('#radBtn').onclick = () => { setRadiusOn(!radiusOn); autoPreview(); };
+function syncSlider(){ const r=$('#radius'); r.style.setProperty('--p', (r.value - r.min)/(r.max - r.min)); }
+
+/* ===== preview / compare / save ===== */
+let outNat = 0, autoTimer = null;
+function markStale(){
+  const b = $('#save'); b.disabled = true; b.textContent = 'Preview first';
+  // Exactly one lit action at a time — the Figma Button component says the
+  // accent marks the NEXT action and that only one may be on screen. With no
+  // current render there is nothing to save, so nothing is lit: Preview stays
+  // a neutral raised button, as it is in the design.
+  b.classList.remove('primary');
+  $('#imp').classList.remove('primary');
+}
+function syncOut(){
+  const im = $('#outImg');
+  if (!im.hidden && outNat){
+    im.style.width = Math.round(img.naturalWidth * scale) + 'px';
+    const a = $('#scroller'), b = $('#outWrap');
+    b.scrollLeft = a.scrollLeft; b.scrollTop = a.scrollTop;
+  }
+}
+$('#scroller').addEventListener('scroll', () => {
+  if ($('#stage').classList.contains('compare')) syncOut();
+});
+/* Compare is a switch now, not a chip. Its truth lives in aria-checked so the
+   control is a real switch to assistive tech, and the label text follows it —
+   a switch that says OFF while being on is worse than no label. */
+function setCompareUI(on){
+  setSwitch($('#cmpBtn'), on);
+  // No text label in the component (17:61) — aria-checked carries the state.
+  // With compare on the result pane renders continuously, so a Preview button
+  // would offer something already on screen. It belongs to the off state.
+  $('#preview').hidden = on;
+}
+$('#cmpBtn').onclick = () => {
+  const on = $('#stage').classList.toggle('compare');
+  setCompareUI(on);
+  remember('compare', on ? '1' : '0');
+  if (img.naturalWidth){
+    const wasFit = Math.abs(scale-fitScale)<1e-6;
+    computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
+  }
+  if (on && $('#outImg').hidden) renderPreview(); else if (on) syncOut();
+};
+function autoPreview(){
+  // Judge while you fit: with the compare pane open the composite re-renders
+  // after each correction (compose() measures 0.06s server-side), so Preview
+  // stops being a round trip.
+  if (!$('#stage').classList.contains('compare')) return;
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(renderPreview, 350);
+}
+async function renderPreview(){
+  if (!(st.photo && st.shot && st.corners)) return;
+  const s = $('#outSt'); s.textContent = 'Rendering…';
+  try{
+    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue()});
+    const im = $('#outImg');
+    im.onload = () => { outNat = im.naturalWidth; im.hidden = false; $('#outEmpty').style.display='none'; syncOut(); };
+    im.src = `${fileURL(r.path)}&t=${Date.now()}`;
+    s.textContent = `radius ${r.radius_px}px on the screenshot`;
+    const b = $('#save'); b.disabled = false; b.textContent = 'Save';
+    b.classList.add('primary');            // Save is now the next action
+    if (!previewHinted){ previewHinted = true;
+      toast('info', 'Check the corners in Result, then <b>Save</b> — Save renders at full resolution.');
+    }
+  }catch(e){ s.textContent = e.message; }
+}
+/* With compare off there is no result pane to draw into, so the composite
+   opens in a popup over the canvas — the same surface the pickers use, so it
+   is one modal idiom rather than two. */
+async function openPreviewPop(){
+  const pop = $('#previewPop');
+  const img = $('#previewImg'), st_ = $('#previewSt');
+  openPopAt(pop, $('#preview').getBoundingClientRect());
+  st_.textContent = 'Rendering…'; img.hidden = true;
+  try{
+    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue()});
+    img.onload = () => { img.hidden = false; };
+    img.src = `${fileURL(r.path)}&t=${Date.now()}`;
+    st_.textContent = `radius ${r.radius_px}px on the screenshot`;
+    const b = $('#save'); b.disabled = false; b.textContent = 'Save'; b.classList.add('primary');
+  }catch(e){ st_.textContent = e.message; }
+}
+$('#preview').onclick = openPreviewPop;
+function prettyDir(p){
+  // ~ for home, and show the last two segments of a long path: the interesting
+  // part of a long output path is the end, not the volume.
+  const home = st.home || '';
+  let d = (home && p.startsWith(home)) ? '~' + p.slice(home.length) : p;
+  const seg = d.split('/');
+  return seg.length > 4 ? '…/' + seg.slice(-2).join('/') : d;
+}
+
+$('#save').onclick = async () => {
+  const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
+  try{
+    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue()});
+    b.textContent = 'Save';
+    // The real destination, not a hardcoded one: --out-dir means saves usually
+    // land in the project folder now, and telling the user "~/Desktop" when
+    // they aren't there is how you lose a file.
+    toast('ok', `Saved <code>${r.output.split('/').pop()}</code> to <code>${prettyDir(st.outDir || '')}</code>`);
+    const imp = $('#imp');
+    imp.disabled = false; imp.textContent = 'Send to Claude';
+    // Hand the accent on: the file exists, so sending it is what is next.
+    imp.classList.add('primary'); b.classList.remove('primary');
+  }catch(e){ toast('err', 'Could not save: ' + e.message); b.textContent='Save'; }
+  finally { b.disabled = false; }
+};
+
+/* Send to Claude. The page cannot draw in the chat panel — only the agent
+   can, with present_files — so this enqueues a request the agent's blocking
+   wait picks up. It works at all only because --out-dir puts the file inside
+   the project folder: present_files refuses paths outside a connected folder,
+   which is why this button was impossible while saves went to the Desktop. */
+$('#imp').onclick = async () => {
+  const b = $('#imp'); const t0 = Date.now();
+  b.disabled = true;
+  let finished = false;
+  const paint = () => { if (!finished) b.textContent = `Sending… ${Math.round((Date.now()-t0)/1000)}s`; };
+  paint();
+  const tick = setInterval(paint, 1000);
+  document.addEventListener('visibilitychange', paint);
+  const done = (txt, ok) => {
+    finished = true;
+    clearInterval(tick);
+    document.removeEventListener('visibilitychange', paint);
+    b.textContent = ok ? 'Sent to Claude' : 'Send to Claude';
+    b.disabled = ok;                       // nothing to re-send until the next save
+    toast(ok ? 'ok' : 'err', txt);
+  };
+  try { await api('/api/import', {}); }
+  catch (e) { return done('Could not queue the import: ' + e.message, false); }
+  await awaitJob({
+    cancelled: () => finished,
+    onDone: () => done('Sent — it should be in the chat now.', true),
+    onError: (j) => done('Claude could not show it: ' + (j.message || ''), false),
+  });
+};
+
+/* ===== boot ===== */
+(async () => {
+  const s = await api('/api/state');
+  st.presets = s.presets; $('#sess').textContent = s.session.split('/').pop();
+  st.outDir = s.out_dir; st.home = s.home;
+  // Say up front where Save will put things. With --out-dir this is usually the
+  // project folder, and a designer should not have to press Save to find out.
+  toast('info', `Fit the four edges, then Preview. Saves go to <code>${prettyDir(s.out_dir||'')}</code>.`,
+        { ms: 9000, dismissible: true });
+  const types = $('#types');
+  for (const t of ['phone','tablet','laptop','desktop']){
+    const b=document.createElement('button'); b.className='chip'; b.dataset.t=t; b.textContent=t;   /* Chip is one size in Figma (5:6): h28, 12px */
+    b.onclick=()=>{setType(t); applyPreset(); autoPreview();}; types.appendChild(b);
+  }
+  setLoupeMode(loupeMode);
+  setGrade(gradeOn, gradeAmt);
+  setRadiusOn(radiusOn);
+  sectionsBooted = true;   // animate from here on, not during the first paint
+  // Compare is the DEFAULT view: judging a fit means comparing it with the
+  // photo, so the side-by-side is the normal state and turning it off is the
+  // deliberate act. recall() only overrides it if the user chose otherwise.
+  if (recall('compare','1') === '1'){ $('#stage').classList.add('compare'); setCompareUI(true); }
+  else setCompareUI(false);
+  await loadRecent();
+  // A session restored after a reload may already have a saved composite, in
+  // which case Import is still meaningful — leaving it disabled would strand
+  // a file the designer had already produced.
+  if (s.output){ const imp = $('#imp'); imp.disabled = false; }
+  // The server keeps the session; the page used to start blank on reload,
+  // silently discarding a photo, a screenshot and any corner work.
+  if (s.photo || s.screenshot){
+    if (s.corners) st.corners = s.corners;
+    if (s.radius_frac) st.frac = s.radius_frac;
+    if (s.device) st.type = s.device;
+    for (const [role, path] of [['photo', s.photo], ['screenshot', s.screenshot]]){
+      if (!path) continue;
+      try { const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, null); }
+      catch(e){ /* file moved since: leave that slot empty */ }
+    }
+    // Populate the radius dropdown on the restore path too. detect() only
+    // calls setType when st.type is unset, so a restored session used to come
+    // back with an empty preset list and a zeroed slider.
+    if (st.type) setType(st.type);
+    if (s.radius_frac) setFrac(s.radius_frac, 'restored from this session');
+    else applyPreset();
+    if ($('#stage').classList.contains('compare') && st.corners) renderPreview();
+  }
+  if (!st.photo) openPop(1);
+  window.addEventListener('resize', () => {
+    if (!img.naturalWidth) return;
+    const wasFit = Math.abs(scale - fitScale) < 1e-6;
+    computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
+  });
+})();
+</script>
+</body>
+</html>

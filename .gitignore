@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+test/fixtures/out_*.png
+test/fixtures/zoom_*.png
+dist/
+scripts/leak-patterns.local

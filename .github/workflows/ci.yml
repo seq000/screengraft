@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Regenerate fixtures
+        run: python test/make_fixtures.py
+      - name: Detector tests
+        run: python test/test_detect.py
+      - name: Warp tests
+        run: python test/test_warp.py
+      - name: MCP server tests
+        run: python test/test_mcp.py
+      # Parses the tokens straight out of ui/index.html and fails on any contrast
+      # regression that is not explicitly accepted in the script. Added in v0.9.3
+      # because the previous audit lived beside the code with its OWN copy of the
+      # palette, and was two releases stale before anyone noticed.
+      - name: Contrast audit
+        run: python scripts/contrast_audit.py
+      - name: Realism pass tests (M2)
+        run: python test/test_grade.py
+      - name: Sidecar reproducibility
+        run: python test/test_sidecar.py
+      # Static analysis. Scoped to the rules that catch real defects — undefined
+      # names, unused imports, silently-truncating zip() — rather than style,
+      # so a red CI always means something is actually wrong.
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check scripts/ test/ --select F,B905,RUF057,RUF059
+      - name: Dead-code report (advisory)
+        run: python scripts/deadcode.py
+      # Nothing personal or project-local may ship. Scans the files the packager
+      # includes, so it measures the artefact rather than the working tree.
+      - name: Leak check
+        run: python scripts/check_leaks.py

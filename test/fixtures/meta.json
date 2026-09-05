@@ -1,0 +1,22 @@
+{
+  "photo": "photo.png",
+  "screenshot": "screenshot.png",
+  "ground_truth_quad_TL_TR_BR_BL": [
+    [
+      520,
+      150
+    ],
+    [
+      1200,
+      230
+    ],
+    [
+      1150,
+      1050
+    ],
+    [
+      480,
+      970
+    ]
+  ]
+}

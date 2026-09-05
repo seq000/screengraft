@@ -1,0 +1,26 @@
+{
+  "name": "screengraft",
+  "version": "0.13.0",
+  "description": "Puts a UI screenshot onto a photographed device screen at any angle \u2014 exact perspective via homography, not AI. Local browser UI: pick files or a Figma link, match the screen's edges with a rectified strip loupe, preview, save.",
+  "author": {
+    "name": "Dariusz Fraczyk",
+    "url": "https://fraczyk.design"
+  },
+  "keywords": [
+    "mockup",
+    "compositing",
+    "homography",
+    "device-frame",
+    "portfolio",
+    "case-study"
+  ],
+  "license": "MIT",
+  "mcpServers": {
+    "screengraft": {
+      "command": "python3",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/server.py"
+      ]
+    }
+  }
+}
