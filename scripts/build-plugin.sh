@@ -24,7 +24,7 @@ for p in .claude-plugin skills scripts mcp ui docs README.md LICENSE; do
   [ -e "$p" ] && include+=("$p")
 done
 # docs/ carries README imagery for GitHub, not anything the skill reads at
-# runtime. Packaging it took the plugin from 75KB to 2.5MB — a 2.4MB hero image
+# runtime. Packaging it once took the plugin from 75KB to 2.5MB — a 2.4MB image
 # downloaded by every installer to be looked at by nobody.
 zip -q -r "$out" "${include[@]}" -x '*.DS_Store' -x '*__pycache__*' -x '*.pyc' \
     -x 'docs/*.png' -x 'docs/*.jpg' -x 'docs/*.jpeg' -x 'docs/*.gif' \
