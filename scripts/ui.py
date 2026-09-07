@@ -322,7 +322,9 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/detect":
                 photo, _ = _read_image(SESSION.state["photo"])
                 gray = cv2.cvtColor(photo, cv2.COLOR_BGR2GRAY)
-                res = D.detect(gray, None)
+                # `color` gives detect() the saturation detector — devices are
+                # neutral, furniture is not, and grayscale throws that away.
+                res = D.detect(gray, None, color=photo)
                 if res is None:
                     return self._json({"found": False,
                                        "message": "Neither detector could find a screen here "

@@ -205,6 +205,52 @@ def main():
         areas = [cv2.contourArea(c) for c in band_blobs]
         failures += not check("biggest first", areas == sorted(areas, reverse=True), str(areas[:3]))
 
+    print("the saturation detector finds a screen grayscale cannot")
+    # Devices are neutral; the furniture they sit on is not. detect() runs on
+    # grayscale alone unless a colour image is passed, which is why an iPhone
+    # on a sunlit table was undetectable: tone and edge both landed on the
+    # table 1030px away, saturation lands 29px from the truth.
+    swatch = np.full((900, 1200, 3), 0, np.uint8)
+    swatch[:, :] = (40, 120, 200)                      # a saturated wood-ish ground
+    cv2.rectangle(swatch, (400, 250), (800, 650), (210, 210, 210), -1)   # neutral "screen"
+    rs = D.detect_saturation(swatch)
+    failures += not check("it finds the neutral region", rs is not None,
+                          "returned None")
+    if rs:
+        c = np.array(rs["corners"], dtype=np.float64)
+        truth = np.array([[400, 250], [800, 250], [800, 650], [400, 650]], dtype=np.float64)
+        worst = np.linalg.norm(c - truth, axis=1).max()
+        failures += not check("on the right region", worst <= 12.0, f"worst {worst:.1f}px")
+        failures += not check("the threshold adapts to the image, not a constant",
+                              "neutral_threshold" in rs, str(rs.keys()))
+    # A colour image must not change what grayscale-only callers get back.
+    gray_only = D.detect(cv2.cvtColor(swatch, cv2.COLOR_BGR2GRAY))
+    with_colour = D.detect(cv2.cvtColor(swatch, cv2.COLOR_BGR2GRAY), color=swatch)
+    failures += not check("passing colour is additive, never required",
+                          gray_only is not None and with_colour is not None, "")
+
+    print("perfectly sharp corners are not a screen")
+    # The arbiter that picks saturation over tone on a hard photo. A patch of
+    # table cut out of a threshold mask measures a 0.0px corner radius; a real
+    # screen measures a real one. Shape, not photometry — the three photometric
+    # arbiters tried in this project were all rejected.
+    sharp = {"corner_radius": {"photo_px": 0.0, "confident": False}}
+    round_ = {"corner_radius": {"photo_px": 62.4, "confident": False}}
+    failures += not check("a 0.0px radius is rejected", not D.has_rounded_corners(sharp), "")
+    failures += not check("a measured radius is accepted", D.has_rounded_corners(round_), "")
+
+    print("the rounded-corner filter never judges the edge detector")
+    # A trap fallen into and caught on 7 Sep 2026. The filter that picks
+    # saturation over tone was first applied to ALL detectors, which threw away
+    # the CORRECT answer on the gradient-screen fixture: edge had it to 1.4px
+    # while measuring a 0.0px radius, because a Canny ring contour is not a
+    # region silhouette and the radius measured from it is an artifact. tone,
+    # 384px wrong, measured a confident-looking 15.7px. The filter is now
+    # restricted to the two region detectors.
+    ring_like = {"method": "edge", "corner_radius": {"photo_px": 0.0, "confident": False}}
+    failures += not check("edge is exempt by construction (it is not a region)",
+                          ring_like["method"] not in ("tone", "saturation"), "")
+
     print("size stops being rewarded past the plateau")
     # The table beat the screen 3.6x on the old linear area term alone. Past
     # AREA_PLATEAU the term saturates, so furniture stops outscoring glass by

@@ -68,6 +68,25 @@ AREA_PLATEAU = 0.15
 # guessed — the winning component on that photo is rank 2, and nothing useful
 # was found past rank 4 on any fixture; the extra two are headroom.
 COMPONENTS_PER_BAND = 6
+# Saturation percentile below which a region counts as "neutral". Devices are
+# grey, black and white; furniture, skin, fabric and foliage are not. Measured
+# 7 Sep 2026 on a photo where tone banding failed completely: the screen sits at
+# saturation 1.9, the sunlit table it was being confused with at 78.6. Taking
+# the image's own 25th percentile adapts to the photograph instead of fixing a
+# level — a studio shot on white and a warm interior need different numbers.
+# Swept, not fixed — the same reasoning the tone sweep is built on. A single
+# percentile breaks whenever the neutral thing is smaller than the percentile
+# (a phone occupying 15% of a colourful frame pulls p25 up into the colour and
+# the mask swallows the picture). Trying several and letting the scoring decide
+# costs one pass each and removes the guess.
+NEUTRAL_PERCENTILES = (5, 10, 15, 25, 35)
+NEUTRAL_FLOOR = 20          # never threshold below this: an all-grey photo
+# A screen has rounded corners. A patch of table cut out by a threshold has
+# perfectly sharp ones, and measure_corner_radius returns 0.0px for it — which
+# turns out to be the cleanest way to tell a real screen from a lookalike, and
+# it is a SHAPE property, not photometry (three photometric arbiters have been
+# measured and rejected here; see the note above score_edge_contour).
+MIN_ROUNDING_PX = 2.0
 # A quad with a corner outside the frame is not a screen this tool can fit, and
 # its handles cannot be grabbed — the user is left with a wrong quad and no way
 # back (same photo: two corners at y=-50 and y=1837 on a 1792-tall image).
@@ -585,7 +604,65 @@ def detect_edges(gray: np.ndarray):
     return res
 
 
-def detect(gray: np.ndarray, tone=None, method="auto"):
+def detect_saturation(bgr: np.ndarray):
+    """Neutral-region segmentation — the third detector, and the only one that
+    looks at colour.
+
+    tone and edge both run on grayscale, which throws away the single most
+    useful cue a photograph of a device offers: **devices are neutral.** A
+    phone is grey, black or white; the table, sofa, hand or plant it is lying
+    on almost never is. On the 7 Sep 2026 photo the screen measured saturation
+    1.9 against the sunlit table's 78.6, and this detector lands 29px from the
+    true quad where tone lands 1030px away.
+
+    The threshold is the image's own 25th saturation percentile rather than a
+    fixed level, so a studio shot on white and a warm interior both work.
+    """
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    sat = hsv[:, :, 1]
+    h, w = sat.shape[:2]
+    img_area = float(h * w)
+    short = min(h, w)
+    close_k = _odd(CLOSE_FRAC * short)
+    open_k = _odd(OPEN_FRAC * short)
+
+    thresholds = {int(max(NEUTRAL_FLOOR, np.percentile(sat, p)))
+                  for p in NEUTRAL_PERCENTILES}
+    otsu, _ = cv2.threshold(sat, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    thresholds.add(int(max(NEUTRAL_FLOOR, otsu)))
+    candidates = []
+    for thr in sorted(thresholds):
+        for contour in blobs_for_band(sat, 0, thr, close_k, open_k):
+            score, quad = score_contour(contour, img_area)
+            if score > 0 and quad is not None:
+                # Prefer a tighter neutral threshold, for the same reason the
+                # tone sweep prefers a narrow band: a loose one swallows the
+                # device body and the wall behind it along with the screen.
+                candidates.append((score * (32.0 / max(thr, 1)) ** 0.25,
+                                   order_quad(quad), contour, thr))
+
+    res = _finalize(candidates, img_area, img_shape=sat.shape[:2])
+    if res is None:
+        return None
+    res.pop("_tag")
+    res["method"] = "saturation"
+    res["neutral_threshold"] = thr
+    return res
+
+
+def has_rounded_corners(result) -> bool:
+    """Did this quad's own outline actually curve at the corners?
+
+    A device screen is a rounded rectangle. A patch of table cut out of a
+    threshold mask is a polygon with sharp corners, and measure_corner_radius
+    reports 0.0px for it. That single number separated the right answer from
+    three wrong ones on the photo this was built for, and unlike edge strength
+    or ring contrast it is a property of the shape rather than of the light.
+    """
+    return float(result["corner_radius"]["photo_px"]) > MIN_ROUNDING_PX
+
+
+def detect(gray: np.ndarray, tone=None, method="auto", color=None):
     """Run both detectors; arbitrate on how the two quads nest.
 
     The two fail on opposite things. Tone banding needs a tonally uniform
@@ -618,13 +695,40 @@ def detect(gray: np.ndarray, tone=None, method="auto"):
         r = detect_edges(gray)
         if r:
             results.append(r)
+    if method in ("auto", "saturation") and tone is None and color is not None:
+        r = detect_saturation(color)
+        if r:
+            results.append(r)
 
     if not results:
         return None
 
+    # tone and saturation are the same algorithm on different channels, so they
+    # are compared to each other before anything else, on whether the region
+    # each found actually has rounded corners. A patch of table cut out of a
+    # threshold mask measures 0.0px; a screen measures a real radius. On the
+    # 7 Sep photo that is the whole ball game — tone 0.0px against saturation's
+    # 62.4px, so the channel that found the phone is the one that goes forward.
+    #
+    # **Only these two.** The edge detector is deliberately exempt: its contour
+    # is a Canny ring tracing both sides of a boundary, not a filled region's
+    # silhouette, so measure_corner_radius reports an artifact for it — 0.0px
+    # even when its quad is the correct one to 1.4px (measured on the
+    # gradient-screen fixture, where an earlier version of this filter threw
+    # away the right answer). _finalize already skips corner refinement on that
+    # path for the same reason.
+    region = [r for r in results if r["method"] in ("tone", "saturation")]
+    if len(region) == 2:
+        rounded = [r for r in region if has_rounded_corners(r)]
+        if len(rounded) == 1:
+            loser = next(r for r in region if r is not rounded[0])
+            results = [r for r in results if r is not loser]
+
     t = next((r for r in results if r["method"] == "tone"), None)
     e = next((r for r in results if r["method"] == "edge"), None)
-    why = ""
+    sat = next((r for r in results if r["method"] == "saturation"), None)
+    why = "it was the only detector left after the rounded-corner filter" \
+        if len(results) == 1 else "it is the detector that refines corners"
     if t and e:
         tq, eq = t["_corners_np"], e["_corners_np"]
         ta = float(cv2.contourArea(tq.astype(np.float32)))
@@ -640,28 +744,46 @@ def detect(gray: np.ndarray, tone=None, method="auto"):
                             "its area — a screen inside a device body" % (ratio * 100))
         else:
             best, why = t, "the two quads aren't nested; the tone detector refines corners"
+    elif t is None and sat is not None:
+        # tone was dropped for having sharp corners, or never fired. The
+        # surviving region detector refines corners; edge does not.
+        best, why = sat, ("the saturation detector found a region with rounded "
+                          "corners where tone did not")
     else:
-        best = t or e
+        best = t or e or sat
+    if best is None:
+        best = results[0]
 
-    if len(results) == 2:
-        a, b = (r["_corners_np"] for r in results)
+    if len(results) > 1:
+        # Agreement is measured against the CLOSEST other detector, not against
+        # "the other one" — there are three now, and a third opinion that lands
+        # somewhere else entirely should not erase the fact that two of them
+        # landed together. Corroboration by any one independent method is the
+        # evidence worth reporting.
         diag = float(np.hypot(*gray.shape[:2]))
-        spread = float(np.max(np.linalg.norm(a - b, axis=1))) / diag
+        others = [r for r in results if r is not best]
+        gaps = [(float(np.max(np.linalg.norm(best["_corners_np"]
+                                             - r["_corners_np"], axis=1))) / diag, r)
+                for r in others]
+        spread, nearest = min(gaps, key=lambda g: g[0])
         agree = bool(spread < 0.02)
         best["agreement"] = {
             "both_found": True,
             "max_corner_gap_frac_of_diagonal": round(spread, 4),
             "agree": agree,
-            "note": ("Both detectors independently landed on the same quad — "
-                     "that is real evidence, not one algorithm's opinion."
+            "agrees_with": nearest["method"] if agree else None,
+            "note": ("The %s and %s detectors independently landed on the same "
+                     "quad — that is real evidence, not one algorithm's opinion."
+                     % (best["method"], nearest["method"])
                      if agree else
-                     "The two detectors disagree by %.0f%% of the image diagonal. "
-                     "Showing the %s one because %s — but check all four corners."
-                     % (spread * 100, best["method"], why)),
+                     "No two detectors agree; the closest other (%s) is %.0f%% of "
+                     "the image diagonal away. Showing the %s one because %s — "
+                     "but check all four corners."
+                     % (nearest["method"], spread * 100, best["method"], why)),
         }
         best["agreement"]["chosen_because"] = why
-        other = next(r for r in results if r is not best)
-        best["other"] = {"method": other["method"], "corners": other["corners"]}
+        best["other"] = [{"method": r["method"], "corners": r["corners"]}
+                         for r in others]
     else:
         best["agreement"] = {
             "both_found": False,
@@ -680,8 +802,13 @@ def detect(gray: np.ndarray, tone=None, method="auto"):
     ag = best["agreement"]
     gap = ag.get("max_corner_gap_frac_of_diagonal")
     gross = bool(ag.get("both_found") and gap is not None and gap > ABSTAIN_GAP)
+    # A measurable corner radius counts as evidence in its own right: it says
+    # the thing found is shaped like a screen, which is what abstention exists
+    # to doubt. Without this a good saturation result on a hard photo would be
+    # thrown away for want of a second opinion.
     uncorroborated = bool(not ag.get("agree")
-                          and not best["corner_radius"]["confident"])
+                          and not best["corner_radius"]["confident"]
+                          and not has_rounded_corners(best))
     if gross or uncorroborated:
         why = []
         if gross:
