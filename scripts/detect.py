@@ -62,6 +62,12 @@ MIN_SIDE_RATIO = 0.08  # reject slivers: shortest side vs longest, after perspec
 # candidates separate on fill and band width instead — which is what actually
 # distinguishes glass from furniture.
 AREA_PLATEAU = 0.15
+# How many connected components each tone band offers up. See blobs_for_band:
+# taking only the largest is what made a real photo undetectable, because the
+# phone was the second-largest dark region in its band. Six is measured, not
+# guessed — the winning component on that photo is rank 2, and nothing useful
+# was found past rank 4 on any fixture; the extra two are headroom.
+COMPONENTS_PER_BAND = 6
 # A quad with a corner outside the frame is not a screen this tool can fit, and
 # its handles cannot be grabbed — the user is left with a wrong quad and no way
 # back (same photo: two corners at y=-50 and y=1837 on a 1792-tall image).
@@ -83,8 +89,24 @@ def _odd(n: int) -> int:
     return n if n % 2 else n + 1
 
 
-def blob_for_band(gray: np.ndarray, lo: int, hi: int, close_k: int, open_k: int):
-    """Mask -> morphology -> largest connected component. Returns its contour."""
+def blobs_for_band(gray: np.ndarray, lo: int, hi: int, close_k: int, open_k: int,
+                   keep: int = COMPONENTS_PER_BAND):
+    """Mask -> morphology -> the `keep` largest connected components.
+
+    Returns a list of contours, biggest first.
+
+    This used to return only the single largest component, and that one line
+    was why a real photo could not be detected at all. On an iPhone lying on a
+    sunlit table (7 Sep 2026) the phone was the SECOND-largest dark region in
+    its band — the table's shadow was bigger — so the screen was discarded
+    before scoring ever saw it. No amount of re-scoring can rank a candidate
+    that was never generated: measured, the best quad the old sweep could
+    produce sat 693px from the true screen; keeping the runners-up brings that
+    to 136px, which is a startable position.
+
+    "Largest" is a guess about the answer dressed up as an optimisation. The
+    scoring function is what decides; this function's job is only to offer.
+    """
     mask = cv2.inRange(gray, lo, hi)
     mask = cv2.morphologyEx(
         mask, cv2.MORPH_CLOSE,
@@ -99,8 +121,8 @@ def blob_for_band(gray: np.ndarray, lo: int, hi: int, close_k: int, open_k: int)
     # leaves fitLine with nothing to fit.
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     if not contours:
-        return None
-    return max(contours, key=cv2.contourArea)
+        return []
+    return sorted(contours, key=cv2.contourArea, reverse=True)[:keep]
 
 
 def size_term(area: float, img_area: float) -> float:
@@ -494,11 +516,10 @@ def detect_tone(gray: np.ndarray, tone=None):
 
     candidates = []
     for lo, hi in bands:
-        contour = blob_for_band(gray, lo, hi, close_k, open_k)
-        if contour is None:
-            continue
-        score, quad = score_contour(contour, img_area)
-        if score > 0 and quad is not None:
+        for contour in blobs_for_band(gray, lo, hi, close_k, open_k):
+            score, quad = score_contour(contour, img_area)
+            if score <= 0 or quad is None:
+                continue
             # Prefer a narrow band. A screen is tonally uniform; a band wide
             # enough to also swallow the phone's shadowed body scores well on
             # area but produces edges that follow the body, not the glass.

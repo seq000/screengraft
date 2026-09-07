@@ -189,6 +189,22 @@ def main():
     ok3, _ = D.validate_quad(oob, None, area)
     failures += not check("bounds are only claimed when a shape is supplied", ok3, "")
 
+    print("every tone band offers its runners-up, not just its biggest blob")
+    # The 7 Sep 2026 failure's real cause. blob_for_band used to return only the
+    # LARGEST component per band, so on a photo where the phone was the second-
+    # largest dark region (the table's shadow was bigger) the screen was never a
+    # candidate — no scoring change could have ranked what was never generated.
+    # Measured: best achievable quad went from 693px off the true screen to
+    # 136px purely by keeping the runners-up.
+    band_blobs = D.blobs_for_band(gray, 0, 90, 15, 41)
+    failures += not check("blobs_for_band returns a list", isinstance(band_blobs, list),
+                          type(band_blobs).__name__)
+    failures += not check("it is capped at COMPONENTS_PER_BAND",
+                          len(band_blobs) <= D.COMPONENTS_PER_BAND, str(len(band_blobs)))
+    if len(band_blobs) > 1:
+        areas = [cv2.contourArea(c) for c in band_blobs]
+        failures += not check("biggest first", areas == sorted(areas, reverse=True), str(areas[:3]))
+
     print("size stops being rewarded past the plateau")
     # The table beat the screen 3.6x on the old linear area term alone. Past
     # AREA_PLATEAU the term saturates, so furniture stops outscoring glass by
