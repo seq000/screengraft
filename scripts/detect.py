@@ -87,6 +87,19 @@ NEUTRAL_FLOOR = 20          # never threshold below this: an all-grey photo
 # it is a SHAPE property, not photometry (three photometric arbiters have been
 # measured and rejected here; see the note above score_edge_contour).
 MIN_ROUNDING_PX = 2.0
+# measure_corner_radius makes FOUR independent estimates of one number. If they
+# disagree by more than this, the outline is not a rounded rectangle with a
+# consistent radius and the median is meaningless — so "it has rounded corners"
+# is not evidence and must not be treated as any. Measured 7 Sep 2026 across
+# nine real mockup photos: the seven correct detections spread 31-173%, the two
+# confidently-wrong ones 247% and 464%.
+#
+# **This is the weakest number in the file.** 173 against 247 is a 1.4x margin
+# on nine samples, where every other threshold here was set with a 4x margin or
+# better. If a correct detection is ever rejected as "shape is not consistent",
+# this is the line to raise, and it should be re-measured on a bigger set before
+# it is trusted further.
+MAX_RADIUS_SPREAD = 2.0
 # A quad with a corner outside the frame is not a screen this tool can fit, and
 # its handles cannot be grabbed — the user is left with a wrong quad and no way
 # back (same photo: two corners at y=-50 and y=1837 on a 1792-tall image).
@@ -659,7 +672,13 @@ def has_rounded_corners(result) -> bool:
     three wrong ones on the photo this was built for, and unlike edge strength
     or ring contrast it is a property of the shape rather than of the light.
     """
-    return float(result["corner_radius"]["photo_px"]) > MIN_ROUNDING_PX
+    cr = result["corner_radius"]
+    if float(cr["photo_px"]) <= MIN_ROUNDING_PX:
+        return False
+    per = [float(v) for v in cr["per_corner_px"]]
+    r = float(cr["photo_px"])
+    spread = (max(per) - min(per)) / max(r, 1e-6)
+    return spread <= MAX_RADIUS_SPREAD
 
 
 def detect(gray: np.ndarray, tone=None, method="auto", color=None):
@@ -800,8 +819,25 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None):
     # anyway, exit 0. The evidence was already being computed; it just wasn't
     # gating. Two conditions, either of which means "we do not know":
     ag = best["agreement"]
-    gap = ag.get("max_corner_gap_frac_of_diagonal")
-    gross = bool(ag.get("both_found") and gap is not None and gap > ABSTAIN_GAP)
+    # Disagreement only counts against a CREDIBLE peer. Measured 7 Sep 2026 on
+    # eight real mockup photos: where saturation correctly found a phone that
+    # tone and edge had both missed, the winner was of course miles from the two
+    # that failed — and this gate then threw the right answer away as
+    # "disagreement". A detector that found a sharp-cornered patch of floor does
+    # not get a vote on whether the rounded thing is a screen. So the gap is
+    # re-measured against peers that also found something screen-shaped; when
+    # there are none, being alone is not evidence of being wrong.
+    peers = [r for r in results if r is not best and has_rounded_corners(r)]
+    if peers:
+        diag = float(np.hypot(*gray.shape[:2]))
+        peer_gap = min(float(np.max(np.linalg.norm(best["_corners_np"]
+                                                   - r["_corners_np"], axis=1))) / diag
+                       for r in peers)
+    else:
+        peer_gap = None
+    gross = bool(peer_gap is not None and peer_gap > ABSTAIN_GAP)
+    if peer_gap is not None:
+        ag["credible_peer_gap"] = round(peer_gap, 4)
     # A measurable corner radius counts as evidence in its own right: it says
     # the thing found is shaped like a screen, which is what abstention exists
     # to doubt. Without this a good saturation result on a hard photo would be
@@ -812,8 +848,8 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None):
     if gross or uncorroborated:
         why = []
         if gross:
-            why.append("the two detectors are %.0f%% of the image diagonal apart"
-                       % (gap * 100))
+            why.append("two detectors that each found something screen-shaped are "
+                       "%.0f%% of the image diagonal apart" % (peer_gap * 100))
         if uncorroborated:
             why.append("nothing corroborates the quad (the detectors don't agree "
                        "and the corner radius isn't measurable)")

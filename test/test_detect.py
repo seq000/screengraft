@@ -234,10 +234,22 @@ def main():
     # table cut out of a threshold mask measures a 0.0px corner radius; a real
     # screen measures a real one. Shape, not photometry — the three photometric
     # arbiters tried in this project were all rejected.
-    sharp = {"corner_radius": {"photo_px": 0.0, "confident": False}}
-    round_ = {"corner_radius": {"photo_px": 62.4, "confident": False}}
+    sharp = {"corner_radius": {"photo_px": 0.0, "confident": False,
+                               "per_corner_px": [0.0, 0.0, 0.0, 0.0]}}
+    round_ = {"corner_radius": {"photo_px": 62.4, "confident": False,
+                                "per_corner_px": [55.0, 60.0, 65.0, 70.0]}}
     failures += not check("a 0.0px radius is rejected", not D.has_rounded_corners(sharp), "")
     failures += not check("a measured radius is accepted", D.has_rounded_corners(round_), "")
+
+    # Four estimates of one number that disagree by more than 2x describe
+    # something that is not a rounded rectangle, so the median means nothing.
+    # Measured on nine real photos: correct detections spread 31-173%, the two
+    # confidently-wrong ones 247% and 464% — which is how an iPad on a tiled
+    # floor stopped being reported as a confident screen.
+    inconsistent = {"corner_radius": {"photo_px": 243.2, "confident": False,
+                                      "per_corner_px": [40.0, 243.0, 300.0, 640.0]}}
+    failures += not check("a radius its own four corners disagree about is not evidence",
+                          not D.has_rounded_corners(inconsistent), "")
 
     print("the rounded-corner filter never judges the edge detector")
     # A trap fallen into and caught on 7 Sep 2026. The filter that picks
