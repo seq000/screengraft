@@ -29,5 +29,6 @@ done
 zip -q -r "$out" "${include[@]}" -x '*.DS_Store' -x '*__pycache__*' -x '*.pyc' \
     -x 'docs/*.png' -x 'docs/*.jpg' -x 'docs/*.jpeg' -x 'docs/*.gif' \
     -x 'scripts/build-plugin.sh' -x 'scripts/deadcode.py' -x 'scripts/check_leaks.py' -x 'scripts/leak-patterns.local' \
-    -x 'scripts/check_marketplace.py' -x '.claude-plugin/marketplace.json'
+    -x 'scripts/check_marketplace.py' -x '.claude-plugin/marketplace.json' \
+    -x 'scripts/check_package.py'
 printf '%s  %s KB\n' "$out" "$(( $(stat -f%z "$out") / 1024 ))"

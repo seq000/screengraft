@@ -54,6 +54,24 @@ MIN_AREA_FRAC = 0.01
 MAX_AREA_FRAC = 0.60
 MIN_FILL = 0.60      # the source blob must fill this much of the final quad
 MIN_SIDE_RATIO = 0.08  # reject slivers: shortest side vs longest, after perspective
+# Size stops being a virtue past this fraction of the frame. score_contour used
+# to reward area linearly, so on a real photo (7 Sep 2026) the sunlit TABLE at
+# 34% of the frame beat the phone screen at 9% by 3.6x on that term alone, and
+# won outright. A screen is never the biggest thing in a photograph of a room;
+# it is only ever big enough. Past this plateau extra area buys nothing, so
+# candidates separate on fill and band width instead — which is what actually
+# distinguishes glass from furniture.
+AREA_PLATEAU = 0.15
+# A quad with a corner outside the frame is not a screen this tool can fit, and
+# its handles cannot be grabbed — the user is left with a wrong quad and no way
+# back (same photo: two corners at y=-50 and y=1837 on a 1792-tall image).
+# Rejected at validate_quad, the one choke point every result passes through.
+OOB_MARGIN = 2.0
+# Gross disagreement between the two detectors, as a fraction of the image
+# diagonal. Measured 7 Sep 2026: the reference photo, where detection genuinely
+# works, sits at 0.033; the photo where both detectors missed the screen
+# entirely sits at 0.555 — seventeen times worse. 0.15 is well clear of both.
+ABSTAIN_GAP = 0.15
 # A screen fills MOST of the body it sits in; content drawn on a screen is a
 # small part of it. That one ratio separates "step inward to the screen" from
 # "don't step into a panel", and it arbitrates between the two detectors too.
@@ -85,6 +103,17 @@ def blob_for_band(gray: np.ndarray, lo: int, hi: int, close_k: int, open_k: int)
     return max(contours, key=cv2.contourArea)
 
 
+def size_term(area: float, img_area: float) -> float:
+    """Area reward that saturates at AREA_PLATEAU.
+
+    Below the plateau, bigger is better — it separates a real region from
+    speckle. At or above it, the term is 1.0 and stops discriminating, because
+    beyond a plausible screen size "bigger" stops being evidence of screen-ness
+    and starts being evidence of furniture.
+    """
+    return min(area / img_area, AREA_PLATEAU) / AREA_PLATEAU
+
+
 def score_contour(contour, img_area: float):
     """How much does this blob look like a flat screen? Higher is better."""
     area = cv2.contourArea(contour)
@@ -99,7 +128,7 @@ def score_contour(contour, img_area: float):
     # Fill ratio: a real screen fills its own quad almost completely. A shadow
     # or a wall patch is ragged and fills far less.
     fill = min(area / quad_area, 1.0)
-    return (fill ** 3) * (area / img_area), quad
+    return (fill ** 3) * size_term(area, img_area), quad
 
 
 # Two "edge support" arbiters — score each candidate quad by how much of its
@@ -140,7 +169,7 @@ def score_edge_contour(contour, img_area: float):
     if quad_area < MIN_AREA_FRAC * img_area or quad_area > MAX_AREA_FRAC * img_area:
         return 0.0, None
     fill = min(float(cv2.contourArea(contour)) / max(quad_area, 1e-6), 1.0)
-    return fill * (quad_area / img_area), quad
+    return fill * size_term(quad_area, img_area), quad
 
 
 def approx_quad(contour):
@@ -365,7 +394,7 @@ def measure_corner_radius(contour, corners: np.ndarray):
 # segmented contour, so it isn't picking between competing nearby edges.
 
 
-def validate_quad(corners: np.ndarray, contour, img_area: float):
+def validate_quad(corners: np.ndarray, contour, img_area: float, img_shape=None):
     """Is this *final* quad plausibly a screen? Returns (ok, reason).
 
     The area gate in score_contour() runs against the CONTOUR, before
@@ -375,6 +404,15 @@ def validate_quad(corners: np.ndarray, contour, img_area: float):
     confident detection (3 Sep 2026, an earlier finding). Everything returned to a caller
     goes through here.
     """
+    if img_shape is not None:
+        h, w = float(img_shape[0]), float(img_shape[1])
+        for (x, y), label in zip(corners, ["TL", "TR", "BR", "BL"], strict=True):
+            if not (-OOB_MARGIN <= x <= w + OOB_MARGIN
+                    and -OOB_MARGIN <= y <= h + OOB_MARGIN):
+                return False, ("%s lands outside the photo at (%.0f, %.0f) on a "
+                               "%.0fx%.0f image — a screen this tool can fit is "
+                               "inside the frame, and an off-canvas handle can't "
+                               "be dragged back" % (label, x, y, w, h))
     area = float(cv2.contourArea(corners.astype(np.float32)))
     frac = area / img_area
     if frac < MIN_AREA_FRAC:
@@ -398,7 +436,7 @@ def validate_quad(corners: np.ndarray, contour, img_area: float):
     return True, ""
 
 
-def _finalize(candidates, img_area: float, refine: bool = True):
+def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None):
     """Best candidate that survives refinement AND validation.
 
     Walks candidates best-score-first rather than trusting the top one: a
@@ -422,7 +460,7 @@ def _finalize(candidates, img_area: float, refine: bool = True):
         else:
             refined, did_refine = quad, False
         corners = order_quad(refined)
-        ok, why = validate_quad(corners, contour, img_area)
+        ok, why = validate_quad(corners, contour, img_area, img_shape)
         if ok:
             return {
                 "corners": [[round(float(x), 1), round(float(y), 1)] for x, y in corners],
@@ -469,7 +507,7 @@ def detect_tone(gray: np.ndarray, tone=None):
             score *= (16.0 / (hi - lo + 1)) ** 0.25
             candidates.append((score, order_quad(quad), contour, (lo, hi)))
 
-    res = _finalize(candidates, img_area)
+    res = _finalize(candidates, img_area, img_shape=gray.shape[:2])
     if res is None:
         return None
     band = res.pop("_tag")
@@ -517,7 +555,7 @@ def detect_edges(gray: np.ndarray):
             if score > 0 and quad is not None:
                 candidates.append((score, order_quad(quad), c, (lo, hi)))
 
-    res = _finalize(candidates, img_area, refine=False)
+    res = _finalize(candidates, img_area, refine=False, img_shape=gray.shape[:2])
     if res is None:
         return None
     thr = res.pop("_tag")
@@ -610,6 +648,35 @@ def detect(gray: np.ndarray, tone=None, method="auto"):
             "note": ("Only the %s detector found anything — a first guess to "
                      "correct, not a measurement." % best["method"]),
         }
+
+    # Abstention. detect.py has always PROMISED to fail honestly rather than
+    # emit a confident wrong quad, but nothing enforced it: on 7 Sep 2026 a real
+    # photo produced a quad on the table, with `agree` false, the two detectors
+    # 55% of the diagonal apart, the radius spread at 104%, and two corners off
+    # the image — every indicator of failure present, and a result returned
+    # anyway, exit 0. The evidence was already being computed; it just wasn't
+    # gating. Two conditions, either of which means "we do not know":
+    ag = best["agreement"]
+    gap = ag.get("max_corner_gap_frac_of_diagonal")
+    gross = bool(ag.get("both_found") and gap is not None and gap > ABSTAIN_GAP)
+    uncorroborated = bool(not ag.get("agree")
+                          and not best["corner_radius"]["confident"])
+    if gross or uncorroborated:
+        why = []
+        if gross:
+            why.append("the two detectors are %.0f%% of the image diagonal apart"
+                       % (gap * 100))
+        if uncorroborated:
+            why.append("nothing corroborates the quad (the detectors don't agree "
+                       "and the corner radius isn't measurable)")
+        best["abstained"] = True
+        best["abstain_reason"] = (
+            "Detection abstained: " + " and ".join(why) + ". The quad below is "
+            "kept for inspection but is not offered as a starting position — "
+            "place the four edges by hand."
+        )
+    else:
+        best["abstained"] = False
     return best
 
 
@@ -655,6 +722,8 @@ def main() -> None:
     if args.out_zooms:
         written["zooms"] = write_zooms(photo, corners, args.out_zooms)
 
+    if result.get("abstained"):
+        print(result["abstain_reason"], file=sys.stderr)
     print(json.dumps({
         **result,
         "photo_size": [photo.shape[1], photo.shape[0]],
@@ -671,6 +740,12 @@ def main() -> None:
                 "corners. warp.py takes corners explicitly and never calls "
                 "this script, so an unconfirmed guess cannot reach a composite.",
     }, indent=1))
+
+    # The docstring's promise, finally enforced: an uncorroborated guess exits
+    # non-zero. The JSON is still printed above so a caller can inspect what was
+    # rejected and why.
+    if result.get("abstained"):
+        sys.exit(2)
 
 
 if __name__ == "__main__":

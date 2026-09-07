@@ -328,6 +328,16 @@ class Handler(BaseHTTPRequestHandler):
                                        "message": "Neither detector could find a screen here "
                                                   "(nothing separable by tone, no screen-shaped "
                                                   "boundary). Place the four corners by hand."})
+                # An abstention is a miss, and must reach the page as one. On
+                # 7 Sep 2026 a quad on a table was shown as a checkable guess
+                # with two corners off the canvas, which cannot be dragged back
+                # — worse than no guess at all. detect() keeps the
+                # quad for inspection; the page gets the default rectangle.
+                if res.get("abstained"):
+                    return self._json({"found": False,
+                                       "message": res["abstain_reason"],
+                                       "abstained": True,
+                                       "inspect": res["corners"]})
                 res.pop("_corners_np", None)
                 res["found"] = True
                 # How much the page should trust this. Both detectors agreeing is

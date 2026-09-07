@@ -165,6 +165,44 @@ def main():
         failures += not check("four corner zooms written",
                               os.path.isdir(zd) and len(os.listdir(zd)) == 4)
 
+    print("a quad with a corner off the image is rejected")
+    # The 7 Sep 2026 failure, exactly: the tone detector returned the sunlit
+    # TABLE, with TR at y=-50 and BR at y=1837 on a 1792-tall image. Off-canvas
+    # handles cannot be dragged back, so the user was stuck with a wrong quad
+    # and no way to fix it. Bounds are checked in validate_quad, which every
+    # result passes through.
+    shape = (1792, 2400)
+    area = float(shape[0] * shape[1])
+    oob = np.array([[1627.1, 143.5], [2399.0, -50.1],
+                    [2399.0, 1836.7], [1463.7, 1709.4]], dtype=np.float64)
+    ok, why = D.validate_quad(oob, None, area, shape)
+    failures += not check("the actual off-canvas quad from the bug report is rejected",
+                          not ok, why)
+    failures += not check("...and names the offending corner", "TR" in why, why)
+    inside = np.array([[986.6, 431.0], [1419.8, 430.8],
+                       [1424.1, 1355.6], [985.4, 1357.3]], dtype=np.float64)
+    ok2, why2 = D.validate_quad(inside, None, area, shape)
+    failures += not check("the true screen quad from the same photo still passes",
+                          ok2, why2)
+    # Without a shape the check cannot run — that must not silently pass a
+    # caller who forgot it into thinking bounds were verified.
+    ok3, _ = D.validate_quad(oob, None, area)
+    failures += not check("bounds are only claimed when a shape is supplied", ok3, "")
+
+    print("size stops being rewarded past the plateau")
+    # The table beat the screen 3.6x on the old linear area term alone. Past
+    # AREA_PLATEAU the term saturates, so furniture stops outscoring glass by
+    # being furniture-sized.
+    big = D.size_term(0.34 * area, area)
+    huge = D.size_term(0.55 * area, area)
+    small = D.size_term(0.05 * area, area)
+    failures += not check("the term saturates at 1.0", big == 1.0 and huge == 1.0,
+                          f"{big} / {huge}")
+    failures += not check("a 34% region no longer outscores a 15% one on size",
+                          big == D.size_term(D.AREA_PLATEAU * area, area), "")
+    failures += not check("below the plateau, bigger is still better",
+                          small < big, f"{small:.3f} vs {big:.3f}")
+
     real = os.environ.get("SCREENGRAFT_REAL_PHOTO")
     real_corners = os.environ.get("SCREENGRAFT_REAL_CORNERS")
     if real and real_corners and os.path.exists(real):
@@ -179,6 +217,26 @@ def main():
                               f"worst {worst:.1f}px")
     else:
         print("real photo: skipped (set SCREENGRAFT_REAL_PHOTO + SCREENGRAFT_REAL_CORNERS)")
+
+    real_bad = os.environ.get("SCREENGRAFT_ABSTAIN_PHOTO")
+    if real_bad and os.path.exists(real_bad):
+        print("a photo where both detectors miss is abstained on, not guessed at")
+        g = cv2.cvtColor(cv2.imread(real_bad, cv2.IMREAD_COLOR), cv2.COLOR_BGR2GRAY)
+        r = D.detect(g)
+        failures += not check("detect() abstains", bool(r and r.get("abstained")),
+                              (r or {}).get("abstain_reason", "returned a quad"))
+    else:
+        print("abstention photo: skipped (set SCREENGRAFT_ABSTAIN_PHOTO)")
+
+    print("the fixture, where detection genuinely works, does NOT abstain")
+    # The gate has to be sharp enough to catch a real miss without switching
+    # off a real hit. Measured 7 Sep 2026: this fixture disagrees by 3.3% of
+    # the diagonal with a confident radius; the miss was 55% with no radius.
+    rf = D.detect(cv2.cvtColor(cv2.imread(photo_path, cv2.IMREAD_COLOR),
+                               cv2.COLOR_BGR2GRAY))
+    failures += not check("fixture detection survives the abstention gate",
+                          bool(rf) and not rf.get("abstained"),
+                          (rf or {}).get("abstain_reason", ""))
 
     print()
     if failures:
