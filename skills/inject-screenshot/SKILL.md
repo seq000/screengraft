@@ -28,7 +28,15 @@ python3 scripts/preflight.py
 Read the JSON. If `ready` is true, note `python` — **use that interpreter for every command below** (it's the venv at `~/.screengraft/venv`, not system Python). If `ready` is false:
 
 - Tell the user plainly what's missing and that **OpenCV is the engine: without it nothing runs — not worse results, no results.**
-- Ask with `AskUserQuestion` whether to run the install: `python3 scripts/preflight.py --install` (creates `~/.screengraft/venv`, pip-installs `opencv-python-headless` + `numpy`, ~60 MB, touches nothing else). Run it only after a yes. This is the **only** interview question this skill asks in chat — everything else happens in the UI.
+- Ask with `AskUserQuestion` whether to run the install: `python3 scripts/preflight.py --install` (creates `~/.screengraft/venv`, pip-installs `opencv-python-headless` + `numpy`, ~60 MB, touches nothing else). Run it only after a yes.
+
+**Then check `optional` for ffmpeg, and offer it before it is needed.** The JSON lists it with `status`, `install_command` and `install_size`. If it says `missing`:
+
+- It is **optional and stills are unaffected** — never describe it as broken. It encodes video renders and nothing else.
+- Anyone who installed screengraft before video existed has a perfectly good venv without it, `ready` is `true`, and nothing else will tell them until a render fails at the very end of a job. That is why this is offered up front rather than waited for.
+- Offer it with `AskUserQuestion`, in the same breath as the OpenCV question when both are missing: *"Add video support? ~25 MB, installed into screengraft's own environment — nothing system-wide. Stills work either way."* On a yes, run `python3 scripts/preflight.py --install-ffmpeg`, which adds the one wheel rather than reinstalling everything. On a no, carry on and say video renders will be unavailable until it is added.
+
+These are the **only** interview questions this skill asks in chat — both are install consent. Everything else happens in the UI.
 
 ### 1. Launch the UI — with the project folder as the output directory
 

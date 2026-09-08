@@ -1816,6 +1816,14 @@ function syncVideoUI(){
   const v = st.video;
   $('#vidbar').hidden = !v;
   const b = $('#save');
+  if (v && v.ffmpeg === false){
+    // Say it now, not after the fit. The fitting still works — it is only the
+    // encode that cannot run — so the page stays usable and the message names
+    // the one thing to do.
+    toast('err', 'Video needs <b>ffmpeg</b>, which is not installed yet. '
+               + 'Ask Claude to install it (about 25 MB, into screengraft\'s own '
+               + 'environment — nothing system-wide), then reload this page.');
+  }
   if (v){
     const sl = $('#vframe');
     sl.max = Math.max(0, (v.frames || 1) - 1);

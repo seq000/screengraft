@@ -94,6 +94,9 @@ def report():
         "optional": [
             {"name": "ffmpeg (video)", "package": "imageio-ffmpeg",
              "status": "installed" if _have_ffmpeg() else "missing",
+             "needed_for": "rendering a video; stills do not use it",
+             "install_command": f"{sys.executable} {os.path.abspath(__file__)} --install-ffmpeg",
+             "install_size": "~25 MB, a wheel with a static binary; nothing system-wide",
              "why": "Encodes video renders. Ships as a wheel with a static binary, "
                     "so it lands in the same venv and nothing is installed "
                     "system-wide. Stills do not need it."},
@@ -129,12 +132,31 @@ def install():
     subprocess.check_call([VENV_PY, "-m", "pip", "install", "-q", "-r", REQ])
 
 
+def install_ffmpeg():
+    """Add just the video encoder to an existing venv.
+
+    A separate entry point because of who needs it: someone who installed
+    screengraft before video existed has a perfectly good venv with OpenCV in
+    it, `ready` is true, and nothing tells them anything is missing until a
+    render fails at the end of the job. This adds the one wheel, so the ask is
+    "~25 MB for video" rather than "reinstall everything".
+    """
+    if not os.path.exists(VENV_PY):
+        install()
+        return
+    subprocess.check_call([VENV_PY, "-m", "pip", "install", "-q", "imageio-ffmpeg"])
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--install", action="store_true", help="Create the venv and install requirements (ask the user first)")
+    ap.add_argument("--install-ffmpeg", action="store_true",
+                    help="Add just the video encoder to an existing venv (ask the user first)")
     args = ap.parse_args()
     if args.install:
         install()
+    elif args.install_ffmpeg:
+        install_ffmpeg()
     rep = report()
     print(json.dumps(rep, indent=1))
     sys.exit(0 if rep["ready"] else 1)

@@ -171,6 +171,14 @@ def _read_image(path: str):
 VIDEO_EXT = (".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")
 
 
+def _have_ffmpeg() -> bool:
+    try:
+        W.ffmpeg_exe()
+        return True
+    except RuntimeError:
+        return False
+
+
 def _is_video(path: str) -> bool:
     return str(path).lower().endswith(VIDEO_EXT)
 
@@ -190,7 +198,12 @@ def _read_source(path: str):
         return im, rp, {"video": False}
     n, fps, vw, vh = W.probe_video(real)
     frame = W.read_frame_at(real, 0)
-    return frame, real, {"video": True, "frames": n, "fps": fps, "size": [vw, vh]}
+    # Report the encoder's absence HERE, when the clip is chosen, rather than
+    # letting the render fail at the end of the job. Someone who installed
+    # screengraft before video existed has a working venv with no ffmpeg in it,
+    # and nothing else would tell them until they had done all the fitting.
+    return frame, real, {"video": True, "frames": n, "fps": fps, "size": [vw, vh],
+                         "ffmpeg": _have_ffmpeg()}
 
 
 # Render progress, read by /api/render_status. A ten-second clip is a few
@@ -437,6 +450,9 @@ class Handler(BaseHTTPRequestHandler):
                 spath = _safe_local_path(SESSION.state["screenshot"])
                 if not _is_video(spath):
                     return self._json({"error": "the screen source is not a video"}, 400)
+                if not _have_ffmpeg():
+                    return self._json({"error": "ffmpeg is not installed",
+                                       "needs_ffmpeg": True}, 400)
                 with RENDER_LOCK:
                     if RENDER["state"] == "running":
                         return self._json({"error": "a render is already running"}, 409)
