@@ -25,18 +25,22 @@ Still missing: **no ML detection** (M4 — measured, and it segments the phone b
 python3 scripts/preflight.py
 ```
 
-Read the JSON. If `ready` is true, note `python` — **use that interpreter for every command below** (it's the venv at `~/.screengraft/venv`, not system Python). If `ready` is false:
+Read the JSON. Note `python` when `ready` is true — **use that interpreter for every command below** (it's the venv at `~/.screengraft/venv`, not system Python).
 
-- Tell the user plainly what's missing and that **OpenCV is the engine: without it nothing runs — not worse results, no results.**
-- Ask with `AskUserQuestion` whether to run the install: `python3 scripts/preflight.py --install` (creates `~/.screengraft/venv`, pip-installs `opencv-python-headless` + `numpy`, ~60 MB, touches nothing else). Run it only after a yes.
+**Both dependency questions are asked HERE, before the browser opens, and never later.** Once the UI is up the user is in a browser tab, not in the chat, and an `AskUserQuestion` there is a prompt they have walked away from. Ask everything you might need in one exchange, then launch.
 
-**Then check `optional` for ffmpeg, and offer it before it is needed.** The JSON lists it with `status`, `install_command` and `install_size`. If it says `missing`:
+**If `ready` is false — OpenCV is missing:**
+
+- Say plainly what's missing and that **OpenCV is the engine: without it nothing runs — not worse results, no results.**
+- Ask with `AskUserQuestion` whether to run `python3 scripts/preflight.py --install` (creates `~/.screengraft/venv`, pip-installs `opencv-python-headless` + `numpy`, ~60 MB, touches nothing else). Run it only after a yes.
+
+**Independently of that — check `optional` for ffmpeg every time.** This check runs whether or not `ready` is true, because the usual case is exactly the one that would be skipped otherwise: someone who installed screengraft before video existed has a working venv, `ready` is `true`, and **nothing** tells them ffmpeg is absent until a render fails at the very end of a job. The JSON gives `status`, `install_command` and `install_size`. If it says `missing`:
 
 - It is **optional and stills are unaffected** — never describe it as broken. It encodes video renders and nothing else.
-- Anyone who installed screengraft before video existed has a perfectly good venv without it, `ready` is `true`, and nothing else will tell them until a render fails at the very end of a job. That is why this is offered up front rather than waited for.
-- Offer it with `AskUserQuestion`, in the same breath as the OpenCV question when both are missing: *"Add video support? ~25 MB, installed into screengraft's own environment — nothing system-wide. Stills work either way."* On a yes, run `python3 scripts/preflight.py --install-ffmpeg`, which adds the one wheel rather than reinstalling everything. On a no, carry on and say video renders will be unavailable until it is added.
+- Offer it with `AskUserQuestion` — combined with the OpenCV question into one card when both are missing: *"Add video support? About 25 MB, into screengraft's own environment; nothing system-wide. Stills work either way."*
+- On a yes, run `python3 scripts/preflight.py --install-ffmpeg` — one wheel, not a reinstall of everything. On a no, launch anyway and mention that video renders are unavailable until it is added; the fitting all works regardless.
 
-These are the **only** interview questions this skill asks in chat — both are install consent. Everything else happens in the UI.
+These two are the **only** interview questions this skill asks in chat, both are install consent, and both belong before the launch. Everything else happens in the UI.
 
 ### 1. Launch the UI — with the project folder as the output directory
 
@@ -58,13 +62,15 @@ It prints one JSON line — `url`, `session`, `job`, `result`, `out_dir` — and
 
 > **What this does** — it computes the perspective between your photo and your screenshot, so the screenshot lands on the glass exactly. Geometry, not AI: nothing is invented and your pixels are unchanged.
 >
-> **1 · Choose a photo, then a screenshot.** Recent images from Desktop and Downloads are listed for you — or drag a file in, browse, paste a path, or paste a Figma frame link and I'll export it.
+> **1 · Choose a photo, then a screenshot — or a screen recording.** Recent images from Desktop and Downloads are listed for you — or drag a file in, browse, paste a path, or paste a Figma frame link and I'll export it. A video source (mp4/mov/webm) works the same way; you'll pick which frame to match the edges on.
 >
 > **2 · Match the four edges to the screen.** Drag an edge's middle to slide it, or near an end to pivot — only that edge moves. The magnified strip below shows the boundary straightened, so aligned reads as flat. Arrow keys nudge 1px, Shift+arrow 10px, Tab moves to the next edge.
 >
-> **3 · Preview, then Save**, then **Send to Claude** and I'll check the result and show it here. Saves go to `<out-dir>`.
+> **3 · Preview, then Save** — **Render**, for a video — then **Send to Claude** and I'll check the result and show it here. Saves go to `<out-dir>`.
 >
 > A detector proposes a starting quad, but it's only a guess — you confirm all four edges. That's deliberate: a confident-looking wrong result is the one failure this tool won't risk.
+
+**If ffmpeg was missing and the user declined it, say so in this same message** — one line, that video renders are unavailable until it's added and everything else works. That is the last moment they are still reading the chat.
 
 Adapt it: name the real output folder, and mention the realism pass only if it matters (it is on by default and changes the screenshot's colour, which is worth flagging if they are reviewing brand colour). Say it once, on launch — not again on every re-arm.
 
