@@ -1,19 +1,19 @@
 ---
 name: inject-screenshot
-description: Injects a UI screenshot onto a photographed device screen (phone/tablet/laptop) at any angle, matching the perspective exactly via homography — geometry, not AI generation. Use when the user wants to composite a screen design into a real device photo for a portfolio, case study, or mockup, and needs the result to look like a genuine photo rather than a template. Opens a local browser UI for picking files, correcting corners and saving.
+description: Injects a UI screenshot OR a screen recording onto a photographed device screen (phone/tablet/laptop) at any angle, matching the perspective exactly via homography — geometry, not AI generation. Use when the user wants to composite a screen design into a real device photo for a portfolio, case study, or mockup, or wants a prototype recording playing on a real device in a photograph, and needs the result to look like a genuine photo rather than a template. Handles video sources (mp4/mov/webm) by fitting once and rendering every frame. Opens a local browser UI for picking files, correcting corners, and saving or rendering.
 ---
 
 # Inject a screenshot onto a photographed device
 
-**What ships (v0.13.1):** a local browser UI (`scripts/ui.py`) that walks the designer through the whole job — pick the photo and the screenshot (recent Desktop/Downloads images, drag-drop, browse, path, or a **Figma frame link**), auto-detect the screen as a starting position, then **match the four edges** (drag an edge's middle to slide it, near an end to pivot; corners still draggable) with canvas zoom/pan and a rectified strip loupe, Preview (in a popup, or continuously in the compare pane), an on-by-default realism pass that colour-matches the screenshot to the photo's light, Save into the project folder (`--out-dir`), and a **Send to Claude** button that reaches you through the plugin's own MCP server. The UI is a hand port of the project's Figma design file — dark only.
+**What ships (v0.20):** a local browser UI (`scripts/ui.py`) that walks the designer through the whole job — pick the photo and the screen source, which may be an image **or a video** (recent Desktop/Downloads images, drag-drop, browse, path, or a **Figma frame link**), auto-detect the screen as a starting position, then **match the four edges** (drag an edge's middle to slide it, near an end to pivot; corners still draggable) with canvas zoom/pan and a rectified strip loupe. The fit and the composite sit **side by side and always have** — the result pane re-renders as you drag, which is how a corner gets judged, so it is the layout rather than a mode you can switch off. Then an on-by-default realism pass that colour-matches the source to the photo's light, **Save** (or **Render**, for a video) into the project folder (`--out-dir`), and a **Send to Claude** button that reaches you through the plugin's own MCP server. The UI is a hand port of the project's Figma design file — dark only.
 
 The geometry is exact (`warp.py`); the detection is advisory (`detect.py`) and the human corrects it.
 
-**The realism pass ships and is ON by default** (`grade.py`, M2): it matches the injected screen's white balance and grain to the light around it, at a strength the designer sets in the rail. It can also lift the device's real specular highlights from a screen-off reference frame, though the UI cannot supply one yet. Off is a first-class choice and keeps the screenshot's colour exactly — say so if the user is reviewing brand colour.
+**The realism pass ships and is ON by default** (`grade.py`): it matches the injected screen's white balance and grain to the light around it, at a strength the designer sets in the rail. It can also lift the device's real specular highlights from a screen-off reference frame, though the UI cannot supply one yet. Off is a first-class choice and keeps the screenshot's colour exactly — say so if the user is reviewing brand colour.
 
 **Video ships too.** The screen source can be a video (mp4/mov/webm) as well as a still — pick it exactly like a screenshot, choose which frame to match the edges on, and the primary button becomes **Render**. The photo does not move, so there is one homography and every frame gets the same geometry; the light match is measured once from the frame you fitted on, so the screen cannot pulse as the UI scrolls. Output is H.264 at CRF 16 (near-visually-lossless) or ProRes 422 HQ. This is what pairs with a prototype recording: record the prototype, then inject the recording into a real photograph.
 
-Still missing: **no ML detection** (M4 — measured, and it segments the phone body rather than the glass, so it is not shipped), **no occluder handling** — a finger or glare in front of the screen gets painted over (M5) — and **no camera motion**: the photo must be a still, so a clip of a moving phone is not this. Say so if it matters for the photo.
+Still missing: **no ML detection** (measured, and it segments the phone body rather than the glass, so it is not shipped), **no occluder handling** — a finger or glare in front of the screen gets painted over — and **no camera motion**: the photo must be a still, so a clip of a moving phone is not this. Also, detection **abstains** rather than guessing when the background is itself neutral (a pale tiled floor, a plain wall); the edges get placed by hand there, which is normal, not a failure. Say so if any of it matters for the photo.
 
 **Runs on the user's Mac shell** (Desktop Commander `start_process` or equivalent). The sandboxed Linux shell can't open a browser or reach `~/Desktop`. Paths below are relative to the plugin root — two levels up from this file.
 
@@ -66,7 +66,7 @@ It prints one JSON line — `url`, `session`, `job`, `result`, `out_dir` — and
 >
 > **2 · Match the four edges to the screen.** Drag an edge's middle to slide it, or near an end to pivot — only that edge moves. The magnified strip below shows the boundary straightened, so aligned reads as flat. Arrow keys nudge 1px, Shift+arrow 10px, Tab moves to the next edge.
 >
-> **3 · Preview, then Save** — **Render**, for a video — then **Send to Claude** and I'll check the result and show it here. Saves go to `<out-dir>`.
+> **3 · Watch the Result pane** — it re-renders as you drag, so you judge the fit against the composite. Then **Save** — **Render**, for a video — and **Send to Claude**, and I'll check the result and show it here. Saves go to `<out-dir>`.
 >
 > A detector proposes a starting quad, but it's only a guess — you confirm all four edges. That's deliberate: a confident-looking wrong result is the one failure this tool won't risk.
 
@@ -110,7 +110,7 @@ The user pressed Save. Read the output image back (you can see images). Check:
 
 - The injected screen sits on the bezel edge all the way round — no sliver of the original screen showing, no UI poking past the glass. Zoom a corner if unsure.
 - Text in the injected area is sharp. Soft means double resampling — that's a bug, not a setting.
-- Nothing that was in front of the screen in the photo has been painted over (if it has, say so — M5).
+- Nothing that was in front of the screen in the photo has been painted over (if it has, say so — occluders are not handled yet).
 - **For a video render**, the same checks on a frame, plus: play it and confirm the screen does not pulse or shift, and that the photo around it is perfectly static. The renderer guarantees the second by construction — everything outside the screen mask is the original photo's bytes — so movement there is a bug worth reporting, not a setting.
 
 Then `present_files` the output. Report what you checked, not "done".
