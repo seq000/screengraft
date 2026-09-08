@@ -277,8 +277,24 @@
   /* 304px wrapped "desktop" onto a second line. The rail is sized to the
      content it must hold — four device chips in one row — rather than to a
      round number. */
-  .stage{display:grid;grid-template-columns:minmax(0,1fr) 344px;min-height:0;overflow:hidden}
-  .stage.compare{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 344px}
+  /* Side by side is the layout, not a mode. Judging a corner means seeing the
+     same corner in the fit and in the composite at the same zoom, so a version
+     of this page where that is optional is a version where the check is
+     optional. Two equal panes plus the rail. */
+  .stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 344px;
+         min-height:0;overflow:hidden}
+  /* Below ~1100px two panes and a 344px rail no longer fit, and the page starts
+     scrolling sideways — which the UI audit catches as a hard failure. Stack the
+     panes instead of dropping one: losing the comparison is the one thing this
+     layout exists to prevent, so the axis gives way before the pairing does.
+     (Found by the audit after compare stopped being optional, at 742px.) */
+  @media (max-width:1100px){
+    .stage{grid-template-columns:minmax(0,1fr) 344px;
+           grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+    .stage > .pane:first-of-type{grid-column:1;grid-row:1}
+    .stage > #outPane{grid-column:1;grid-row:2;border-top:1px solid var(--line)}
+    .stage > .rail{grid-column:2;grid-row:1 / span 2}
+  }
   #types{flex-wrap:nowrap}
   .pane{min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);
         position:relative;   /* the frame the corner bar is anchored to */
@@ -327,13 +343,19 @@
      photo is chosen but the screenshot is not, offering corners to fit
      nothing. */
   .cvbar[hidden]{display:none}
+  /* Render spinner. A determinate percentage was the first version and it read
+     as busier than the work felt; a single moving thing says "still going"
+     without asking to be read. prefers-reduced-motion gets a static ring —
+     the button's label already carries the meaning. */
+  .spin{display:inline-block;width:12px;height:12px;margin-left:8px;
+        vertical-align:-1px;border:2px solid currentColor;border-radius:50%;
+        border-right-color:transparent;opacity:.9;
+        animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .spin{animation:none} }
 
   /* Preview popover: the composite at whatever size fits, on the sunk surface
      so the image edge is unambiguous against the panel. */
-  #previewWrap{margin-top:10px;background:var(--well);border-radius:var(--r-md);
-               box-shadow:inset 0 1px 3px rgba(0,0,0,.5);display:grid;
-               place-items:center;min-height:200px;max-height:70vh;overflow:auto}
-  #previewImg{display:block;max-width:100%;height:auto}
 
   /* Switch — the full 8-variant matrix from Figma 17:61
      (State Rest/Hover/Pressed/Disabled x Selected No/Yes).
@@ -403,8 +425,7 @@
   button.switch:focus-visible{outline:none}
   button.switch:focus-visible .sw-track{box-shadow:0 0 0 3px var(--acc-soft);border-color:var(--acc)}
 
-  #outPane{display:none}
-  .stage.compare #outPane{display:grid}
+  #outPane{display:grid}
   #outWrap{overflow:auto;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
   #outImg{display:block;margin:auto}
   .empty{color:var(--mute);font-size:12px;padding:24px;text-align:center;align-self:center;justify-self:center;max-width:320px}
@@ -674,7 +695,6 @@
     </div>
     <span class="spacer"></span>
     <div class="tb-actions">
-      <button id="preview" hidden>Preview</button>
       <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
       <button id="save" class="accent" disabled>Preview first</button>
     </div>
@@ -717,6 +737,17 @@
           <button class="sm" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button>
         </span>
       </div>
+    </section>
+
+    <section class="pane" id="outPane">
+      <div class="panehead">
+        <span class="lbl">Result</span>
+        <span class="gap-3"></span>
+        <span class="sm" id="outSt" style="color:var(--mute)">Press Preview</span>
+        <span class="spacer"></span>
+        <span class="sm" style="color:var(--mute)">shares zoom &amp; pan</span>
+      </div>
+      <div id="outWrap"><span class="empty" id="outEmpty">The composite appears here and updates as you drag.</span><img id="outImg" alt="" hidden></div>
       <!-- Video controls. Hidden entirely for a still source: a scrubber over a
            screenshot is a control that can only confuse. The fit itself is
            unchanged — you match the edges on one frame and every frame gets the
@@ -732,17 +763,6 @@
           </span>
         </span>
       </div>
-    </section>
-
-    <section class="pane" id="outPane">
-      <div class="panehead">
-        <span class="lbl">Result</span>
-        <span class="gap-3"></span>
-        <span class="sm" id="outSt" style="color:var(--mute)">Press Preview</span>
-        <span class="spacer"></span>
-        <span class="sm" style="color:var(--mute)">shares zoom &amp; pan</span>
-      </div>
-      <div id="outWrap"><span class="empty" id="outEmpty">Press Preview — or turn on Compare view and this updates as you drag.</span><img id="outImg" alt="" hidden></div>
     </section>
 
     <aside class="rail">
@@ -794,17 +814,6 @@
           </button>
         </div>
       </div>
-      <div class="sect" id="secCompare" data-on="1">
-        <div class="sect-top">
-          <div class="sect-left">
-            <h4>Compare view</h4>
-            <button class="info" type="button" aria-label="About compare view"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Shows the fit and the composite side by side, sharing zoom and pan, so a corner can be judged against the same corner.</span></button>
-          </div>
-          <button class="switch" id="cmpBtn" role="switch" aria-checked="true" aria-label="Compare view">
-            <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
-          </button>
-        </div>
-      </div>
       <div class="sect" id="secKeys" data-on="1">
         <div class="sect-top"><div class="sect-left"><h4>Keys</h4></div></div>
         <p class="hint"><kbd>&larr;&uarr;&rarr;&darr;</kbd> nudge 1px · <kbd>&#8679;</kbd>+arrow 10px · <kbd>Tab</kbd> next edge</p>
@@ -839,12 +848,6 @@
 
 <div class="scrim" id="scrim"></div>
 
-
-<div class="pop" id="previewPop" style="width:min(900px,calc(100vw - 24px))">
-  <h3>Preview</h3>
-  <p class="sub" id="previewSt">Rendering…</p>
-  <div id="previewWrap"><img id="previewImg" alt="" hidden></div>
-</div>
 
 <div class="pop" id="pop1">
   <h3>Photo of the device</h3>
@@ -1763,33 +1766,12 @@ function syncOut(){
   }
 }
 $('#scroller').addEventListener('scroll', () => {
-  if ($('#stage').classList.contains('compare')) syncOut();
+  syncOut();
 });
-/* Compare is a switch now, not a chip. Its truth lives in aria-checked so the
-   control is a real switch to assistive tech, and the label text follows it —
-   a switch that says OFF while being on is worse than no label. */
-function setCompareUI(on){
-  setSwitch($('#cmpBtn'), on);
-  // No text label in the component (17:61) — aria-checked carries the state.
-  // With compare on the result pane renders continuously, so a Preview button
-  // would offer something already on screen. It belongs to the off state.
-  $('#preview').hidden = on;
-}
-$('#cmpBtn').onclick = () => {
-  const on = $('#stage').classList.toggle('compare');
-  setCompareUI(on);
-  remember('compare', on ? '1' : '0');
-  if (img.naturalWidth){
-    const wasFit = Math.abs(scale-fitScale)<1e-6;
-    computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
-  }
-  if (on && $('#outImg').hidden) renderPreview(); else if (on) syncOut();
-};
 function autoPreview(){
   // Judge while you fit: with the compare pane open the composite re-renders
   // after each correction (compose() measures 0.06s server-side), so Preview
   // stops being a round trip.
-  if (!$('#stage').classList.contains('compare')) return;
   clearTimeout(autoTimer);
   autoTimer = setTimeout(renderPreview, 350);
 }
@@ -1809,23 +1791,6 @@ async function renderPreview(){
     }
   }catch(e){ s.textContent = e.message; }
 }
-/* With compare off there is no result pane to draw into, so the composite
-   opens in a popup over the canvas — the same surface the pickers use, so it
-   is one modal idiom rather than two. */
-async function openPreviewPop(){
-  const pop = $('#previewPop');
-  const img = $('#previewImg'), st_ = $('#previewSt');
-  openPopAt(pop, $('#preview').getBoundingClientRect());
-  st_.textContent = 'Rendering…'; img.hidden = true;
-  try{
-    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue()});
-    img.onload = () => { img.hidden = false; };
-    img.src = `${fileURL(r.path)}&t=${Date.now()}`;
-    st_.textContent = `radius ${r.radius_px}px on the screenshot`;
-    const b = $('#save'); b.disabled = false; b.textContent = st.video ? 'Render' : 'Save'; b.classList.add('primary');
-  }catch(e){ st_.textContent = e.message; }
-}
-$('#preview').onclick = openPreviewPop;
 function prettyDir(p){
   // ~ for home, and show the last two segments of a long path: the interesting
   // part of a long output path is the end, not the volume.
@@ -1874,6 +1839,7 @@ $('#vframe').onchange = async () => {
 async function renderVideo(){
   const b = $('#save');
   b.disabled = true;
+  b.innerHTML = 'Rendering<span class="spin" aria-hidden="true"></span>';
   try{
     await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), device: st.type,
                               grade: gradeValue(), preset, fit_frame: +$('#vframe').value});
@@ -1884,16 +1850,20 @@ async function renderVideo(){
     let d; try { d = await api('/api/render_status', null, {method:'GET'}); }
     catch(e){ return; }
     if (d.state === 'running'){
-      const pct = d.total ? Math.round(100*d.done/d.total) : 0;
-      b.textContent = d.total ? `Rendering ${pct}%` : 'Rendering…';
+      // The button says what it is doing; the frame counter beside the
+      // scrubber carries the numbers, so the primary control stays calm.
+      b.innerHTML = 'Rendering<span class="spin" aria-hidden="true"></span>';
+      if (d.total) $('#vframeLbl').textContent = `${d.done} / ${d.total} frames`;
     } else if (d.state === 'done'){
       clearInterval(tick);
       b.textContent = 'Render'; b.disabled = false; b.classList.remove('primary');
+      $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`;
       toast('ok', `Rendered <code>${(d.output||'').split('/').pop()}</code> · ${d.done} frames to <code>${prettyDir(st.outDir||'')}</code>`);
       const imp = $('#imp'); imp.disabled = false; imp.textContent = 'Send to Claude'; imp.classList.add('primary');
     } else if (d.state === 'error'){
       clearInterval(tick);
       b.textContent = 'Render'; b.disabled = false;
+      $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`;
       toast('err', 'Render failed: ' + (d.message || 'unknown'));
     }
   }, 900);
@@ -1968,8 +1938,8 @@ $('#imp').onclick = async () => {
   // Compare is the DEFAULT view: judging a fit means comparing it with the
   // photo, so the side-by-side is the normal state and turning it off is the
   // deliberate act. recall() only overrides it if the user chose otherwise.
-  if (recall('compare','1') === '1'){ $('#stage').classList.add('compare'); setCompareUI(true); }
-  else setCompareUI(false);
+  // Nothing to restore: the side-by-side is the layout now, so there is no
+  // remembered preference and no state where the check is unavailable.
   await loadRecent();
   // A session restored after a reload may already have a saved composite, in
   // which case Import is still meaningful — leaving it disabled would strand
@@ -1992,7 +1962,7 @@ $('#imp').onclick = async () => {
     if (st.type) setType(st.type);
     if (s.radius_frac) setFrac(s.radius_frac, 'restored from this session');
     else applyPreset();
-    if ($('#stage').classList.contains('compare') && st.corners) renderPreview();
+    if (st.corners) renderPreview();
   }
   if (!st.photo) openPop(1);
   window.addEventListener('resize', () => {
