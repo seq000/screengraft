@@ -33,6 +33,15 @@ jobs:
         run: python test/test_grade.py
       - name: Sidecar reproducibility
         run: python test/test_sidecar.py
+      # The contract that keeps the still and video paths from drifting: frame 0
+      # of a render must equal the still composite byte for byte. It shares
+      # Plan with compose(), and a refactor that split them would pass every
+      # other suite here. ffmpeg comes from the imageio-ffmpeg wheel already in
+      # requirements.txt; the suite skips itself if it is somehow absent.
+      - name: Video path tests
+        env:
+          SCREENGRAFT_REQUIRE_FFMPEG: "1"
+        run: python test/test_video.py
       # Static analysis. Scoped to the rules that catch real defects — undefined
       # names, unused imports, silently-truncating zip() — rather than style,
       # so a red CI always means something is actually wrong.

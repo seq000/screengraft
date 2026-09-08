@@ -22,6 +22,8 @@ python test/test_warp.py      # the compositing engine
 python test/test_detect.py    # detectors, and that they fail honestly
 python test/test_mcp.py       # the plugin's job server
 python test/test_grade.py     # the realism pass
+python test/test_video.py     # the video path (skips if ffmpeg is absent)
+python test/test_sidecar.py   # every parameter that changes output is recorded
 python scripts/contrast_audit.py   # UI contrast, parsed from ui/index.html
 ```
 
@@ -53,6 +55,12 @@ So: a change to `warp.py` or `grade.py` should come with a measurement on a real
 photograph — aliasing energy, corner placement error, contrast ratio, whatever
 the change is about — and the determinism check must still pass. `test_warp.py`
 and `test_grade.py` show the shape of this.
+
+If you touch `compose()` or `Plan`, `test_video.py` has the contract that
+matters: **frame 0 of a video render must equal the still composite, byte for
+byte.** The still and video paths share `Plan` deliberately, and that assertion
+is the only thing keeping the sharing honest — a refactor that split them would
+pass every other suite here.
 
 ## UI changes
 

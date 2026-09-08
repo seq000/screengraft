@@ -81,6 +81,15 @@ def main():
     try:
         W.ffmpeg_exe()
     except RuntimeError as e:
+        # Skipping is right on a machine that only ever does stills. It is NOT
+        # right in CI, where requirements.txt guarantees the wheel: a suite that
+        # quietly passes because it did not run is the exact failure mode this
+        # project keeps catching. CI sets SCREENGRAFT_REQUIRE_FFMPEG=1 so a
+        # missing binary is a red build rather than a green non-event.
+        if os.environ.get("SCREENGRAFT_REQUIRE_FFMPEG") == "1":
+            print("FAIL  ffmpeg is required here and is missing")
+            print(f"  ({e})")
+            sys.exit(1)
         print("video tests skipped — ffmpeg not installed in the venv")
         print(f"  ({e})")
         return

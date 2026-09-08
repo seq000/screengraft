@@ -1,6 +1,6 @@
 # screengraft
 
-**Put a UI screenshot onto a photographed screen so the perspective is exactly right.**
+**Put a UI screenshot — or a screen recording — onto a photographed screen so the perspective is exactly right.**
 
 ![The fitting workbench: photo with the screen quad on the left, live composite on the right, and a magnified strip across the edge below](docs/workbench.png)
 
@@ -12,6 +12,9 @@ screengraft takes your photograph and your screenshot and computes the projectiv
 transform between them. The screenshot lands on the glass because the geometry
 says it must, not because a model thought it looked about right. Same inputs,
 same output, every time.
+
+Point it at a **video** instead and the same fit renders every frame: record a
+prototype, then put the recording inside a real photograph.
 
 ---
 
@@ -26,6 +29,10 @@ same output, every time.
 - **Realism pass** *(optional)* — matches the screen's white balance and grain to
   the light in the room, and can lift the device's real reflections from a
   screen-off frame of the same shot.
+- **Video, not just stills.** The screen source can be an `mp4`/`mov`/`webm`.
+  You match the edges on one frame and every frame gets that same geometry — the
+  photograph is still, so there is nothing to track and nothing to drift. Output
+  is H.264 at CRF 16 or ProRes 422 HQ.
 - **You confirm every fit.** Detection is advisory and says so; you drag the four
   edges onto the glass with a magnified loupe. A silent misdetection producing a
   confident, wrong result is the one failure this tool refuses to have.
@@ -35,6 +42,10 @@ same output, every time.
 `python3` with **OpenCV** and **numpy**. OpenCV is the engine — nothing runs
 without it. The installer provisions an isolated venv at `~/.screengraft/venv`
 and never touches your system Python.
+
+Video rendering also uses **ffmpeg**, which arrives as a wheel (`imageio-ffmpeg`)
+into that same venv — nothing is installed system-wide. It is optional: without
+it, stills work exactly as before.
 
 ## Install as a Claude Code / Cowork plugin
 
@@ -104,15 +115,31 @@ outside the screen mask. It never touches the pixels you designed.
 3. **Realism pass** *(optional)* — white balance and exposure toward the
    surrounding light, grain matched to the photo's own noise floor, real
    speculars lifted from a screen-off reference.
+4. **Video**, when the source is a clip — everything a fixed photo and a fixed
+   quad make constant is computed once, and only the frame changes. Three
+   consequences worth naming, because each is a way video normally goes wrong:
+   the light match is measured **once** from the frame you fitted on, so the
+   screen cannot pulse as your UI scrolls from dark to light; the grain stays
+   frozen, because the photograph's own noise does not move; and the screen's
+   antialiased **edge is pixel-identical in every frame**, so there is no edge
+   crawl. Frame 0 of a render is byte-identical to the still composite — the
+   test suite asserts it, because that is what stops the two paths drifting.
 
 ## Roadmap
 
-Done: manual warp, advisory detectors, the fitting workbench, the realism pass.
+Done: manual warp, advisory detectors, the fitting workbench, the realism pass,
+video into a still photo.
 
-Open: camera-motion tracking, SAM 2 auto-detect (M4 — built and measured in a
-separate repo; it currently segments the phone body rather than the glass, so it
-is not shipped), occluder matte (M5), so a finger in front of the screen stays in
-front.
+Open: **camera-motion tracking** — the photograph itself must currently be a
+still, so a clip of a moving phone is out of scope; **SAM 2 auto-detect** (built
+and measured in a separate repo; it segments the phone body rather than the
+glass, so it is not shipped); **occluder matte**, so a finger in front of the
+screen stays in front.
+
+Known limits worth stating plainly: detection abstains rather than guessing when
+the background is itself neutral (a pale tiled floor, a plain wall) — you place
+the edges by hand there. And a prototype recording has no motion blur, so a very
+fast scroll will strobe; that is a property of the source, not of the composite.
 
 ## Contributing
 
