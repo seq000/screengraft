@@ -12,6 +12,7 @@ checks that package.json and plugin.json agree about the version, since a
 release publishes both and they are two places stating one fact.
 """
 import json
+import re
 import pathlib
 import subprocess
 import sys
@@ -33,6 +34,35 @@ plugin = json.loads((ROOT / '.claude-plugin' / 'plugin.json').read_text())
 errors = []
 if pkg['version'] != plugin['version']:
     errors.append(f"package.json is {pkg['version']}, plugin.json is {plugin['version']}")
+
+# SKILL.md is what the agent reads to decide whether this tool applies at all,
+# and what it tells the user the tool can do. It went three versions stale while
+# the code gained video: the description still said "screenshot", so a request
+# phrased around a screen recording might never have reached the tool that does
+# exactly that — shipped and unreachable. It also still promised a Preview popup
+# that had been deleted.
+#
+# Writing "remember to update SKILL.md" in a checklist is the version of this
+# that fails silently, the same way the packaging exclusion list did. So the
+# release itself is blocked instead: the version SKILL.md claims must match the
+# version being shipped, which forces whoever bumps the number to open the file.
+skill = (ROOT / 'skills' / 'inject-screenshot' / 'SKILL.md')
+if not skill.exists():
+    errors.append('skills/inject-screenshot/SKILL.md is missing')
+else:
+    text = skill.read_text(encoding='utf-8')
+    m = re.search(r'\*\*What ships \(v([0-9]+)\.([0-9]+)', text)
+    if not m:
+        errors.append('SKILL.md has no "**What ships (vX.Y" line to check against '
+                      '— add one rather than removing the check')
+    else:
+        claimed = f'{m.group(1)}.{m.group(2)}'
+        actual = '.'.join(pkg['version'].split('.')[:2])
+        if claimed != actual:
+            errors.append(
+                f'SKILL.md says it ships v{claimed} but the package is '
+                f'{pkg["version"]} — update SKILL.md (its description is how the '
+                f'skill gets found, and what the user is told it can do)')
 
 try:
     out = subprocess.run(['npm', 'pack', '--dry-run', '--json'],

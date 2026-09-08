@@ -29,6 +29,24 @@ python scripts/contrast_audit.py   # UI contrast, parsed from ui/index.html
 
 All of these run in CI on every push.
 
+## Releasing
+
+Bump `.claude-plugin/plugin.json` and `package.json` together, and **update
+`skills/inject-screenshot/SKILL.md` in the same commit**.
+
+SKILL.md is not documentation that trails the code. Its frontmatter
+`description` is what an agent matches on to decide this tool applies at all, so
+a capability missing from that line is a capability users cannot reach by asking
+for it in their own words — the tool gained video and, for three versions, a
+request phrased around a screen recording would not have found it. The body is
+also what the user is told the tool can do, and it had been promising a Preview
+popup that no longer existed.
+
+`scripts/check_package.py` enforces it: the version SKILL.md claims in its
+"What ships (vX.Y)" line must match the version being packaged, so a bump
+cannot land without opening the file. Run it before every release; CI runs it
+on every push.
+
 ## UI changes need the UI audit too
 
 `test/ui-audit.js` is run in the browser against the live page — paste it into
