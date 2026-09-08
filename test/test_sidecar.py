@@ -48,6 +48,29 @@ ok('every compose() parameter the UI can set is in the sidecar',
 ok('the sidecar carries the inputs too',
    {'photo', 'screenshot', 'output'} <= keys)
 
+# --- 1b. the same contract for the VIDEO path -------------------------------
+# ui.py now writes TWO sidecars — one for a still save, one for a video render
+# — and the render one is a second place a new parameter can be forgotten. This
+# is the third time this class of bug has been guarded (radius_px, then
+# grade/grain); guarding it once per writer is the only version that holds.
+vparams = [q for q in inspect.signature(warp.compose_video).parameters
+           if q not in ('photo', 'video_path', 'output', 'progress', 'frames_dir')]
+blocks = re.findall(r'result = \{(.*?)\n\s*_write_json_atomic', src, re.DOTALL)
+vkeys = set()
+for blk in blocks:
+    if '"video"' in blk:
+        vkeys = set(re.findall(r'"([\w]+)":', blk))
+VALIAS = {'corners': 'corners', 'corner_radius': 'radius_px', 'grade': 'grade',
+          'grain': 'grain', 'preset': 'preset', 'fit_frame': 'fit_frame',
+          'audio': 'audio'}
+V_NOT_IN_UI = {'audio'}      # always on; no UI control for it yet
+vmissing = [q for q in vparams
+            if q not in V_NOT_IN_UI and VALIAS.get(q, q) not in vkeys]
+ok('a video render sidecar was found at all', bool(vkeys), str(sorted(vkeys)))
+ok('every compose_video() parameter the UI can set is in its sidecar',
+   not vmissing, 'missing: ' + (', '.join(vmissing) or '—'))
+ok('the video sidecar is marked as one', 'video' in vkeys)
+
 # --- 2. an actual round trip -------------------------------------------------
 # Build a save, write the sidecar the way ui.py does, then recompose from the
 # sidecar ALONE and require byte equality. an earlier bug was exactly this failing.

@@ -168,6 +168,56 @@ def _read_image(path: str):
     return im, p
 
 
+VIDEO_EXT = (".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")
+
+
+def _is_video(path: str) -> bool:
+    return str(path).lower().endswith(VIDEO_EXT)
+
+
+def _read_source(path: str):
+    """Read the screen source, which may be a still OR a video.
+
+    Returns (frame, real_path, meta). For a video the frame is the poster —
+    the frame the designer fits on — and `meta` carries what the page needs to
+    show a scrubber. Everything downstream of this point treats that frame
+    exactly like a screenshot, which is the point: the fit, the loupe, the
+    compare view and the preview are all unchanged by video.
+    """
+    real = _safe_local_path(path)
+    if not _is_video(real):
+        im, rp = _read_image(real)
+        return im, rp, {"video": False}
+    n, fps, vw, vh = W.probe_video(real)
+    frame = W.read_frame_at(real, 0)
+    return frame, real, {"video": True, "frames": n, "fps": fps, "size": [vw, vh]}
+
+
+# Render progress, read by /api/render_status. A ten-second clip is a few
+# hundred frames and a good few seconds of work, which is far too long to hold
+# an HTTP request open — so the render runs on its own thread and the page
+# polls. ThreadingHTTPServer is already the server class, so this needs no
+# other machinery.
+RENDER = {"state": "idle", "done": 0, "total": 0, "output": None, "message": None}
+RENDER_LOCK = threading.Lock()
+
+
+def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame):
+    def progress(done, total):
+        with RENDER_LOCK:
+            RENDER["done"], RENDER["total"] = done, total
+    try:
+        info = W.compose_video(photo, video_path, corners, dest,
+                               corner_radius=radius_px, grade=gr, grain=grain,
+                               preset=preset, fit_frame=fit_frame, progress=progress)
+        with RENDER_LOCK:
+            RENDER.update(state="done", output=dest, info=info,
+                          done=info["frames"], total=info["frames"], message=None)
+    except Exception as e:                     # noqa: BLE001 - surfaced to the page
+        with RENDER_LOCK:
+            RENDER.update(state="error", message=str(e))
+
+
 def _guess_type(corners):
     c = np.array(corners, dtype=float)
     w = (np.linalg.norm(c[1] - c[0]) + np.linalg.norm(c[2] - c[3])) / 2
@@ -259,6 +309,12 @@ class Handler(BaseHTTPRequestHandler):
                     if time.time() >= deadline:
                         return self._json({"status": "pending", "waited": True})
                     time.sleep(0.15)
+            if u.path == "/api/render_status":
+                # A poll, so a GET: no body, safe to repeat, and the page hits
+                # it once a second while a render runs.
+                with RENDER_LOCK:
+                    return self._json(dict(RENDER))
+
             return self._json({"error": "no such route"}, 404)
         except (PermissionError, FileNotFoundError, KeyError, ValueError) as e:
             return self._json({"error": str(e)}, 400)
@@ -274,17 +330,26 @@ class Handler(BaseHTTPRequestHandler):
                 dest = os.path.join(SESSION.dir, f"{role}-{int(time.time())}-{name}")
                 with open(dest, "wb") as f:
                     f.write(self._body())
-                im, real = _read_image(dest)
+                # A video is only ever a screen source; a photo must be a still.
+                if role == "screenshot":
+                    im, real, meta = _read_source(dest)
+                else:
+                    im, real = _read_image(dest)
+                    meta = {"video": False}
                 SESSION.update(**{role: real})
-                return self._json({"path": real, "size": [im.shape[1], im.shape[0]]})
+                return self._json({"path": real, "size": [im.shape[1], im.shape[0]], **meta})
 
             b = self._jbody()
 
             if u.path == "/api/use":
                 role = b["role"]
-                im, real = _read_image(b["path"])
+                if role == "screenshot":
+                    im, real, meta = _read_source(b["path"])
+                else:
+                    im, real = _read_image(b["path"])
+                    meta = {"video": False}
                 SESSION.update(**{role: real})
-                return self._json({"path": real, "size": [im.shape[1], im.shape[0]]})
+                return self._json({"path": real, "size": [im.shape[1], im.shape[0]], **meta})
 
             if u.path == "/api/figma":
                 return self._json(SESSION.enqueue({
@@ -350,9 +415,69 @@ class Handler(BaseHTTPRequestHandler):
                 res["type_guess"] = _guess_type(res["corners"])
                 return self._json(res)
 
+            if u.path == "/api/frame":
+                # One frame of the source video as a PNG the page can show — the
+                # poster, or whichever frame the scrubber is on. The fit, the
+                # loupe and the compare view all work on this exactly as they
+                # work on a screenshot, which is why none of them needed
+                # changing for video.
+                spath = _safe_local_path(SESSION.state["screenshot"])
+                if not _is_video(spath):
+                    return self._json({"error": "the screen source is not a video"}, 400)
+                idx = int(b.get("index") or 0)
+                frame = W.read_frame_at(spath, idx)
+                dest = os.path.join(SESSION.dir, f"frame-{idx:06d}.png")
+                cv2.imwrite(dest, frame, [cv2.IMWRITE_PNG_COMPRESSION, 1])
+                return self._json({"path": dest, "index": idx,
+                                   "size": [frame.shape[1], frame.shape[0]]})
+
+            if u.path == "/api/render":
+                # Video: same fit, same geometry, N frames instead of one.
+                photo, ppath = _read_image(SESSION.state["photo"])
+                spath = _safe_local_path(SESSION.state["screenshot"])
+                if not _is_video(spath):
+                    return self._json({"error": "the screen source is not a video"}, 400)
+                with RENDER_LOCK:
+                    if RENDER["state"] == "running":
+                        return self._json({"error": "a render is already running"}, 409)
+                    RENDER.update(state="running", done=0, total=0,
+                                  output=None, message=None)
+                corners = b["corners"]
+                frac = float(b.get("radius_frac") or 0.0)
+                fit_frame = int(b.get("fit_frame") or 0)
+                first = W.read_frame_at(spath, fit_frame)
+                radius_px = frac * first.shape[1]
+                gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
+                grain = bool(b.get("grain", gr > 0))
+                preset = "prores" if b.get("preset") == "prores" else "web"
+                ext = ".mov" if preset == "prores" else ".mp4"
+                os.makedirs(OUT_DIR, exist_ok=True)
+                stem = (f"{os.path.splitext(os.path.basename(ppath))[0]}__"
+                        f"{os.path.splitext(os.path.basename(spath))[0]}")
+                dest = os.path.join(OUT_DIR, stem + ext)
+                i = 2
+                while os.path.exists(dest):
+                    dest = os.path.join(OUT_DIR, f"{stem}-{i}{ext}"); i += 1
+                SESSION.update(corners=corners, radius_frac=frac,
+                               device=b.get("device"), grade=gr)
+                # Everything that changes the output goes in the sidecar, for the
+                # third time of asking (radius_px, then grade/grain, now the video
+                # fields). A render that cannot be reproduced from its own sidecar
+                # undercuts the determinism claim.
+                result = {"output": dest, "photo": ppath, "screenshot": spath,
+                          "corners": corners, "radius_frac": frac, "radius_px": radius_px,
+                          "device": b.get("device"), "grade": gr, "grain": grain,
+                          "video": True, "preset": preset, "fit_frame": fit_frame,
+                          "saved": time.time()}
+                _write_json_atomic(SESSION.result_path, result)
+                threading.Thread(target=_render_worker, daemon=True,
+                                 args=(photo, spath, corners, dest, radius_px,
+                                       gr, grain, preset, fit_frame)).start()
+                return self._json({"started": True, "output": dest, "preset": preset})
+
             if u.path in ("/api/preview", "/api/save"):
                 photo, ppath = _read_image(SESSION.state["photo"])
-                shot, spath = _read_image(SESSION.state["screenshot"])
+                shot, spath, _meta = _read_source(SESSION.state["screenshot"])
                 corners = b["corners"]
                 frac = float(b.get("radius_frac") or 0.0)
                 radius_px = frac * shot.shape[1]

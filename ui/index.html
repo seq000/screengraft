@@ -717,6 +717,21 @@
           <button class="sm" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button>
         </span>
       </div>
+      <!-- Video controls. Hidden entirely for a still source: a scrubber over a
+           screenshot is a control that can only confuse. The fit itself is
+           unchanged — you match the edges on one frame and every frame gets the
+           same geometry, because the photo does not move. -->
+      <div class="cvbar" id="vidbar" hidden>
+        <span class="sm" style="color:var(--mute)">Fit on frame</span>
+        <span class="cvbar-actions">
+          <input type="range" id="vframe" min="0" max="0" value="0" step="1"
+                 aria-label="Which frame of the clip to match the edges on">
+          <span class="sm" id="vframeLbl" style="color:var(--mute);min-width:9ch">0</span>
+          <span class="stepper" role="group" aria-label="Output format">
+            <button class="sm sel" data-preset="web" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button class="sm" data-preset="prores" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
+          </span>
+        </span>
+      </div>
     </section>
 
     <section class="pane" id="outPane">
@@ -853,7 +868,7 @@
     <div class="pv" id="pv2"><span class="empty">Select a recent image</span></div>
   </div>
   <div class="drop" id="drop2">Drop a screenshot here or click to browse</div>
-  <input type="file" id="file2" accept="image/*" hidden>
+  <input type="file" id="file2" accept="image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm" hidden>
 </div>
 
 <script>
@@ -1105,26 +1120,28 @@ async function loadRecent(){
   }
 }
 async function choose(role, path, el){
-  try{ const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, el); }
+  try{ const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, el, r); }
   catch(e){ alert(e.message); }
 }
-function setChosen(role, path, size, el){
+function setChosen(role, path, size, el, meta){
   const n = role==='photo'?1:2;
   document.querySelectorAll('#recent'+n+' .th').forEach(x=>x.classList.remove('sel'));
   if (el) el.classList.add('sel');
   $('#pv'+n).innerHTML = `<img src="${fileURL(path)}" alt="">`;
   const chip = $('#chip'+n);
   chip.classList.remove('is-empty');
-  chip.querySelector('.nm').textContent = `${path.split('/').pop()} · ${size[0]}×${size[1]}`;
+  chip.querySelector('.nm').textContent = `${path.split('/').pop()} · ${size[0]}×${size[1]}`
+    + (meta && meta.video ? ` · ${meta.frames} frames @ ${Math.round(meta.fps)}fps` : '');
   $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(path)}")`;
-  if (role==='photo'){ st.photo = path; st.corners = null; } else st.shot = path;
+  if (role==='photo'){ st.photo = path; st.corners = null; }
+  else { st.shot = path; st.video = meta && meta.video ? meta : null; syncVideoUI(); }
   closePop();
   maybeStart();
 }
 async function upload(role, file){
   const buf = await file.arrayBuffer();
   const r = await api('/api/upload', null, {headers:{'X-Filename':encodeURIComponent(file.name),'X-Role':role}, body:buf});
-  setChosen(role, r.path, r.size, null);
+  setChosen(role, r.path, r.size, null, r);
 }
 for (const [n, role] of [[1,'photo'],[2,'screenshot']]){
   const drop = $('#drop'+n), file = $('#file'+n);
@@ -1236,7 +1253,7 @@ $('#figmaBtn').onclick = async () => {
       try {
         const r = await api('/api/job/adopt', {});
         stop('ok', 'Exported');
-        setChosen('screenshot', r.path, r.size, null);
+        setChosen('screenshot', r.path, r.size, null, r);
       } catch (e) { stop('err', 'Exported, but the file could not be read: ' + e.message); }
     },
     onError: (j) => stop('err', 'Export failed: ' + (j.message || '')),
@@ -1785,7 +1802,7 @@ async function renderPreview(){
     im.onload = () => { outNat = im.naturalWidth; im.hidden = false; $('#outEmpty').style.display='none'; syncOut(); };
     im.src = `${fileURL(r.path)}&t=${Date.now()}`;
     s.textContent = `radius ${r.radius_px}px on the screenshot`;
-    const b = $('#save'); b.disabled = false; b.textContent = 'Save';
+    const b = $('#save'); b.disabled = false; b.textContent = st.video ? 'Render' : 'Save';
     b.classList.add('primary');            // Save is now the next action
     if (!previewHinted){ previewHinted = true;
       toast('info', 'Check the corners in Result, then <b>Save</b> — Save renders at full resolution.');
@@ -1805,7 +1822,7 @@ async function openPreviewPop(){
     img.onload = () => { img.hidden = false; };
     img.src = `${fileURL(r.path)}&t=${Date.now()}`;
     st_.textContent = `radius ${r.radius_px}px on the screenshot`;
-    const b = $('#save'); b.disabled = false; b.textContent = 'Save'; b.classList.add('primary');
+    const b = $('#save'); b.disabled = false; b.textContent = st.video ? 'Render' : 'Save'; b.classList.add('primary');
   }catch(e){ st_.textContent = e.message; }
 }
 $('#preview').onclick = openPreviewPop;
@@ -1818,7 +1835,72 @@ function prettyDir(p){
   return seg.length > 4 ? '…/' + seg.slice(-2).join('/') : d;
 }
 
+let preset = 'web';
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.onclick = () => {
+    preset = btn.dataset.preset;
+    document.querySelectorAll('[data-preset]').forEach(o => o.classList.toggle('sel', o === btn));
+  };
+});
+
+/* A video source changes exactly two things in this page: which frame the fit
+   is shown on, and what the primary button does. Everything else — the edge
+   matching, the loupe, the compare view, the realism rail — is untouched,
+   because the geometry does not care whether the pixels move. */
+function syncVideoUI(){
+  const v = st.video;
+  $('#vidbar').hidden = !v;
+  const b = $('#save');
+  if (v){
+    const sl = $('#vframe');
+    sl.max = Math.max(0, (v.frames || 1) - 1);
+    sl.value = 0;
+    $('#vframeLbl').textContent = `0 / ${Math.max(0,(v.frames||1)-1)}`;
+    if (b.textContent === 'Save') b.textContent = 'Render';
+  }
+}
+$('#vframe').oninput = () => { $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`; };
+$('#vframe').onchange = async () => {
+  // Swapping the poster frame re-runs preview through the same path a still
+  // uses, so what you match the edges against is the frame you chose.
+  try{
+    const r = await api('/api/frame', {index: +$('#vframe').value});
+    $('#pv2').innerHTML = `<img src="${fileURL(r.path)}" alt="">`;
+    $('#sw2').style.background = `center/cover no-repeat url("${fileURL(r.path)}")`;
+    autoPreview();
+  }catch(e){ toast('err', 'Could not read that frame: ' + e.message); }
+};
+
+async function renderVideo(){
+  const b = $('#save');
+  b.disabled = true;
+  try{
+    await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), device: st.type,
+                              grade: gradeValue(), preset, fit_frame: +$('#vframe').value});
+  }catch(e){ toast('err','Could not start the render: '+e.message); b.disabled=false; b.textContent='Render'; return; }
+  // Poll rather than hold a request open: a clip is hundreds of frames and a
+  // browser would time the request out long before the render finished.
+  const tick = setInterval(async () => {
+    let d; try { d = await api('/api/render_status', null, {method:'GET'}); }
+    catch(e){ return; }
+    if (d.state === 'running'){
+      const pct = d.total ? Math.round(100*d.done/d.total) : 0;
+      b.textContent = d.total ? `Rendering ${pct}%` : 'Rendering…';
+    } else if (d.state === 'done'){
+      clearInterval(tick);
+      b.textContent = 'Render'; b.disabled = false; b.classList.remove('primary');
+      toast('ok', `Rendered <code>${(d.output||'').split('/').pop()}</code> · ${d.done} frames to <code>${prettyDir(st.outDir||'')}</code>`);
+      const imp = $('#imp'); imp.disabled = false; imp.textContent = 'Send to Claude'; imp.classList.add('primary');
+    } else if (d.state === 'error'){
+      clearInterval(tick);
+      b.textContent = 'Render'; b.disabled = false;
+      toast('err', 'Render failed: ' + (d.message || 'unknown'));
+    }
+  }, 900);
+}
+
 $('#save').onclick = async () => {
+  if (st.video) return renderVideo();
   const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
   try{
     const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue()});
@@ -1901,7 +1983,7 @@ $('#imp').onclick = async () => {
     if (s.device) st.type = s.device;
     for (const [role, path] of [['photo', s.photo], ['screenshot', s.screenshot]]){
       if (!path) continue;
-      try { const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, null); }
+      try { const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, null, r); }
       catch(e){ /* file moved since: leave that slot empty */ }
     }
     // Populate the radius dropdown on the restore path too. detect() only

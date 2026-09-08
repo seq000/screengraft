@@ -61,6 +61,58 @@ def _stats(lab: np.ndarray, sel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return px.mean(axis=0), px.std(axis=0) + 1e-6
 
 
+def light_params(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
+                 strength: float = DEFAULT_STRENGTH):
+    """Measure the correction ONCE, so it can be applied to many frames.
+
+    Split out of match_light for video. The correction depends on the
+    screen's own content through `m_in`/`s_in`, so measuring it per frame makes
+    it drift as the UI scrolls from a dark screen to a light one — the injected
+    screen would visibly pulse. Deriving the parameters from one frame and
+    applying the identical transform to all of them is the whole fix.
+
+    Returns None when there is too little context to measure honestly, which
+    the caller must treat as "leave the frame alone".
+    """
+    if strength <= 0:
+        return None
+    ring = surround_ring(mask)
+    if int(ring.sum()) < 500:
+        return None
+    inside = (mask > 200).astype(np.uint8)
+    if int(inside.sum()) < 500:
+        return None
+    lab_photo = cv2.cvtColor(photo, cv2.COLOR_BGR2LAB).astype(np.float64)
+    lab_warp = cv2.cvtColor(warped, cv2.COLOR_BGR2LAB).astype(np.float64)
+    m_out, s_out = _stats(lab_photo, ring)
+    m_in, s_in = _stats(lab_warp, inside)
+    return {
+        "m_in": m_in, "s_in": s_in, "m_out": m_out, "s_out": s_out,
+        "strength": float(strength),
+        # Same clamp as match_light: a screen is emissive and may be brighter
+        # than the room, so L moves by a bounded mean shift only.
+        "dL": float(np.clip(m_out[0] - m_in[0], -12.0, 12.0)) * float(strength),
+    }
+
+
+def apply_light(warped: np.ndarray, params) -> np.ndarray:
+    """Apply parameters from light_params() to one frame."""
+    if params is None:
+        return warped
+    lab_warp = cv2.cvtColor(warped, cv2.COLOR_BGR2LAB).astype(np.float64)
+    m_in, s_in = params["m_in"], params["s_in"]
+    m_out, s_out = params["m_out"], params["s_out"]
+    strength = params["strength"]
+    out = lab_warp.copy()
+    for c in (1, 2):
+        moved = (lab_warp[:, :, c] - m_in[c]) * float(s_out[c] / s_in[c]) + m_out[c]
+        out[:, :, c] = lab_warp[:, :, c] + (moved - lab_warp[:, :, c]) * strength
+    out[:, :, 0] = lab_warp[:, :, 0] + params["dL"]
+    out[:, :, 0] = np.clip(out[:, :, 0], 0, 255)
+    out[:, :, 1:] = np.clip(out[:, :, 1:], 0, 255)
+    return cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_LAB2BGR)
+
+
 def match_light(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
                 strength: float = DEFAULT_STRENGTH) -> np.ndarray:
     """Move the injected screen's cast and exposure toward the surrounding light.
@@ -72,35 +124,10 @@ def match_light(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
     the bezel's would crush the UI's own contrast. That asymmetry is the whole
     design of this function.
     """
-    if strength <= 0:
-        return warped
-    ring = surround_ring(mask)
-    if int(ring.sum()) < 500:          # too little context to measure honestly
-        return warped
-
-    lab_photo = cv2.cvtColor(photo, cv2.COLOR_BGR2LAB).astype(np.float64)
-    lab_warp = cv2.cvtColor(warped, cv2.COLOR_BGR2LAB).astype(np.float64)
-    inside = (mask > 200).astype(np.uint8)
-    if int(inside.sum()) < 500:
-        return warped
-
-    m_out, s_out = _stats(lab_photo, ring)
-    m_in, s_in = _stats(lab_warp, inside)
-
-    out = lab_warp.copy()
-    # a,b: full Reinhard transfer, scaled by strength.
-    for c in (1, 2):
-        moved = (lab_warp[:, :, c] - m_in[c]) * float(s_out[c] / s_in[c]) + m_out[c]
-        out[:, :, c] = lab_warp[:, :, c] + (moved - lab_warp[:, :, c]) * strength
-    # L: mean shift only, and capped at +-12 L* so a dark room cannot switch
-    # the screen off. 12 is about a stop; beyond that it stops reading as the
-    # same screenshot.
-    dL = float(np.clip(m_out[0] - m_in[0], -12.0, 12.0)) * strength
-    out[:, :, 0] = lab_warp[:, :, 0] + dL
-
-    out[:, :, 0] = np.clip(out[:, :, 0], 0, 255)
-    out[:, :, 1:] = np.clip(out[:, :, 1:], 0, 255)
-    return cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_LAB2BGR)
+    # One implementation, two entry points: measuring and applying are the same
+    # arithmetic whether it runs on a still or on frame 900 of a clip. Keeping a
+    # second copy here is how the two paths would drift.
+    return apply_light(warped, light_params(photo, warped, mask, strength))
 
 
 def measure_grain(photo: np.ndarray, ring: np.ndarray) -> float:

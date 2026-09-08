@@ -87,12 +87,38 @@ def report():
         "install_command": f"{sys.executable} {os.path.abspath(__file__)} --install",
         "install_does": f"Creates a virtualenv at {VENV} (nothing touches system Python) and pip-installs "
                         f"{', '.join(pkg for _, pkg, _ in REQUIRED)} into it (~60 MB download).",
+        # Optional, and deliberately NOT part of `ready`. A missing ffmpeg
+        # stops video renders and nothing else; making it a hard requirement
+        # would fail preflight for every user who only ever injects a
+        # screenshot, which is most of them.
         "optional": [
+            {"name": "ffmpeg (video)", "package": "imageio-ffmpeg",
+             "status": "installed" if _have_ffmpeg() else "missing",
+             "why": "Encodes video renders. Ships as a wheel with a static binary, "
+                    "so it lands in the same venv and nothing is installed "
+                    "system-wide. Stills do not need it."},
             {"name": "SAM 2 (M4)", "status": "not yet used by the plugin",
              "why": "Better screen detection on photos where tone-based detection fails. Optional; results are worse without it, not absent."}
         ],
         "tools": {"open_browser": shutil.which("open") or shutil.which("xdg-open")},
     }
+
+
+def _have_ffmpeg() -> bool:
+    """Is the ffmpeg wheel importable IN THE VENV (not in whatever Python runs this)?"""
+    code = ("import json\n"
+            "try:\n"
+            "    import imageio_ffmpeg, os\n"
+            "    p = imageio_ffmpeg.get_ffmpeg_exe()\n"
+            "    print(json.dumps(bool(p and os.path.exists(p))))\n"
+            "except Exception:\n"
+            "    print('false')\n")
+    try:
+        r = subprocess.run([VENV_PY, "-c", code], capture_output=True, text=True,
+                           timeout=60, check=False)
+        return r.stdout.strip() == "true"
+    except Exception:
+        return False
 
 
 def install():

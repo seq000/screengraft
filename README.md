@@ -109,7 +109,7 @@ outside the screen mask. It never touches the pixels you designed.
 
 Done: manual warp, advisory detectors, the fitting workbench, the realism pass.
 
-Open: video tracking (M3), SAM 2 auto-detect (M4 — built and measured in a
+Open: camera-motion tracking, SAM 2 auto-detect (M4 — built and measured in a
 separate repo; it currently segments the phone body rather than the glass, so it
 is not shipped), occluder matte (M5), so a finger in front of the screen stays in
 front.

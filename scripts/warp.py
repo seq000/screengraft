@@ -28,6 +28,8 @@ screen as it appears in the photo — order matters, it defines the mapping).
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 
 import cv2
@@ -116,6 +118,140 @@ def shoelace_area(pts: np.ndarray) -> float:
     return 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
 
+class Plan:
+    """Everything about a fit that does NOT change from frame to frame.
+
+    Built once for a still, once per clip for a video. The split exists so the
+    two paths cannot drift: `compose()` is a Plan plus one frame, and
+    `compose_video()` is the same Plan plus N frames, which makes "frame 0 of a
+    render equals the still composite, byte for byte" a property the tests can
+    assert rather than a thing we hope stays true.
+
+    What lives here is what a fixed photo and a fixed quad make constant:
+
+      - the prefilter's target size (the screenshot/frame is always the same
+        size, and the quad never moves, so the minification factor is fixed);
+      - the homography, which is derived from that rescaled size;
+      - the rounded source mask;
+      - the warped, antialiased destination mask, which is by far the most
+        expensive thing in compose() because it supersamples MASK_SS x over the
+        quad's bbox. Computing it once is most of the speed of a video render,
+        and it also means the screen's EDGE is pixel-identical in every frame,
+        so there is no edge crawl — the artefact that makes a composite read as
+        fake. A fixed photo is the one case where that comes for free;
+      - the grain sigma, measured from the photo, which does not change either.
+
+    The grade parameters are deliberately NOT built here: they need a frame to
+    measure against, so `bind_grade()` takes the fit frame and stores them.
+    """
+
+    def __init__(self, photo: np.ndarray, frame_shape, corners,
+                 corner_radius: float = 0.0, grain: bool = False):
+        dst_quad = np.array(corners, dtype=np.float32)
+        if shoelace_area(dst_quad) < 1.0:
+            raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
+        self.photo = photo
+        self.dst_quad = dst_quad
+        self.grain = grain
+
+        top = float(np.linalg.norm(dst_quad[1] - dst_quad[0]))
+        bottom = float(np.linalg.norm(dst_quad[2] - dst_quad[3]))
+        left = float(np.linalg.norm(dst_quad[3] - dst_quad[0]))
+        right = float(np.linalg.norm(dst_quad[2] - dst_quad[1]))
+        need_w, need_h = max(top, bottom), max(left, right)
+        sh0, sw0 = frame_shape[:2]
+        scale_x, scale_y = need_w / sw0, need_h / sh0
+        self.prescale = max(scale_x, scale_y)
+        if 0 < self.prescale < 0.95:
+            self.new_w = max(1, int(round(sw0 * self.prescale)))
+            self.new_h = max(1, int(round(sh0 * self.prescale)))
+            self.radius = corner_radius * (self.new_w / sw0)
+        else:
+            self.new_w, self.new_h = sw0, sh0
+            self.radius = corner_radius
+            self.prescale = 1.0
+
+        src_rect = np.array([[0, 0], [self.new_w, 0],
+                             [self.new_w, self.new_h], [0, self.new_h]], dtype=np.float32)
+        self.H = cv2.getPerspectiveTransform(src_rect, dst_quad)
+        ph, pw = photo.shape[:2]
+        self.size = (pw, ph)
+        src_mask = rounded_mask(self.new_w, self.new_h, float(self.radius))
+        self.warped_mask = _warp_mask_antialiased(src_mask, self.H, pw, ph, dst_quad)
+        self.mask3 = cv2.merge([self.warped_mask] * 3).astype(np.float32) / 255.0
+        self.grain_sigma = (_grade.measure_grain(photo, _grade.surround_ring(self.warped_mask))
+                            if grain else 0.0)
+        self.grade_params = None
+        # Integer bbox of the quad, clamped to the canvas and padded by a pixel
+        # so the antialiased edge is never clipped.
+        xs, ys = dst_quad[:, 0], dst_quad[:, 1]
+        bx0, by0 = max(0, int(np.floor(xs.min())) - 1), max(0, int(np.floor(ys.min())) - 1)
+        bx1, by1 = min(pw, int(np.ceil(xs.max())) + 2), min(ph, int(np.ceil(ys.max())) + 2)
+        self.bbox = (bx0, by0, bx1, by1) if bx1 > bx0 and by1 > by0 else None
+
+    def _prep(self, frame: np.ndarray, bbox=None) -> np.ndarray:
+        """Warp one frame. With `bbox`, warp only that window of the canvas.
+
+        The window is an integer translation of the output grid, folded into the
+        homography, so every output pixel resolves to exactly the same source
+        coordinate as the full-canvas warp — byte-identical, and asserted as
+        such in test_video.py. Outside the quad the mask is zero and the blend
+        is the photo copied onto itself, so on a 2400x1792 photo whose screen
+        occupies 9% of the frame this is most of the per-frame cost removed.
+        """
+        if (self.new_w, self.new_h) != (frame.shape[1], frame.shape[0]):
+            frame = cv2.resize(frame, (self.new_w, self.new_h), interpolation=cv2.INTER_AREA)
+        H, size = self.H, self.size
+        if bbox is not None:
+            x0, y0, x1, y1 = bbox
+            T = np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1]], dtype=np.float64)
+            H, size = T @ H, (x1 - x0, y1 - y0)
+        return cv2.warpPerspective(frame, H, size,
+                                   flags=cv2.INTER_LANCZOS4,
+                                   borderMode=cv2.BORDER_REPLICATE)
+
+    def bind_grade(self, frame: np.ndarray, strength: float) -> None:
+        """Measure the light correction once, from the frame the user fitted on."""
+        self.grade_params = _grade.light_params(
+            self.photo, self._prep(frame), self.warped_mask, strength) if strength > 0 else None
+
+    def render(self, frame: np.ndarray, screen_off: np.ndarray = None,
+               specular: float = 0.75, fast: bool = False) -> np.ndarray:
+        """Composite one frame onto the photo.
+
+        `fast` confines the warp and the blend to the quad's bounding box. It is
+        off for stills, where a single frame's cost is irrelevant and the
+        simplest code is the one to trust, and on for video renders. Both
+        produce identical bytes; test_video.py asserts it rather than assuming.
+        """
+        if fast and self.bbox is not None:
+            x0, y0, x1, y1 = self.bbox
+            warped_screen = self._prep(frame, self.bbox)
+            if self.grade_params is not None:
+                warped_screen = _grade.apply_light(warped_screen, self.grade_params)
+            out = self.photo.copy()
+            win = self.mask3[y0:y1, x0:x1]
+            out[y0:y1, x0:x1] = np.clip(
+                self.photo[y0:y1, x0:x1].astype(np.float32) * (1 - win)
+                + warped_screen.astype(np.float32) * win, 0, 255).astype(np.uint8)
+        else:
+            warped_screen = self._prep(frame)
+            if self.grade_params is not None:
+                warped_screen = _grade.apply_light(warped_screen, self.grade_params)
+            out = (self.photo.astype(np.float32) * (1 - self.mask3)
+                   + warped_screen.astype(np.float32) * self.mask3)
+            out = np.clip(out, 0, 255).astype(np.uint8)
+        if self.grain:
+            # Seeded, so the grain is IDENTICAL in every frame. Over a still
+            # photograph that is what it must be: the background's own noise is
+            # frozen, and grain that crawled on the screen alone would read as a
+            # dirty window. It also keeps the render deterministic.
+            out = _grade.add_grain(out, self.warped_mask, self.grain_sigma)
+        if screen_off is not None:
+            out = _grade.specular_lift(out, screen_off, self.warped_mask, strength=specular)
+        return out
+
+
 def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: float = 0.0,
             grade: float = 0.0, grain: bool = False, screen_off: np.ndarray = None,
             specular: float = 0.75) -> np.ndarray:
@@ -124,79 +260,160 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
     Single resampling pass at the photo's resolution; deterministic. This is the
     whole engine — the CLI below and ui.py both call it.
     """
-    dst_quad = np.array(corners, dtype=np.float32)
-    if shoelace_area(dst_quad) < 1.0:
-        raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
+    # A Plan plus one frame. The long-form pipeline this replaced (prefilter,
+    # homography, rounded mask, antialiased mask warp, grade, blend, grain,
+    # specular) now lives in Plan, so the still and video paths run the SAME
+    # code and cannot drift apart. See test_video.py: frame 0 of a render is
+    # asserted byte-identical to this function's output.
+    plan = Plan(photo, screenshot.shape, corners, corner_radius, grain=grain)
+    plan.bind_grade(screenshot, grade)
+    return plan.render(screenshot, screen_off=screen_off, specular=specular)
 
-    # --- prefilter for minification -------------------------------------
-    # A UI screenshot is almost always far larger than the screen it lands
-    # on: 1206x2622 into a 226x454 quad is 5.3x across and 5.8x along, so
-    # each output pixel is the average of ~31 source pixels. warpPerspective
-    # (like remap) does NOT area-average — INTER_LANCZOS4 samples a fixed 8x8
-    # window around one source point no matter the scale, and Lanczos is a
-    # sharpening kernel, so heavy minification came out aliased and crunchy
-    # with text turned to noise (3 Sep 2026, reported from a real save).
-    #
-    # The fix is the mipmap principle: area-average DOWN to roughly the
-    # destination footprint first, then warp at ~1:1. This is not the
-    # "warp-then-scale" the build brief warns against — that's resampling an
-    # already-warped result, which blurs. This is resampling the source with
-    # the right filter before the only geometric pass, which is how you avoid
-    # aliasing when minifying.
-    top = float(np.linalg.norm(dst_quad[1] - dst_quad[0]))
-    bottom = float(np.linalg.norm(dst_quad[2] - dst_quad[3]))
-    left = float(np.linalg.norm(dst_quad[3] - dst_quad[0]))
-    right = float(np.linalg.norm(dst_quad[2] - dst_quad[1]))
-    # Use the LONGER opposing edge of each pair: under perspective the near
-    # edge carries the most detail, and that's the resolution to preserve.
-    need_w = max(top, bottom)
-    need_h = max(left, right)
-    sh0, sw0 = screenshot.shape[:2]
-    scale_x, scale_y = need_w / sw0, need_h / sh0
-    if 0 < max(scale_x, scale_y) < 0.95:          # only ever downsample
-        new_w = max(1, int(round(sw0 * max(scale_x, scale_y))))
-        new_h = max(1, int(round(sh0 * max(scale_x, scale_y))))
-        screenshot = cv2.resize(screenshot, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        corner_radius = corner_radius * (new_w / sw0)   # radius is in source px
-    # --------------------------------------------------------------------
 
-    sh, sw = screenshot.shape[:2]
-    src_rect = np.array([[0, 0], [sw, 0], [sw, sh], [0, sh]], dtype=np.float32)
-    H = cv2.getPerspectiveTransform(src_rect, dst_quad)
+def ffmpeg_exe() -> str:
+    """Path to the ffmpeg binary, or raise with something a designer can act on.
+
+    imageio_ffmpeg ships a static binary as a wheel, so it installs into the
+    same venv OpenCV already lives in and the zero-configuration constraint
+    holds — no Homebrew, no PATH hunting. cv2.VideoWriter was rejected for this
+    job: the headless wheels carry a limited codec set, expose no control over
+    bitrate or pixel format, and behave differently per platform, none of which
+    is acceptable when the output is the deliverable.
+    """
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception as e:
+        raise RuntimeError(
+            "ffmpeg is missing. Run `python3 scripts/preflight.py --install` to add it "
+            "to the screengraft venv (it ships as a wheel; nothing is installed "
+            "system-wide)."
+        ) from e
+
+
+# Output presets. The last stage of the pipeline is the only one that can undo
+# the care taken in all the others: H.264's 4:2:0 chroma subsampling softens
+# exactly the coloured text edges the INTER_AREA prefilter exists to protect.
+# So "web" runs at CRF 16, which is near-visually-lossless rather than
+# delivery-sized, and anything destined for a case study should use prores.
+# BT.709 is tagged explicitly on both so players do not guess at the primaries
+# and shift the colour we just matched to the room.
+PRESETS = {
+    "web": ["-c:v", "libx264", "-preset", "slow", "-crf", "16",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart"],
+    "prores": ["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le"],
+}
+
+
+def probe_video(path: str):
+    """(frame_count, fps, width, height) — read, never trusted blindly."""
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise RuntimeError(f"could not open video: {path}")
+    fps = float(cap.get(cv2.CAP_PROP_FPS)) or 0.0
+    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    cap.release()
+    # CAP_PROP_FRAME_COUNT is a container hint and is wrong often enough that
+    # the render loop counts frames as it reads them instead. It is reported
+    # here only to drive a progress bar.
+    if not (0.1 <= fps <= 240):
+        fps = 30.0
+    return n, fps, w, h
+
+
+def read_frame_at(path: str, index: int = 0):
+    """One frame, for fitting and for the poster image."""
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise RuntimeError(f"could not open video: {path}")
+    if index > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+    ok, frame = cap.read()
+    if not ok and index > 0:
+        # Seeking is unreliable on some containers; fall back to reading
+        # forward, which is slow and always right.
+        cap.release()
+        cap = cv2.VideoCapture(path)
+        for _ in range(index + 1):
+            ok, frame = cap.read()
+            if not ok:
+                break
+    cap.release()
+    if not ok or frame is None:
+        raise RuntimeError(f"could not read frame {index} of {path}")
+    return frame
+
+
+def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
+                  corner_radius: float = 0.0, grade: float = 0.0, grain: bool = False,
+                  preset: str = "web", fit_frame: int = 0, audio: bool = True,
+                  frames_dir: str = None, progress=None) -> dict:
+    """Inject a VIDEO into a still photo. The photo does not move, so there is
+    exactly one homography and the whole of Plan is computed once.
+
+    Frames are piped to ffmpeg as raw BGR24 rather than written out as a PNG
+    sequence: a ten-second clip is several hundred frames and several GB of
+    intermediate PNGs, for no benefit. `frames_dir` still dumps them when a
+    test or a human needs to look at individual frames.
+
+    Time is deliberately NOT resampled. The output runs at the source's own
+    frame rate; converting fps by dropping or duplicating frames is judder, and
+    doing it properly means blending, which is a different feature. Note also
+    that a prototype recording has no motion blur — it renders discrete frames
+    — so a fast scroll will strobe. That is a property of the input, the same
+    way the source resolution is, not something this stage should paper over.
+    """
+    n_hint, fps, vw, vh = probe_video(video_path)
+    first = read_frame_at(video_path, fit_frame)
+    plan = Plan(photo, first.shape, corners, corner_radius, grain=grain)
+    plan.bind_grade(first, grade)
+
     ph, pw = photo.shape[:2]
-    # Radius stays fractional: rounded_mask is analytic, and after the
-    # prefilter rescale above a truncation here is up to a whole pixel of
-    # radius thrown away at exactly the scale the viewer is looking at.
-    src_mask = rounded_mask(sw, sh, float(corner_radius))
-    # BORDER_REPLICATE, not BORDER_CONSTANT black: with an antialiased mask
-    # the edge pixels are a genuine blend of screen and photo, and sampling
-    # black just outside the screenshot would draw a dark fringe right where
-    # the antialiasing is supposed to be doing its work. Replicating the edge
-    # pixel means a half-covered pixel blends real screen colour instead.
-    warped_screen = cv2.warpPerspective(
-        screenshot, H, (pw, ph), flags=cv2.INTER_LANCZOS4,
-        borderMode=cv2.BORDER_REPLICATE)
-    warped_mask = _warp_mask_antialiased(src_mask, H, pw, ph, dst_quad)
+    cmd = [ffmpeg_exe(), "-y", "-loglevel", "error",
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{pw}x{ph}",
+           "-r", f"{fps}", "-i", "-"]
+    if audio:
+        # Optional by construction: `?` on the map means a source with no audio
+        # track (which a prototype recording usually is) is not an error.
+        cmd += ["-i", video_path, "-map", "0:v", "-map", "1:a?", "-c:a", "aac", "-shortest"]
+    cmd += PRESETS.get(preset, PRESETS["web"])
+    cmd += ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+            output]
 
-    # --- M2: the realism pass -------------------------------------------
-    # Order is not arbitrary. The light match runs on the warped screen BEFORE
-    # compositing, so it measures and moves only screen pixels — grading after
-    # the blend would drag the bezel with it. Grain and the specular lift run
-    # AFTER, because both are things that happen to the finished surface, and
-    # both are confined to the screen by the same mask.
-    if grade > 0:
-        warped_screen = _grade.match_light(photo, warped_screen, warped_mask, strength=grade)
-
-    mask3 = cv2.merge([warped_mask] * 3).astype(np.float32) / 255.0
-    out = photo.astype(np.float32) * (1 - mask3) + warped_screen.astype(np.float32) * mask3
-    out = np.clip(out, 0, 255).astype(np.uint8)
-
-    if grain:
-        sigma = _grade.measure_grain(photo, _grade.surround_ring(warped_mask))
-        out = _grade.add_grain(out, warped_mask, sigma)
-    if screen_off is not None:
-        out = _grade.specular_lift(out, screen_off, warped_mask, strength=specular)
-    return out
+    if frames_dir:
+        os.makedirs(frames_dir, exist_ok=True)
+    cap = cv2.VideoCapture(video_path)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    count = 0
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            out = plan.render(frame, fast=True)
+            if frames_dir:
+                cv2.imwrite(os.path.join(frames_dir, f"{count:06d}.png"), out,
+                            [cv2.IMWRITE_PNG_COMPRESSION, 1])
+            proc.stdin.write(out.tobytes())
+            count += 1
+            if progress and count % 10 == 0:
+                progress(count, n_hint)
+    finally:
+        cap.release()
+        try:
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+        err = proc.stderr.read().decode("utf-8", "replace")
+        proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed ({proc.returncode}): {err.strip()[:400]}")
+    if count == 0:
+        raise RuntimeError(f"no frames could be read from {video_path}")
+    return {"frames": count, "fps": fps, "source_size": [vw, vh],
+            "output_size": [pw, ph], "preset": preset, "fit_frame": fit_frame}
 
 
 def main() -> None:

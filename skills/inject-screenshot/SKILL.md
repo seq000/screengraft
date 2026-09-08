@@ -11,7 +11,9 @@ The geometry is exact (`warp.py`); the detection is advisory (`detect.py`) and t
 
 **The realism pass ships and is ON by default** (`grade.py`, M2): it matches the injected screen's white balance and grain to the light around it, at a strength the designer sets in the rail. It can also lift the device's real specular highlights from a screen-off reference frame, though the UI cannot supply one yet. Off is a first-class choice and keeps the screenshot's colour exactly — say so if the user is reviewing brand colour.
 
-Still missing: **no ML detection** (M4 — measured, and it segments the phone body rather than the glass, so it is not shipped), **no occluder handling** — a finger or glare in front of the screen gets painted over (M5) — and **no video** (M3). Say so if it matters for the photo.
+**Video ships too.** The screen source can be a video (mp4/mov/webm) as well as a still — pick it exactly like a screenshot, choose which frame to match the edges on, and the primary button becomes **Render**. The photo does not move, so there is one homography and every frame gets the same geometry; the light match is measured once from the frame you fitted on, so the screen cannot pulse as the UI scrolls. Output is H.264 at CRF 16 (near-visually-lossless) or ProRes 422 HQ. This is what pairs with a prototype recording: record the prototype, then inject the recording into a real photograph.
+
+Still missing: **no ML detection** (M4 — measured, and it segments the phone body rather than the glass, so it is not shipped), **no occluder handling** — a finger or glare in front of the screen gets painted over (M5) — and **no camera motion**: the photo must be a still, so a clip of a moving phone is not this. Say so if it matters for the photo.
 
 **Runs on the user's Mac shell** (Desktop Commander `start_process` or equivalent). The sandboxed Linux shell can't open a browser or reach `~/Desktop`. Paths below are relative to the plugin root — two levels up from this file.
 
@@ -95,6 +97,7 @@ The user pressed Save. Read the output image back (you can see images). Check:
 - The injected screen sits on the bezel edge all the way round — no sliver of the original screen showing, no UI poking past the glass. Zoom a corner if unsure.
 - Text in the injected area is sharp. Soft means double resampling — that's a bug, not a setting.
 - Nothing that was in front of the screen in the photo has been painted over (if it has, say so — M5).
+- **For a video render**, the same checks on a frame, plus: play it and confirm the screen does not pulse or shift, and that the photo around it is perfectly static. The renderer guarantees the second by construction — everything outside the screen mask is the original photo's bytes — so movement there is a bug worth reporting, not a setting.
 
 Then `present_files` the output. Report what you checked, not "done".
 
