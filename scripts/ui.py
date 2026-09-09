@@ -229,7 +229,39 @@ def _version() -> str:
     return ""
 
 
+def _build_label() -> str:
+    """Where this code came from: "" when installed, "dev <sha>[+]" from a tree.
+
+    The distinction the badge exists for. A session materialises its own private
+    copy of every installed plugin at start and keeps that snapshot for its whole
+    life, so the installed copy and the tree you are editing drift apart within
+    minutes -- and the symptom is a feature that is "not there", which reads
+    exactly like a bug in the feature. That has cost two debugging sessions.
+
+    `.git` is the discriminator because the packager excludes it: a tree has one,
+    an unpacked .plugin never does. The commit and the dirty marker are here
+    because on a day with four releases a bare "dev" is not enough to say WHICH
+    dev, and a sha without a `+` when the tree is dirty would be a confident lie
+    -- the failure mode this badge is supposed to prevent.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if not os.path.isdir(os.path.join(root, ".git")):
+        return ""                              # an unpacked .plugin: just the version
+    def git(*a):
+        return subprocess.run(("git", "-C", root) + a, capture_output=True,
+                              text=True, timeout=5)
+    try:
+        r = git("rev-parse", "--short", "HEAD")
+        sha = r.stdout.strip() if r.returncode == 0 else ""
+        d = git("status", "--porcelain")
+        dirty = "+" if (d.returncode == 0 and d.stdout.strip()) else ""
+    except (OSError, subprocess.SubprocessError):
+        return "dev"                           # a tree, and that is the part that matters
+    return f"dev {sha}{dirty}".strip() if sha else "dev"
+
+
 VERSION = None                                 # resolved once, in main()
+BUILD = ""                                     # ditto -- no per-request subprocess
 
 
 def _quad(raw):
@@ -473,7 +505,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(UI_HTML, "text/html; charset=utf-8")
             if u.path == "/api/state":
                 return self._json({**SESSION.state, "session": SESSION.dir, "out_dir": OUT_DIR,
-                                   "home": HOME, "presets": PRESETS, "version": VERSION})
+                                   "home": HOME, "presets": PRESETS, "version": VERSION,
+                                   "build": BUILD})
             if u.path == "/api/recent":
                 items = S.scan(days=int(q.get("days", ["14"])[0]), limit=int(q.get("limit", ["40"])[0]))
                 for it in items:
@@ -841,7 +874,7 @@ def _publish_current(payload):
 
 
 def main():
-    global SESSION, OUT_DIR, VERSION
+    global SESSION, OUT_DIR, VERSION, BUILD
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=0, help="0 = pick a free port")
     ap.add_argument("--no-open", action="store_true", help="Don't open the browser")
@@ -860,6 +893,7 @@ def main():
         _daemonise(args.log)
 
     VERSION = _version()
+    BUILD = _build_label()
     if args.out_dir:
         OUT_DIR = os.path.abspath(os.path.expanduser(args.out_dir))
     sdir = args.session or os.path.join(HOME, ".screengraft", "sessions", time.strftime("%Y%m%d-%H%M%S"))

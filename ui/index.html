@@ -577,6 +577,11 @@
   .ver{position:fixed;right:var(--s3);bottom:2px;z-index:5;pointer-events:none;
        font-size:11px;letter-spacing:.06em;color:var(--faint);
        font-variant-numeric:tabular-nums}
+  /* A dev build steps up from --faint to --mute (5.86:1). Not the accent, which
+     means "the next action" -- this is a fact about what you are running, not
+     something to do. Brighter than the plain version because "you are not
+     testing what you think you are testing" is worth noticing. */
+  .ver.dev{color:var(--mute)}
   /* Figma 8:29 is a 28px header holding 24px buttons — the header does not
      shrink to hug them. */
   .striphead{display:flex;align-items:center;gap:8px;font-size:12px;min-height:28px}
@@ -2130,7 +2135,16 @@ $('#imp').onclick = async () => {
   st.outDir = s.out_dir; st.home = s.home;
   // Empty stays empty: the server returns "" if it could not read the manifest,
   // and no badge is better than a wrong one in a bug report.
-  if (s.version) $('#ver').textContent = 'v' + s.version;
+  // "v1.2.3" from an installed plugin; "v1.2.3 · dev a1b2c3d+" from a working
+  // tree. (Deliberately a made-up number: a test asserts the CURRENT version
+  // string appears nowhere in this file, and an example using the real one
+  // would trip it -- as it just did.) The suffix is the whole point: a session snapshots its installed copy
+  // at start and keeps it for life, so "the feature is missing" is far more
+  // often the wrong build than a broken feature.
+  if (s.version){
+    $('#ver').textContent = 'v' + s.version + (s.build ? ' · ' + s.build : '');
+    $('#ver').classList.toggle('dev', !!s.build);
+  }
   // Say up front where Save will put things. With --out-dir this is usually the
   // project folder, and a designer should not have to press Save to find out.
   toast('info', `Fit the four edges, then Preview. Saves go to <code>${prettyDir(s.out_dir||'')}</code>.`,

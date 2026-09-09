@@ -322,6 +322,43 @@ def version_badge(td):
         ok("...and it is the manifest's, not a copy",
            st.get("version") == manifest.get("version"),
            f"served {st.get('version')} vs manifest {manifest.get('version')}")
+        ok("a working tree is labelled as one",
+           st.get("build", "").startswith("dev"), f"build={st.get('build')!r}")
+
+        # The discrimination this badge exists for, tested the only way that
+        # means anything: run the server from an UNPACKED .plugin, which is what
+        # an installed copy is, and require it NOT to claim to be a dev build.
+        import zipfile
+        plug = os.path.join(ROOT, "dist", f"screengraft-{manifest['version']}.plugin")
+        if os.path.exists(plug):
+            unpacked = os.path.join(td, "unpacked")
+            with zipfile.ZipFile(plug) as z:
+                z.extractall(unpacked)
+            ok("the packaged plugin carries no .git (the discriminator)",
+               not os.path.isdir(os.path.join(unpacked, ".git")))
+            home2 = os.path.join(td, "vhome"); os.makedirs(home2, exist_ok=True)
+            proc = subprocess.Popen(
+                [sys.executable, os.path.join(unpacked, "scripts", "ui.py"),
+                 "--port", "0", "--no-open", "--session", os.path.join(td, "vsess"),
+                 "--out-dir", os.path.join(td, "vout")],
+                env={**os.environ, "HOME": home2},
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+            try:
+                info = json.loads(proc.stdout.readline())
+                with urllib.request.urlopen(info["url"].rstrip("/") + "/api/state",
+                                            timeout=30) as r:
+                    st2 = json.load(r)
+                ok("an installed copy is NOT labelled dev", st2.get("build") == "",
+                   f"build={st2.get('build')!r}")
+                ok("...and still reports its version", st2.get("version") == manifest["version"],
+                   str(st2.get("version")))
+            finally:
+                proc.terminate()
+                try: proc.wait(timeout=10)
+                except subprocess.TimeoutExpired: proc.kill()
+        else:
+            ok("dist/*.plugin present to test the installed case", False, plug)
+
         page = open(os.path.join(ROOT, "ui", "index.html"), encoding="utf-8").read()
         hardcoded = manifest["version"] in page
         ok("the page does not hardcode a version of its own", not hardcoded,
