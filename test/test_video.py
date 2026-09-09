@@ -109,6 +109,18 @@ def main():
        "" if np.array_equal(slow, fast) else
        f"max delta {np.abs(slow.astype(int) - fast.astype(int)).max()}")
 
+    # The emissive blend reads the PHOTO under the screen, so the bbox window has
+    # to be sliced out of it as well as out of the mask. Getting that wrong shows
+    # up only on the video path, and only as a subtly wrong screen.
+    pe = W.Plan(photo, frame.shape, CORNERS, corner_radius=24.0, grain=True,
+                blend="emissive", reflection=0.35)
+    pe.bind_grade(frame, 0.35)
+    es, ef = pe.render(frame), pe.render(frame, fast=True)
+    ok("...and with the emissive blend too", np.array_equal(es, ef),
+       "" if np.array_equal(es, ef) else
+       f"max delta {np.abs(es.astype(int) - ef.astype(int)).max()}")
+    ok("the emissive blend actually changes the frame", not np.array_equal(es, slow))
+
     with tempfile.TemporaryDirectory() as td:
         src = os.path.join(td, "src.mp4")
         if not ok("a test clip could be encoded", synth_clip(src)):
@@ -181,8 +193,8 @@ def main():
         ok("web is tagged for compatibility and quality",
            "yuv420p" in W.PRESETS["web"] and "16" in W.PRESETS["web"])
         ok("the render info carries what a re-render needs",
-           {"frames", "fps", "source_size", "output_size", "preset", "fit_frame"}
-           <= set(info), str(sorted(info)))
+           {"frames", "fps", "source_size", "output_size", "preset", "fit_frame",
+            "blend", "reflection"} <= set(info), str(sorted(info)))
 
     print()
     if FAILED:

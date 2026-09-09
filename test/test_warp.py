@@ -180,6 +180,47 @@ def main():
                    and m[150, 0] == 1.0 and m[150, 199] == 1.0)
     failures += not check("straight edges stay fully opaque", edges_solid)
 
+    print("a true-black UI on a lit surface is a hole under replace, not under emissive")
+    # The 9 Sep 2026 case: an automotive dashboard render whose UI is 56% #000.
+    # `replace` treats the screenshot as paint and discards the device's own
+    # glass, so true black lands as true black on a lit dashboard and reads as a
+    # hole cut in the render. A real display shows emission PLUS the room
+    # reflecting off it — which is why a switched-off phone is dark grey.
+    lit = np.zeros((400, 700, 3), np.uint8)
+    for y in range(400):                       # a lit, matte surface with a streak
+        lit[y, :] = 40 + int(28 * np.exp(-((y - 150) ** 2) / 900.0))
+    quad = [[120, 120], [580, 124], [578, 300], [122, 296]]
+    ui = np.zeros((176, 460, 3), np.uint8)     # true black with a little content
+    cv2.putText(ui, "MAP", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
+    plan = W.Plan(lit, ui.shape, quad)
+    inside = plan.warped_mask > 200
+
+    rep = W.compose(lit, ui, quad, 0.0)
+    emi = W.compose(lit, ui, quad, 0.0, blend="emissive", reflection=0.35)
+    g = lambda im: cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+    rep_med = float(np.median(g(rep)[inside]))
+    emi_med = float(np.median(g(emi)[inside]))
+    sur_med = float(np.median(g(lit)[inside == False]))  # noqa: E712 - the lit surface
+    failures += not check("replace leaves the screen far darker than the surface",
+                          rep_med < 5, f"screen median {rep_med:.1f} vs surface {sur_med:.1f}")
+    failures += not check("emissive lifts it toward the surface",
+                          emi_med > rep_med + 8, f"{rep_med:.1f} -> {emi_med:.1f}")
+    # The point is not the level but the STRUCTURE: the streak in the surface
+    # must survive across the screen. Colour-matching can only lift uniformly.
+    row_hi = float(np.median(g(emi)[150, 200:500]))
+    row_lo = float(np.median(g(emi)[280, 200:500]))
+    flat_hi = float(np.median(g(rep)[150, 200:500]))
+    flat_lo = float(np.median(g(rep)[280, 200:500]))
+    failures += not check("the surface's own gradient carries across the screen",
+                          (row_hi - row_lo) > (flat_hi - flat_lo) + 5,
+                          f"emissive delta {row_hi-row_lo:.1f} vs replace {flat_hi-flat_lo:.1f}")
+    failures += not check("reflection=0 collapses exactly to replace",
+                          np.array_equal(W.compose(lit, ui, quad, 0.0, blend="emissive",
+                                                   reflection=0.0), rep))
+    failures += not check("an unknown blend name falls back to replace, not an error",
+                          np.array_equal(W.compose(lit, ui, quad, 0.0, blend="banana"), rep))
+    failures += not check("emissive is OFF by default", np.array_equal(W.compose(lit, ui, quad, 0.0), rep))
+
     print()
     if failures:
         print(f"{failures} check(s) failed")

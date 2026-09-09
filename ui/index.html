@@ -803,6 +803,23 @@
           </div>
           </div></div>
       </div>
+      <div class="sect" id="secEmissive" data-on="0">
+        <div class="sect-top">
+          <div class="sect-left">
+            <h4>Emissive screen</h4>
+            <button class="info" type="button" aria-label="About emissive screen"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">A real display shows its own light PLUS the room reflecting off its glass — which is why a switched-off phone looks dark grey, never black. Off paints the screenshot on flat, so a true-black UI reads as a hole cut in the photo. On composites it over the glass, so the reflections and highlights already in your photo carry across the screen. Strength sets how much glass shows through.</span></button>
+          </div>
+          <button class="switch" id="emisBtn" role="switch" aria-checked="false" aria-label="Emissive screen">
+            <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
+          </button>
+        </div>
+        <div class="sect-body"><div class="sect-body-in">
+          <div style="display:grid;gap:var(--s2);justify-items:end">
+            <span class="sm" id="emisVal" style="font-variant-numeric:tabular-nums"></span>
+            <input type="range" id="emisAmt" min="0" max="1" step="0.05" value="0.35" aria-label="Reflection strength">
+          </div>
+          </div></div>
+      </div>
       <div class="sect" id="secEdge" data-on="1">
         <div class="sect-top">
           <div class="sect-left">
@@ -1660,6 +1677,31 @@ $('#gradeBtn').onclick = () => { setGrade(!gradeOn); autoPreview(); };
 $('#gradeAmt').oninput  = e => { gradeAmt = parseFloat(e.target.value); paintGrade(); };
 $('#gradeAmt').onchange = e => { setGrade(true, parseFloat(e.target.value)); autoPreview(); };
 
+/* Emissive screen. A display emits light AND reflects the room; `replace` models
+   only the first, which is why a true-black UI lands as a hole. Off by default so
+   nothing about an existing fit changes. */
+let emisOn  = recall('emis','0') === '1';
+let emisAmt = parseFloat(recall('emisAmt','0.35')) || 0.35;
+function emisValue(){ return emisOn ? emisAmt : null; }
+function paintEmis(){
+  setSwitch($('#emisBtn'), emisOn);
+  $('#emisVal').textContent = Math.round(emisAmt * 100) + '%';
+  const sl = $('#emisAmt');
+  sl.value = emisAmt;
+  sl.style.setProperty('--p', emisAmt);
+}
+function setEmis(on, amt){
+  emisOn = on;
+  if (amt !== undefined) emisAmt = amt;
+  remember('emis', on ? '1' : '0'); remember('emisAmt', String(emisAmt));
+  setSectionOpen($('#secEmissive'), on);
+  paintEmis();
+}
+$('#emisBtn').onclick = () => { setEmis(!emisOn); autoPreview(); };
+$('#emisAmt').oninput  = e => { emisAmt = parseFloat(e.target.value); paintEmis(); };
+$('#emisAmt').onchange = e => { setEmis(true, parseFloat(e.target.value)); autoPreview(); };
+
+
 $('#edgeBtn').onclick = () => setLoupeMode(loupeMode === 'float' ? 'dock' : 'float');
 
 function paintStrip(c, W, H, i){
@@ -1779,7 +1821,7 @@ async function renderPreview(){
   if (!(st.photo && st.shot && st.corners)) return;
   const s = $('#outSt'); s.textContent = 'Rendering…';
   try{
-    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue()});
+    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     const im = $('#outImg');
     im.onload = () => { outNat = im.naturalWidth; im.hidden = false; $('#outEmpty').style.display='none'; syncOut(); };
     im.src = `${fileURL(r.path)}&t=${Date.now()}`;
@@ -1850,7 +1892,7 @@ async function renderVideo(){
   b.innerHTML = 'Rendering<span class="spin" aria-hidden="true"></span>';
   try{
     await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), device: st.type,
-                              grade: gradeValue(), preset, fit_frame: +$('#vframe').value});
+                              grade: gradeValue(), reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
   }catch(e){ toast('err','Could not start the render: '+e.message); b.disabled=false; b.textContent='Render'; return; }
   // Poll rather than hold a request open: a clip is hundreds of frames and a
   // browser would time the request out long before the render finished.
@@ -1881,7 +1923,7 @@ $('#save').onclick = async () => {
   if (st.video) return renderVideo();
   const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
   try{
-    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue()});
+    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     b.textContent = 'Save';
     // The real destination, not a hardcoded one: --out-dir means saves usually
     // land in the project folder now, and telling the user "~/Desktop" when
@@ -1941,6 +1983,7 @@ $('#imp').onclick = async () => {
   }
   setLoupeMode(loupeMode);
   setGrade(gradeOn, gradeAmt);
+  setEmis(emisOn, emisAmt);
   setRadiusOn(radiusOn);
   sectionsBooted = true;   // animate from here on, not during the first paint
   // Compare is the DEFAULT view: judging a fit means comparing it with the

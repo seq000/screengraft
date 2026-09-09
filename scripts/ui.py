@@ -215,20 +215,39 @@ RENDER = {"state": "idle", "done": 0, "total": 0, "output": None, "message": Non
 RENDER_LOCK = threading.Lock()
 
 
-def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame):
+def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
+                   blend="replace", reflection=None):
     def progress(done, total):
         with RENDER_LOCK:
             RENDER["done"], RENDER["total"] = done, total
     try:
         info = W.compose_video(photo, video_path, corners, dest,
                                corner_radius=radius_px, grade=gr, grain=grain,
-                               preset=preset, fit_frame=fit_frame, progress=progress)
+                               preset=preset, fit_frame=fit_frame, progress=progress,
+                               blend=blend,
+                               reflection=(W.DEFAULT_REFLECTION if reflection is None
+                                           else reflection))
         with RENDER_LOCK:
             RENDER.update(state="done", output=dest, info=info,
                           done=info["frames"], total=info["frames"], message=None)
     except Exception as e:                     # noqa: BLE001 - surfaced to the page
         with RENDER_LOCK:
             RENDER.update(state="error", message=str(e))
+
+
+def _blend_args(b):
+    """(blend, reflection) from the page's single `reflection` field.
+
+    One field, not two: the page sends a number when the switch is on and null
+    when it is off, so there is no way to express the contradictory state
+    "emissive with no strength" — which is just `replace` under a different
+    name. compose() still takes both, because the engine should not have to
+    infer intent from a null.
+    """
+    r = b.get("reflection")
+    if r is None:
+        return "replace", W.DEFAULT_REFLECTION
+    return "emissive", float(max(0.0, min(1.0, float(r))))
 
 
 def _guess_type(corners):
@@ -465,6 +484,7 @@ class Handler(BaseHTTPRequestHandler):
                 radius_px = frac * first.shape[1]
                 gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
                 grain = bool(b.get("grain", gr > 0))
+                blend, reflection = _blend_args(b)
                 preset = "prores" if b.get("preset") == "prores" else "web"
                 ext = ".mov" if preset == "prores" else ".mp4"
                 os.makedirs(OUT_DIR, exist_ok=True)
@@ -484,11 +504,13 @@ class Handler(BaseHTTPRequestHandler):
                           "corners": corners, "radius_frac": frac, "radius_px": radius_px,
                           "device": b.get("device"), "grade": gr, "grain": grain,
                           "video": True, "preset": preset, "fit_frame": fit_frame,
+                          "blend": blend, "reflection": reflection,
                           "saved": time.time()}
                 _write_json_atomic(SESSION.result_path, result)
                 threading.Thread(target=_render_worker, daemon=True,
                                  args=(photo, spath, corners, dest, radius_px,
-                                       gr, grain, preset, fit_frame)).start()
+                                       gr, grain, preset, fit_frame,
+                                       blend, reflection)).start()
                 return self._json({"started": True, "output": dest, "preset": preset})
 
             if u.path in ("/api/preview", "/api/save"):
@@ -502,8 +524,10 @@ class Handler(BaseHTTPRequestHandler):
                 # is the point (a brand review), and the grade is the right one
                 # when the photograph is (a portfolio shot).
                 gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
+                blend, reflection = _blend_args(b)
                 out = W.compose(photo, shot, corners, radius_px,
-                                grade=gr, grain=bool(b.get("grain", gr > 0)))
+                                grade=gr, grain=bool(b.get("grain", gr > 0)),
+                                blend=blend, reflection=reflection)
                 SESSION.update(corners=corners, radius_frac=frac, device=b.get("device"),
                                grade=gr)
                 if u.path == "/api/preview":
@@ -537,6 +561,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = {"output": dest, "photo": ppath, "screenshot": spath, "corners": corners,
                           "radius_frac": frac, "radius_px": radius_px, "device": b.get("device"),
                           "grade": gr, "grain": bool(b.get("grain", gr > 0)),
+                          "blend": blend, "reflection": reflection,
                           "saved": time.time()}
                 _write_json_atomic(SESSION.result_path, result)
                 SESSION.update(output=dest)

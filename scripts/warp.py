@@ -40,6 +40,12 @@ import grade as _grade   # M2: the realism pass
 
 MASK_SS = 4   # destination-space supersampling for the screen's edge
 
+# How much of the device's own glass shows through under an emissive screen.
+# Measured 9 Sep 2026 on an automotive render whose UI is 56% true black: at 0
+# the screen is a hole, by 25% it sits in the scene, 50% reads clearly as glass,
+# and past 75% the content loses contrast. 0.35 is the middle of the usable band.
+DEFAULT_REFLECTION = 0.35
+
 
 def rounded_mask(w: int, h: int, radius: float) -> np.ndarray:
     """White-on-black mask, full frame minus rounded corners cut to black.
@@ -146,13 +152,16 @@ class Plan:
     """
 
     def __init__(self, photo: np.ndarray, frame_shape, corners,
-                 corner_radius: float = 0.0, grain: bool = False):
+                 corner_radius: float = 0.0, grain: bool = False,
+                 blend: str = "replace", reflection: float = DEFAULT_REFLECTION):
         dst_quad = np.array(corners, dtype=np.float32)
         if shoelace_area(dst_quad) < 1.0:
             raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
         self.photo = photo
         self.dst_quad = dst_quad
         self.grain = grain
+        self.blend = blend if blend in ("replace", "emissive") else "replace"
+        self.reflection = float(np.clip(reflection, 0.0, 1.0))
 
         top = float(np.linalg.norm(dst_quad[1] - dst_quad[0]))
         bottom = float(np.linalg.norm(dst_quad[2] - dst_quad[3]))
@@ -215,6 +224,31 @@ class Plan:
         self.grade_params = _grade.light_params(
             self.photo, self._prep(frame), self.warped_mask, strength) if strength > 0 else None
 
+    def _blend(self, photo_win, warped_win):
+        """Emitted light over reflected light, or a plain replace.
+
+        `replace` treats the screenshot as paint: the device's own screen
+        surface is discarded. That is right for a reflective surface and wrong
+        for an emissive one — a real display shows EMISSION PLUS the room
+        reflecting off its glass, which is why a switched-off phone reads dark
+        grey and never black. Paint true black onto a lit dashboard and it
+        reads as a hole cut in the render (reported 9 Sep 2026 from an
+        automotive UI that is 56% #000).
+
+        `emissive` composites the screenshot OVER the surface instead, with a
+        screen blend so highlights cannot blow out, and `reflection` scaling how
+        much of the glass survives underneath. The payoff is not only the black
+        level: the specular streak running across the dashboard continues
+        across the screen, and that continuity is what stops a composite
+        reading as an inset panel. No amount of colour-matching can add it,
+        because the surface carrying it has already been thrown away.
+        """
+        if self.blend != "emissive":
+            return warped_win
+        P = photo_win.astype(np.float32) * float(self.reflection)
+        U = warped_win.astype(np.float32)
+        return 255.0 - (255.0 - P) * (255.0 - U) / 255.0
+
     def render(self, frame: np.ndarray, screen_off: np.ndarray = None,
                specular: float = 0.75, fast: bool = False) -> np.ndarray:
         """Composite one frame onto the photo.
@@ -231,15 +265,16 @@ class Plan:
                 warped_screen = _grade.apply_light(warped_screen, self.grade_params)
             out = self.photo.copy()
             win = self.mask3[y0:y1, x0:x1]
+            pw = self.photo[y0:y1, x0:x1]
+            src = self._blend(pw, warped_screen)
             out[y0:y1, x0:x1] = np.clip(
-                self.photo[y0:y1, x0:x1].astype(np.float32) * (1 - win)
-                + warped_screen.astype(np.float32) * win, 0, 255).astype(np.uint8)
+                pw.astype(np.float32) * (1 - win) + src * win, 0, 255).astype(np.uint8)
         else:
             warped_screen = self._prep(frame)
             if self.grade_params is not None:
                 warped_screen = _grade.apply_light(warped_screen, self.grade_params)
-            out = (self.photo.astype(np.float32) * (1 - self.mask3)
-                   + warped_screen.astype(np.float32) * self.mask3)
+            src = self._blend(self.photo, warped_screen)
+            out = (self.photo.astype(np.float32) * (1 - self.mask3) + src * self.mask3)
             out = np.clip(out, 0, 255).astype(np.uint8)
         if self.grain:
             # Seeded, so the grain is IDENTICAL in every frame. Over a still
@@ -254,7 +289,8 @@ class Plan:
 
 def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: float = 0.0,
             grade: float = 0.0, grain: bool = False, screen_off: np.ndarray = None,
-            specular: float = 0.75) -> np.ndarray:
+            specular: float = 0.75, blend: str = "replace",
+            reflection: float = DEFAULT_REFLECTION) -> np.ndarray:
     """Warp `screenshot` into the quad `corners` (TL,TR,BR,BL, photo pixels) on `photo`.
 
     Single resampling pass at the photo's resolution; deterministic. This is the
@@ -265,7 +301,8 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
     # specular) now lives in Plan, so the still and video paths run the SAME
     # code and cannot drift apart. See test_video.py: frame 0 of a render is
     # asserted byte-identical to this function's output.
-    plan = Plan(photo, screenshot.shape, corners, corner_radius, grain=grain)
+    plan = Plan(photo, screenshot.shape, corners, corner_radius, grain=grain,
+                blend=blend, reflection=reflection)
     plan.bind_grade(screenshot, grade)
     return plan.render(screenshot, screen_off=screen_off, specular=specular)
 
@@ -349,7 +386,8 @@ def read_frame_at(path: str, index: int = 0):
 def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                   corner_radius: float = 0.0, grade: float = 0.0, grain: bool = False,
                   preset: str = "web", fit_frame: int = 0, audio: bool = True,
-                  frames_dir: str = None, progress=None) -> dict:
+                  frames_dir: str = None, progress=None, blend: str = "replace",
+                  reflection: float = DEFAULT_REFLECTION) -> dict:
     """Inject a VIDEO into a still photo. The photo does not move, so there is
     exactly one homography and the whole of Plan is computed once.
 
@@ -367,7 +405,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     """
     n_hint, fps, vw, vh = probe_video(video_path)
     first = read_frame_at(video_path, fit_frame)
-    plan = Plan(photo, first.shape, corners, corner_radius, grain=grain)
+    plan = Plan(photo, first.shape, corners, corner_radius, grain=grain,
+                blend=blend, reflection=reflection)
     plan.bind_grade(first, grade)
 
     ph, pw = photo.shape[:2]
@@ -413,7 +452,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     if count == 0:
         raise RuntimeError(f"no frames could be read from {video_path}")
     return {"frames": count, "fps": fps, "source_size": [vw, vh],
-            "output_size": [pw, ph], "preset": preset, "fit_frame": fit_frame}
+            "output_size": [pw, ph], "preset": preset, "fit_frame": fit_frame,
+            "blend": blend, "reflection": plan.reflection}
 
 
 def main() -> None:
