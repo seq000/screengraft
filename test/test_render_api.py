@@ -24,6 +24,7 @@ import urllib.error
 import urllib.request
 
 import cv2
+import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -250,6 +251,127 @@ def encode_fails_late(td):
         ui.stop()
 
 
+def scrubber_reaches_the_compositor(td):
+    """SG57: prove the SCRUBBER, by looking at pixels rather than at source text.
+
+    The v0.21.1 defect was that `/api/frame` recorded an index and `_read_source`
+    went on reading frame 0, so Preview and Save always composited the FIRST
+    frame whatever the slider said. `test_video.py` pins this by parsing
+    `ui.py` for the string `_fit_frame()` -- which pins the shape of the code
+    and not what it does: it would pass unchanged if `_fit_frame()` always
+    returned 0, or if the value were read and then discarded. Both reproduce the
+    original bug.
+
+    So: scrub to a late frame, ask for a preview, and compare the returned image
+    against composites built locally from that frame and from frame 0. The
+    fixture clip is deliberately harsh -- it ramps dark to light -- so the two
+    are nowhere near each other and the comparison cannot be a coin toss.
+    """
+    print("\nthe scrubbed frame reaches the compositor, in pixels (SG57)")
+    ui = build(td, "d")
+    if ui is None:
+        return ok("could build the fourth test clip", False)
+    try:
+        n = 11                                 # synth_clip makes 12 frames
+        code, r = ui.post("/api/frame", {"index": n})
+        ok("the scrubber records the frame", code == 200 and r.get("index") == n, str(r))
+
+        code, pv = ui.post("/api/preview", {**BODY, "device": "phone"})
+        if not ok("preview returned", code == 200, str(pv)[:120]):
+            return
+        got = cv2.imread(pv["path"])
+
+        photo = cv2.imread(ui.state()["photo"])
+        clip = ui.state()["screenshot"]
+        radius_px = BODY["radius_frac"] * W.read_frame_at(clip, n).shape[1]
+        want = W.compose(photo, W.read_frame_at(clip, n), CORNERS, radius_px,
+                         grade=0.0, grain=False)
+        first = W.compose(photo, W.read_frame_at(clip, 0), CORNERS, radius_px,
+                          grade=0.0, grain=False)
+
+        def diff(a, b):
+            if a is None or b is None or a.shape != b.shape:
+                return float("inf")
+            return float(np.abs(a.astype(np.int16) - b.astype(np.int16)).mean())
+
+        d_want, d_first = diff(got, want), diff(got, first)
+        ok(f"the preview composites frame {n}, not frame 0",
+           d_want < 1.0 and d_first > d_want,
+           f"mean |diff| to frame {n} = {d_want:.2f}, to frame 0 = {d_first:.2f}")
+        ok("...and the two frames are far enough apart for that to mean something",
+           diff(want, first) > 5.0, f"{diff(want, first):.1f} levels")
+    finally:
+        ui.stop()
+
+
+def session_sweep(td):
+    """SG39: copied and derived media must not outlive the run that needed it.
+
+    Measured before this existed: 492 MB across 90 session directories in six
+    days, 64% of it duplicates of files the user already had, and nothing ever
+    deleted any of it. What must survive is the sidecar -- a few hundred bytes
+    recording the fit and referencing the ORIGINALS -- so a composite stays
+    reproducible without keeping a copy of everything it was made from.
+    """
+    print("\nsession residue does not outlive the run (SG39)")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "uimod", os.path.join(ROOT, "scripts", "ui.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    root = os.path.join(td, "sweep")
+    live = os.path.join(root, "20260909-000002")
+    old_s = os.path.join(root, "20260909-000001")
+    for d in (live, old_s):
+        os.makedirs(os.path.join(d, "thumbs"), exist_ok=True)
+    heavy = {
+        "photo-123-shot.png": 40_000,          # a copy of the user's own file
+        "screenshot-123-clip.mov": 90_000,     # ditto, and the big one
+        "poster-clip.jpg": 3_000,
+        "preview.png": 20_000,
+        "figma-export.png": 10_000,
+        "frame-000004.png": 5_000,
+    }
+    keep = {"state.json": b'{"photo": "/Users/x/real.png"}',
+            "result.json": b'{"output": "/Users/x/out.png", "corners": []}'}
+    for d in (live, old_s):
+        for n, sz in heavy.items():
+            open(os.path.join(d, n), "wb").write(b"\0" * sz)
+        open(os.path.join(d, "thumbs", "t1.jpg"), "wb").write(b"\0" * 7_000)
+        for n, data in keep.items():
+            open(os.path.join(d, n), "wb").write(data)
+
+    before = sum(os.path.getsize(os.path.join(b, f))
+                 for b, _, fs in os.walk(root) for f in fs)
+    freed = m._prune_sessions(live)
+    after = sum(os.path.getsize(os.path.join(b, f))
+                for b, _, fs in os.walk(root) for f in fs)
+
+    ok("the reclaimed figure is the real one", before - after == freed,
+       f"{before - after} vs {freed}")
+    ok("every copied and derived file in the old session is gone",
+       not any(os.path.exists(os.path.join(old_s, n)) for n in heavy),
+       ", ".join(n for n in heavy if os.path.exists(os.path.join(old_s, n))))
+    ok("...including its thumbnails",
+       not os.path.exists(os.path.join(old_s, "thumbs", "t1.jpg")))
+    ok("the sidecar and state SURVIVE -- the fit stays reproducible",
+       all(os.path.exists(os.path.join(old_s, n)) for n in keep))
+    ok("...with their contents untouched",
+       all(open(os.path.join(old_s, n), "rb").read() == data
+           for n, data in keep.items()))
+    ok("the LIVE session is not touched",
+       all(os.path.exists(os.path.join(live, n)) for n in heavy)
+       and os.path.exists(os.path.join(live, "thumbs", "t1.jpg")))
+
+    # and the end-of-run sweep clears the live one
+    m._sweep_session(live)
+    ok("the run's own copies go when the run ends",
+       not any(os.path.exists(os.path.join(live, n)) for n in heavy))
+    ok("...and its sidecar still does not",
+       all(os.path.exists(os.path.join(live, n)) for n in keep))
+
+
 def main():
     if not W.ffmpeg_exe():
         msg = "ffmpeg unavailable - the render route cannot be exercised"
@@ -264,6 +386,8 @@ def main():
         happy_path(td)
         failed_encode(td)
         encode_fails_late(td)
+        scrubber_reaches_the_compositor(td)
+        session_sweep(td)
     print()
     if FAILED:
         print(f"FAILED ({len(FAILED)}): " + "; ".join(FAILED))

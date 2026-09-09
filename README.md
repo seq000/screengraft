@@ -130,6 +130,25 @@ outside the screen mask. It never touches the pixels you designed.
    crawl. Frame 0 of a render is byte-identical to the still composite — the
    test suite asserts it, because that is what stops the two paths drifting.
 
+## Where screengraft keeps things
+
+**Your output** goes to the folder you launched with (`--out-dir`), which the
+Claude skill points at your project. That is the only place anything is kept for
+you, and nothing below ever touches it.
+
+**Working files** live in `~/.screengraft/sessions/<timestamp>/` — one directory
+per run. A source you pick by path is never copied: screengraft reads it where it
+is. A source you drag in or browse to has to be copied, because a browser hands
+over bytes and will not say where they came from — and that copy, along with the
+preview and thumbnails, is **deleted when the run ends**. Anything left behind by
+a crash is swept the next time you launch.
+
+What survives is the `result.json` sidecar: a few hundred bytes recording the
+corners, radius, grade and blend of that fit, referencing your original files by
+path. It reproduces a composite exactly, and it is the first thing a bug report
+should include. Keep the recipe, not the ingredients.
+
+
 ## Roadmap
 
 Done: manual warp, advisory detectors, the fitting workbench, the realism pass,

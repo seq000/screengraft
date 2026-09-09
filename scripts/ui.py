@@ -144,6 +144,69 @@ class Session:
 SESSION: Session = None
 
 
+# Media a session COPIES rather than produces for keeps. Everything here is
+# either a duplicate of a file the user already has, or something regenerable
+# from the sidecar in seconds. The sidecar and state are not in the list: they
+# are a few hundred bytes and they are the record of what was fitted, with the
+# ORIGINAL paths in them. Keep the recipe, stop keeping the ingredients.
+_RESIDUE_PREFIXES = ("photo-", "screenshot-", "poster-", "frame-")
+# figma-export.png is a copy too -- the agent fetches the frame and drops it
+# here -- and re-exporting is one MCP round trip, so it is residue like the rest.
+_RESIDUE_NAMES = ("preview.png", "figma-export.png")
+
+
+def _sweep_session(d):
+    """Delete a session's copied and derived media. Returns bytes reclaimed.
+
+    Never touches *.json, and never touches OUT_DIR -- the actual outputs live
+    in the project folder and are the point of the whole exercise.
+    """
+    freed = 0
+    thumbs = os.path.join(d, "thumbs")
+    for base, _, files in os.walk(d):
+        for f in files:
+            keep = f.endswith(".json")
+            residue = (f.startswith(_RESIDUE_PREFIXES) or f in _RESIDUE_NAMES
+                       or base == thumbs)
+            if keep or not residue:
+                continue
+            fp = os.path.join(base, f)
+            try:
+                freed += os.path.getsize(fp)
+                os.remove(fp)
+            except OSError:
+                pass
+    return freed
+
+
+def _prune_sessions(keep):
+    """Sweep every session but the live one, at launch.
+
+    Sessions are per-run scratch that nothing reads back, and a session keeps a
+    full copy of every uploaded input -- a 21s clip is ~80 MB. Measured before
+    this existed: 492 MB across 90 directories in six days, 64% of it duplicates
+    of files the user already had, and nothing ever deleted any of it.
+
+    A file chosen by PATH (the recent list, or typing one) was never copied --
+    /api/use records the path and reads through it. Only a drag-drop or a browse
+    has to be copied, because the browser hands over bytes and will not say
+    where they came from. So this is the other half of the same policy: what
+    cannot avoid being copied does not outlive the run that needed it.
+    """
+    root = os.path.dirname(keep)
+    freed = 0
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return 0
+    for n in names:
+        d = os.path.join(root, n)
+        if d == keep or not os.path.isdir(d):
+            continue
+        freed += _sweep_session(d)
+    return freed
+
+
 def _quad(raw):
     """Four corners of two finite numbers, or a ValueError naming the problem.
 
@@ -778,10 +841,17 @@ def main():
     port = args.port or free_port()
     url = f"http://127.0.0.1:{port}/"
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    freed = _prune_sessions(sdir)
+    # The live session's own copies go when this process does. Registered before
+    # serve_forever, and the SIGTERM handler exits via sys.exit so atexit runs --
+    # scripts/stop.sh sends SIGTERM for exactly this reason. A kill -9 cannot be
+    # caught, which is what the launch-time sweep above is for.
+    atexit.register(lambda: _sweep_session(sdir))
     _publish_current({"session": sdir, "url": url, "pid": os.getpid(),
                       "out_dir": OUT_DIR, "started": time.time()})
     print(json.dumps({"url": url, "session": sdir, "job": SESSION.job_path,
-                      "result": SESSION.result_path, "out_dir": OUT_DIR}), flush=True)
+                      "result": SESSION.result_path, "out_dir": OUT_DIR,
+                      "reclaimed_mb": round(freed / 1e6, 1)}), flush=True)
     if not args.no_open:
         opener = "open" if sys.platform == "darwin" else "xdg-open"
         threading.Timer(0.3, lambda: subprocess.Popen([opener, url])).start()

@@ -844,7 +844,12 @@
       </div>
       <div class="sect" id="secKeys" data-on="1">
         <div class="sect-top"><div class="sect-left"><h4>Keys</h4></div></div>
+        <!-- Two lines, split by what they act on: the QUAD you are fitting, and
+             the VIEW you are fitting it in. Grouping them by that rather than
+             by modifier is what makes the list scannable while you are mid-fit
+             and looking for one of them. -->
         <p class="hint"><kbd>&larr;&uarr;&rarr;&darr;</kbd> nudge 1px · <kbd>&#8679;</kbd>+arrow 10px · <kbd>Tab</kbd> next edge</p>
+        <p class="hint"><kbd>&#8984;</kbd>+scroll zoom to pointer · <kbd>Space</kbd>+drag pan · scroll pans</p>
       </div>
     </aside>
   </div>
@@ -1905,6 +1910,21 @@ function syncSlider(){ const r=$('#radius'); r.style.setProperty('--p', (r.value
 
 /* ===== preview / compare / save ===== */
 let outNat = 0, autoTimer = null;
+/* What the primary action is CALLED, derived from the source rather than
+   patched. Six places used to set this label and they did not agree: one
+   computed it from st.video, one upgraded 'Save' to 'Render' with no inverse,
+   and the save handler reset it to 'Save' unconditionally -- so a video source
+   could leave the button reading either word regardless of what clicking it
+   would do. On a tool whose whole pitch is that the output is exact, a label
+   that disagrees with its action is not a small thing. */
+function saveLabel(){ return st.video ? 'Render' : 'Save'; }
+/* The labels that mean "there is something to do". markStale's 'Preview first'
+   and the in-flight 'Saving…' / progress text must survive a source change, so
+   relabelling only touches a button that is currently offering the action. */
+function relabelSave(){
+  const b = $('#save');
+  if (b.textContent === 'Save' || b.textContent === 'Render') b.textContent = saveLabel();
+}
 function markStale(){
   const b = $('#save'); b.disabled = true; b.textContent = 'Preview first';
   // Exactly one lit action at a time — the Figma Button component says the
@@ -1941,7 +1961,7 @@ async function renderPreview(){
     im.onload = () => { outNat = im.naturalWidth; im.hidden = false; $('#outEmpty').style.display='none'; syncOut(); };
     im.src = `${fileURL(r.path)}&t=${Date.now()}`;
     s.textContent = `radius ${r.radius_px}px on the screenshot`;
-    const b = $('#save'); b.disabled = false; b.textContent = st.video ? 'Render' : 'Save';
+    const b = $('#save'); b.disabled = false; b.textContent = saveLabel();
     b.classList.add('primary');            // Save is now the next action
     if (!previewHinted){ previewHinted = true;
       toast('info', 'Check the corners in Result, then <b>Save</b> — Save renders at full resolution.');
@@ -1990,8 +2010,10 @@ function syncVideoUI(){
     sl.max = Math.max(0, (v.frames || 1) - 1);
     sl.value = 0;
     $('#vframeLbl').textContent = `0 / ${Math.max(0,(v.frames||1)-1)}`;
-    if (b.textContent === 'Save') b.textContent = 'Render';
   }
+  // Outside the `if (v)`: switching a video source back to a still has to put
+  // the label back, and the one-way version above is why it did not.
+  relabelSave();
 }
 $('#vframe').oninput = () => { $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`; };
 $('#vframe').onchange = async () => {
@@ -2013,7 +2035,7 @@ async function renderVideo(){
   try{
     await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), device: st.type,
                               grade: gradeValue(), reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
-  }catch(e){ toast('err','Could not start the render: '+e.message); b.disabled=false; b.textContent='Render'; return; }
+  }catch(e){ toast('err','Could not start the render: '+e.message); b.disabled=false; b.textContent = saveLabel(); return; }
   // Poll rather than hold a request open: a clip is hundreds of frames and a
   // browser would time the request out long before the render finished.
   const tick = setInterval(async () => {
@@ -2026,13 +2048,13 @@ async function renderVideo(){
       if (d.total) $('#vframeLbl').textContent = `${d.done} / ${d.total} frames`;
     } else if (d.state === 'done'){
       clearInterval(tick);
-      b.textContent = 'Render'; b.disabled = false; b.classList.remove('primary');
+      b.textContent = saveLabel(); b.disabled = false; b.classList.remove('primary');
       $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`;
       toast('ok', `Rendered <code>${(d.output||'').split('/').pop()}</code> · ${d.done} frames to <code>${prettyDir(st.outDir||'')}</code>`);
       const imp = $('#imp'); imp.disabled = false; imp.textContent = 'Send to Claude'; imp.classList.add('primary');
     } else if (d.state === 'error'){
       clearInterval(tick);
-      b.textContent = 'Render'; b.disabled = false;
+      b.textContent = saveLabel(); b.disabled = false;
       $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`;
       toast('err', 'Render failed: ' + (d.message || 'unknown'));
     }
@@ -2044,7 +2066,7 @@ $('#save').onclick = async () => {
   const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
   try{
     const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
-    b.textContent = 'Save';
+    b.textContent = saveLabel();
     // The real destination, not a hardcoded one: --out-dir means saves usually
     // land in the project folder now, and telling the user "~/Desktop" when
     // they aren't there is how you lose a file.
@@ -2053,7 +2075,7 @@ $('#save').onclick = async () => {
     imp.disabled = false; imp.textContent = 'Send to Claude';
     // Hand the accent on: the file exists, so sending it is what is next.
     imp.classList.add('primary'); b.classList.remove('primary');
-  }catch(e){ toast('err', 'Could not save: ' + e.message); b.textContent='Save'; }
+  }catch(e){ toast('err', 'Could not save: ' + e.message); b.textContent = saveLabel(); }
   finally { b.disabled = false; }
 };
 

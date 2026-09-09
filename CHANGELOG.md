@@ -122,6 +122,48 @@ the suite run, the red assertion checked against the original symptom. Plant the
 first and Send to Claude answers "nothing saved yet"; plant the second and a
 good request after three bad ones answers 409.
 
+## [0.23.0] - 2026-09-09
+
+### Changed
+
+- **Copied and derived media no longer outlives the run that needed it.**
+  Measured first: `~/.screengraft/sessions/` held **492 MB across 90 directories**
+  after six days, **64% of it duplicates of files the user already had**, and
+  nothing had ever deleted any of it. A source picked by path was never copied —
+  screengraft reads it where it is — but a drag-drop or a browse has to be,
+  because a browser hands over bytes and will not say where they came from.
+
+  So the copy is now session-scoped: swept when the run ends, and swept at the
+  next launch for anything a crash left behind. **What survives is the
+  `result.json` sidecar** — a few hundred bytes recording corners, radius, grade
+  and blend, referencing the originals by path — so a composite stays
+  reproducible without keeping a copy of everything it was made from. Keep the
+  recipe, not the ingredients.
+
+  Run against a copy of the real 492 MB tree: **475.6 MB reclaimed (97%)**, all
+  23 sidecars and 90 state files intact, the live session untouched.
+
+### Fixed
+
+- **The primary button's label disagreed with what clicking it would do.**
+  Six places set it and they did not agree: one derived it from the source, one
+  upgraded "Save" to "Render" with no inverse, and the save handler reset it to
+  "Save" unconditionally — so a video source could leave the button reading
+  either word. It is one function now, derived from the source, and the labels
+  that mean something else ("Preview first", "Saving…", render progress) survive
+  a source change untouched.
+
+### Added
+
+- The **Keys** section lists the canvas gestures: ⌘+scroll, Space+drag, and that
+  plain scrolling pans.
+- **A scrubber test that looks at pixels.** The existing one parses `ui.py` for
+  the string `_fit_frame()`, which pins the shape of the code and not what it
+  does. Demonstrated: force `_fit_frame()` to return 0 — the original v0.21.1
+  bug, with the string still present — and the source-parsing test still reports
+  **ok** and its whole suite passes, while the new test fails with
+  `mean |diff| to frame 11 = 37.24, to frame 0 = 0.00`.
+
 ## [Unreleased]
 
 ### Added
