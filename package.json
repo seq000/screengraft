@@ -1,6 +1,6 @@
 {
   "name": "screengraft",
-  "version": "0.21.1",
+  "version": "0.21.2",
   "description": "Put a UI screenshot or screen recording onto a photographed device screen with the perspective exactly right \u2014 a homography you confirm by hand, not a generative guess.",
   "keywords": [
     "mockup",

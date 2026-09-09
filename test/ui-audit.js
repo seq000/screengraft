@@ -56,9 +56,27 @@
   ok('every enabled visible control is keyboard-reachable',
      focusable.length === controls.filter(el => !el.disabled).length,
      `${focusable.length} of ${controls.filter(el => !el.disabled).length}`);
+  // `tabIndex >= 0` is what the element CLAIMS, not what the browser will do:
+  // a button inside a display:none ancestor still reports tabIndex 0 and is
+  // nonetheless unfocusable, so inferring reachability from it produces false
+  // positives — the strip loupe's zoom steppers, invisible inside the docked
+  // loupe whenever the loupe is floating, were reported as a tab trap they
+  // could not be. Ask the browser instead: focus it and see if focus landed.
+  // Restores the previous activeElement, so running the audit does not move
+  // the user's focus.
+  const reallyFocusable = el => {
+    const prev = document.activeElement;
+    try { el.focus(); } catch (e) { return false; }
+    const got = document.activeElement === el;
+    if (prev && prev.focus) prev.focus();
+    return got;
+  };
   const hiddenButFocusable = $$('button, input, select, a[href]')
     .filter(el => !vis(el) && !el.disabled && el.tabIndex >= 0 && !el.closest('[hidden]'))
-    .filter(el => !el.closest('.pop') && !el.closest('.sect[data-on="0"]') && !el.closest('.toasts'));
+    // Accepted by decision, not by measurement: a collapsed section and a
+    // closed popover are known to keep their contents reachable.
+    .filter(el => !el.closest('.pop') && !el.closest('.sect[data-on="0"]') && !el.closest('.toasts'))
+    .filter(reallyFocusable);
   ok('nothing invisible is left in the tab order', hiddenButFocusable.length === 0,
      hiddenButFocusable.map(e => e.id || e.className).join(', '));
 

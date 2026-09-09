@@ -9,6 +9,45 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.21.2] - 2026-09-09
+
+### Fixed
+
+- **The contrast audit never measured the text drawn on the photograph.** Section
+  4b covered overlay *strokes*; the corner tags and the strip loupe's `screen` /
+  `outside` labels are cased by a halo stroked around the glyph, at their own
+  alpha, and nothing looked at them. A new **4c** measures them on the same
+  better-of-the-two rule (fill or halo, minimised over every photo grey) against
+  the same 2.0:1 floor. All three pass with no accepted shortfall: corner tags
+  **3.95:1**, `screen` **3.95:1**, `outside` **3.20:1**.
+- **Two overlays were being skipped in silence.** 4b matched two `const CORE_*`
+  declarations, so the strip's tick marks — `rgba(255,255,255,.7)`, drawn by the
+  *audited* `cased()` helper — were measured by nothing (**3.09:1**), and
+  `CORE_IDLE`, which shares a declaration line with `CASE_A`, was dropped from
+  the sweep with no output saying so. Call sites are now parsed paren-balanced
+  rather than by regex, which truncates on the inline arrow body's own
+  semicolons, and a name that stops resolving **fails** instead of going quiet.
+- `CORE_IDLE` had been approximated by compositing white .92 over *black*, the
+  darkest possible backing rather than the tone it is drawn on. Measured
+  properly it is **3.44:1**, not 3.31.
+- **`test/ui-audit.js` reported a tab trap that could not exist.** `tabIndex >= 0`
+  is what an element claims, not what the browser will do: the strip loupe's zoom
+  steppers sit inside a `display:none` dock whenever the loupe is floating, still
+  report tabIndex 0, and are nonetheless unfocusable. The check now asks the
+  browser — focus it, see if focus landed, restore the previous element — so it
+  measures reachability instead of inferring it. A planted `opacity:0` control is
+  still caught.
+
+### Changed
+
+- The Realism tooltip now says that grain is judged at the preview's scale.
+  Measured on a real 2400px fit: the preview's 1.50× downscale averages the
+  injected grain from sigma **1.501 to 0.871**, so the preview shows **58%** of
+  what the save carries. Across every source photo on hand the factor spans
+  1.07×–1.72×, i.e. 68%–52%. No engine change — a mockup is nearly always viewed
+  scaled, so the preview is honest about how the file will actually be seen, and
+  the discrepancy only bites at 100%.
+
 ## [Unreleased]
 
 ### Added

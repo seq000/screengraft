@@ -201,29 +201,123 @@ OVERLAY_CASING = ((0, 0, 0), .62)          # CASE_A in ui/index.html
 # under this model; 2.08 does. The 1.00 half does reproduce exactly. Treat the
 # 4.67 figure as measuring something else until someone re-derives it.
 OVERLAY_FLOOR = 2.0
-def overlay_worst(core, cased=True):
+def overlay_worst(core, cased=True, alpha=1.0, casing=None):
+    """Worst readable contrast over any grey background.
+
+    `alpha` composites a TRANSLUCENT core against the tone itself. The previous
+    version took solid colours only, so CORE_IDLE was approximated by
+    compositing white .92 over BLACK — the darkest possible backing, which is
+    not the tone it is actually drawn on. `casing` varies because overlay text
+    is haloed at .75 while strokes are cased at .62.
+    """
+    casing = casing or OVERLAY_CASING
     worst, at = 99.0, None
     for t in range(0, 256):
         tone = (t, t, t)
-        best = ratio(core, tone)
+        best = ratio(over(core, tone, alpha), tone)
         if cased:
-            best = max(best, ratio(over(OVERLAY_CASING[0], tone, OVERLAY_CASING[1]), tone))
+            best = max(best, ratio(over(casing[0], tone, casing[1]), tone))
         if best < worst: worst, at = best, t
     return worst, at
 
-_src = UI.read_text(encoding='utf-8')
-cores = dict(re.findall(r"const (CORE_QUAD|CORE_ACTIVE)\s*=\s*'(#[0-9a-fA-F]{6})'", _src))
-for name, hexv in sorted(cores.items()):
-    core = parse_colour(hexv)[0]
-    w, at = overlay_worst(core)
-    b, bat = overlay_worst(core, cased=False)
+def report_overlay(label, core, alpha=1.0, casing=None):
+    w, at = overlay_worst(core, alpha=alpha, casing=casing)
+    b, bat = overlay_worst(core, cased=False, alpha=alpha)
     ok = w >= OVERLAY_FLOOR
-    results.append((f'overlay {name}', w, OVERLAY_FLOOR, ok, ''))
-    print(f'   {name + " " + hexv:30s} cased {w:5.2f}:1 (grey {at:3d})   '
+    results.append((f'overlay {label}', w, OVERLAY_FLOOR, ok, ''))
+    print(f'   {label:38s} cased {w:5.2f}:1 (grey {at:3d})   '
           f'bare {b:4.2f}:1 (grey {bat:3d})   {"ok" if ok else "FAIL"}')
-_idle, _iat = overlay_worst(over((255, 255, 255), (0, 0, 0), .92))
-print(f'   {"CORE_IDLE white .92":30s} cased {_idle:5.2f}:1 (grey {_iat:3d})')
+
+def calls(src, fn):
+    """Argument text of every call to `fn`, paren-balanced.
+
+    A regex cannot do this: cased() is called with an inline arrow body full of
+    its own parens and semicolons, so any bounded pattern truncates the call
+    before reaching the colour argument — which is exactly how the strip's tick
+    marks came to be drawn by an audited helper and measured by nothing.
+    """
+    out = []
+    for m in re.finditer(rf'(?<!function ){fn}\(', src):
+        i, depth = m.end(), 1
+        while i < len(src) and depth:
+            if src[i] == '(': depth += 1
+            elif src[i] == ')': depth -= 1
+            i += 1
+        out.append(src[m.end():i - 1])
+    return out
+
+_src = UI.read_text(encoding='utf-8')
+
+# Named cores, so a call site written as `cased(..., CORE_QUAD)` resolves.
+# NOT anchored to `const`: CASE_A and CORE_IDLE share one declaration, and an
+# anchored pattern matched only the first of them — dropping CORE_IDLE from the
+# sweep with no output to say so. A name that stops resolving now FAILS rather
+# than going quiet, because a silently unmeasured overlay is this whole section.
+OVERLAY_NAMES = ('CORE_QUAD', 'CORE_ACTIVE', 'CORE_IDLE', 'CASE_A')
+CONSTS = {n: v for n, v in re.findall(
+    r"\b(" + '|'.join(OVERLAY_NAMES) + r")\s*=\s*'([^']+)'", _src)}
+for _missing in [n for n in OVERLAY_NAMES if n not in CONSTS]:
+    print(f'   {_missing} not found in the page — UNMEASURED')
+    results.append((f'overlay {_missing}', 0.0, OVERLAY_FLOOR, False, ''))
+
+def colour_arg(args):
+    """The colour a cased*() call was given — literal or named const.
+
+    Returns None when it cannot be resolved, and the caller turns that into a
+    FAILURE rather than a silent skip: an overlay whose colour this script can
+    no longer read is an overlay nobody is measuring, which is the whole defect
+    this section exists to close.
+    """
+    for tok in reversed([t.strip() for t in re.split(r',(?![^()]*\))', args)]):
+        if tok in CONSTS: return parse_colour(CONSTS[tok])
+        m = re.fullmatch(r"'([^']+)'", tok)
+        if m and parse_colour(m.group(1)): return parse_colour(m.group(1))
+    return None
+
+for name in sorted(CONSTS):
+    if name == 'CASE_A': continue          # the casing itself, measured as backing
+    c, a = parse_colour(CONSTS[name])
+    report_overlay(f'{name} {CONSTS[name]}', c, alpha=a)
+
+# Literals handed straight to cased() — same helper, same photograph, and until
+# now outside the sweep because the old version matched `const CORE_*` lines.
+for args in calls(_src, 'cased'):
+    toks = [t.strip() for t in re.split(r',(?![^()]*\))', args)]
+    lit = next((t for t in reversed(toks)
+                if re.fullmatch(r"'rgba?\([^']+\)'", t)), None)
+    if lit:
+        c, a = parse_colour(lit.strip("'"))
+        report_overlay(f'cased() {lit.strip(chr(39))}', c, alpha=a)
 print(f'   floor is {OVERLAY_FLOOR}:1 — see the note in this script for why it is not 3.0.')
+
+print('\n4c. OVERLAY TEXT vs ARBITRARY PHOTO TONES')
+print('   The corner tags and the strip loupe labels are drawn on the photograph')
+print('   too. They are cased — but by a HALO stroked around the glyph, at its own')
+print('   alpha, so they are a separate measurement and until now had none.')
+_ct = re.search(r'function casedText\(.*?\n\}', _src, re.S)
+if not _ct:
+    print('   casedText() not found — overlay text is UNMEASURED')
+    results.append(('overlay text helper', 0.0, OVERLAY_FLOOR, False, ''))
+else:
+    _halo = parse_colour(re.search(r"strokeStyle\s*=\s*'([^']+)'", _ct.group(0)).group(1))
+    _lw = re.search(r'lineWidth\s*=\s*([\d.]+)', _ct.group(0)).group(1)
+    print(f'   halo: rgba{_halo[0]} at {_halo[1]:.2f}, lineWidth {_lw} '
+          f'(≈{float(_lw) / 2:.2f}px each side of the glyph)')
+    _sites = calls(_src, 'casedText')
+    if not _sites:
+        print('   no call sites found — if the labels still draw, this parse is stale')
+        results.append(('overlay text sites', 0.0, OVERLAY_FLOOR, False, ''))
+    for args in _sites:
+        col = colour_arg(args)
+        toks = [t.strip() for t in re.split(r',(?![^()]*\))', args)]
+        what = toks[1] if len(toks) > 1 else '?'
+        if col is None:
+            print(f'   {what:38s} colour UNREADABLE by this script — FAIL')
+            results.append((f'overlay text {what}', 0.0, OVERLAY_FLOOR, False, ''))
+            continue
+        report_overlay(f'text {what}', col[0], alpha=col[1], casing=_halo)
+    print('   same floor and the same better-of-the-two rule as the strokes above:')
+    print('   a glyph is readable if EITHER its fill or its halo separates from the photo.')
 
 print('\n5. STATUS COLOURS — legible, and separable WITHOUT hue')
 for tok in ('ok', 'warn', 'err'):
