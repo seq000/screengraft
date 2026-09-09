@@ -1,7 +1,9 @@
-__pycache__/
 *.pyc
+.DS_Store
 .venv/
-test/fixtures/out_*.png
-test/fixtures/zoom_*.png
+__pycache__/
+_to_delete/
 dist/
 scripts/leak-patterns.local
+test/fixtures/out_*.png
+test/fixtures/zoom_*.png

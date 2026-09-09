@@ -146,6 +146,11 @@ the background is itself neutral (a pale tiled floor, a plain wall) — you plac
 the edges by hand there. And a prototype recording has no motion blur, so a very
 fast scroll will strobe; that is a property of the source, not of the composite.
 
+## Changelog
+
+Every release is described in [CHANGELOG.md](CHANGELOG.md), with the
+measurements that drove it.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: there are tests, they

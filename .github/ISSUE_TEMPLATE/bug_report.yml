@@ -1,0 +1,76 @@
+name: Bug report
+description: Something composited wrongly, or the tool would not run
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The most useful thing you can attach is the
+        **sidecar** — `result.json`, written next to every save. It records the
+        exact corners, radius, grade and blend used, so a composite can be
+        reproduced byte for byte. With it, a bug is usually reproducible in one
+        command; without it, it often isn't reproducible at all.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`npx screengraft --version`, or the version shown in the skill."
+      placeholder: "0.21.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - Detection — it found the wrong thing, or found nothing
+        - The composite — geometry, edges, corners
+        - Colour — realism pass or emissive blend
+        - Video rendering
+        - The workbench UI
+        - Installation / preflight
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: |
+        If it is a compositing problem, say what looks wrong and where — a
+        corner, an edge, the colour, the whole screen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: sidecar
+    attributes:
+      label: The sidecar (result.json)
+      description: Paste its contents, or drag the file in.
+      render: json
+
+  - type: textarea
+    id: images
+    attributes:
+      label: The photo and the screenshot, or the output
+      description: |
+        Drag them in if you can share them. If you can't, a description of the
+        photograph helps a great deal — the device, the angle, the lighting, and
+        what the screen area sits against. Several detection bugs have turned on
+        exactly that.
+
+  - type: input
+    id: platform
+    attributes:
+      label: macOS version and Python
+      placeholder: "macOS 15.5, python 3.12"
+
+  - type: textarea
+    id: preflight
+    attributes:
+      label: Preflight output
+      description: "`python3 scripts/preflight.py`, or `npx screengraft --install` if it never started."
+      render: shell

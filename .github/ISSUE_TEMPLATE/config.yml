@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Feature idea or a question
+    url: https://github.com/seq000/screengraft/discussions
+    about: >-
+      Ideas, "can it do X", or a photo it handled badly but that isn't a bug.
+      Photographs that defeat the detector are genuinely useful — the detector
+      has been rebuilt twice off the back of real ones.
