@@ -151,6 +151,17 @@ fast scroll will strobe; that is a property of the source, not of the composite.
 Every release is described in [CHANGELOG.md](CHANGELOG.md), with the
 measurements that drove it.
 
+## Support
+
+Bugs and photographs that defeat the detector belong in
+[Issues](https://github.com/seq000/screengraft/issues) — the bug template asks
+first for the `result.json` sidecar, because it reproduces any composite
+exactly. Ideas and "can it do X" go in
+[Discussions](https://github.com/seq000/screengraft/discussions).
+
+If the photograph or the UI is confidential — a client shot, something
+unreleased — email **screengraft@fraczyk.design** instead of posting it.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: there are tests, they

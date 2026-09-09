@@ -4,7 +4,8 @@
   "description": "Design tools built by Dariusz Fraczyk. Small, exact, and meant to be used by other designers.",
   "owner": {
     "name": "Dariusz Fraczyk",
-    "url": "https://fraczyk.design"
+    "url": "https://fraczyk.design",
+    "email": "screengraft@fraczyk.design"
   },
   "plugins": [
     {

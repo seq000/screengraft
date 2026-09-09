@@ -9,6 +9,16 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [Unreleased]
+
+### Added
+
+- A support address, **screengraft@fraczyk.design**, for the case the issue
+  tracker cannot serve: a photograph or a UI that is confidential. It is offered
+  in the README, as a contact link on the new-issue chooser, and as the author
+  and `bugs` email in `package.json`, `plugin.json` and the marketplace catalog,
+  so `npm bugs` and the plugin listing both resolve to a person.
+
 ## [0.21.1] — 2026-09-09
 
 ### Fixed

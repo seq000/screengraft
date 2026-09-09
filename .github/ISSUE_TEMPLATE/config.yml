@@ -6,3 +6,8 @@ contact_links:
       Ideas, "can it do X", or a photo it handled badly but that isn't a bug.
       Photographs that defeat the detector are genuinely useful — the detector
       has been rebuilt twice off the back of real ones.
+  - name: Email the maintainer
+    url: mailto:screengraft@fraczyk.design
+    about: >-
+      For anything you would rather not post in public — a client photograph,
+      an unreleased UI. Attach the `result.json` sidecar if you have one.

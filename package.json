@@ -1,7 +1,7 @@
 {
   "name": "screengraft",
   "version": "0.21.1",
-  "description": "Put a UI screenshot or screen recording onto a photographed device screen with the perspective exactly right — a homography you confirm by hand, not a generative guess.",
+  "description": "Put a UI screenshot or screen recording onto a photographed device screen with the perspective exactly right \u2014 a homography you confirm by hand, not a generative guess.",
   "keywords": [
     "mockup",
     "device-frame",
@@ -17,7 +17,10 @@
     "figma"
   ],
   "homepage": "https://github.com/seq000/screengraft#readme",
-  "bugs": "https://github.com/seq000/screengraft/issues",
+  "bugs": {
+    "url": "https://github.com/seq000/screengraft/issues",
+    "email": "screengraft@fraczyk.design"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/seq000/screengraft.git"
@@ -25,7 +28,8 @@
   "license": "MIT",
   "author": {
     "name": "Dariusz Fraczyk",
-    "url": "https://fraczyk.design"
+    "url": "https://fraczyk.design",
+    "email": "screengraft@fraczyk.design"
   },
   "type": "commonjs",
   "bin": {
