@@ -207,6 +207,31 @@ def _prune_sessions(keep):
     return freed
 
 
+def _version() -> str:
+    """The shipped version, read from plugin.json rather than restated here.
+
+    A second place to write a version is a second place for it to go stale --
+    which is why check_package.py exists at all, after SKILL.md claimed the
+    wrong one for three releases. The page asks the server; the server reads the
+    manifest it was packaged with. Falls back to package.json, then to empty,
+    because a missing badge is a far better failure than a confidently wrong
+    one: a wrong version in a bug report costs more than no version.
+    """
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for rel in (os.path.join(".claude-plugin", "plugin.json"), "package.json"):
+        try:
+            with open(os.path.join(here, rel)) as f:
+                v = json.load(f).get("version")
+            if v:
+                return str(v)
+        except (OSError, ValueError, AttributeError):
+            continue
+    return ""
+
+
+VERSION = None                                 # resolved once, in main()
+
+
 def _quad(raw):
     """Four corners of two finite numbers, or a ValueError naming the problem.
 
@@ -448,7 +473,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(UI_HTML, "text/html; charset=utf-8")
             if u.path == "/api/state":
                 return self._json({**SESSION.state, "session": SESSION.dir, "out_dir": OUT_DIR,
-                                   "home": HOME, "presets": PRESETS})
+                                   "home": HOME, "presets": PRESETS, "version": VERSION})
             if u.path == "/api/recent":
                 items = S.scan(days=int(q.get("days", ["14"])[0]), limit=int(q.get("limit", ["40"])[0]))
                 for it in items:
@@ -816,7 +841,7 @@ def _publish_current(payload):
 
 
 def main():
-    global SESSION, OUT_DIR
+    global SESSION, OUT_DIR, VERSION
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=0, help="0 = pick a free port")
     ap.add_argument("--no-open", action="store_true", help="Don't open the browser")
@@ -834,6 +859,7 @@ def main():
     if args.daemon:
         _daemonise(args.log)
 
+    VERSION = _version()
     if args.out_dir:
         OUT_DIR = os.path.abspath(os.path.expanduser(args.out_dir))
     sdir = args.session or os.path.join(HOME, ".screengraft", "sessions", time.strftime("%Y%m%d-%H%M%S"))

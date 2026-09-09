@@ -565,6 +565,18 @@
            pixel to the band's height: 16+28+8+130+16 = 198 exactly. */
         box-shadow:inset 0 1px 0 var(--line), inset 0 2px 0 rgba(255,255,255,.04)}
   .dock.hidden{display:none}
+  /* Version badge. Bottom-right, fixed, and deliberately the quietest thing on
+     screen: --faint is the captions token (measured 3.50:1, the 1.4.3 floor for
+     incidental text), 11px with the same tracking as every other label.
+     pointer-events:none so it can never eat a click meant for what is under it,
+     and it is under no circumstances the accent -- that means "the next action"
+     and this is not an action at all.
+     Sits in the dock's own 16px padding band rather than over the rectified
+     strip: the work surface keeps zero decoration, which is the one rule the
+     canvas has. */
+  .ver{position:fixed;right:var(--s3);bottom:2px;z-index:5;pointer-events:none;
+       font-size:11px;letter-spacing:.06em;color:var(--faint);
+       font-variant-numeric:tabular-nums}
   /* Figma 8:29 is a 28px header holding 24px buttons — the header does not
      shrink to hug them. */
   .striphead{display:flex;align-items:center;gap:8px;font-size:12px;min-height:28px}
@@ -865,6 +877,8 @@
     <canvas id="strip" width="1280" height="130"></canvas>
   </footer>
 </div>
+
+<div class="ver" id="ver"></div>
 
 <div class="floatloupe" id="floatLoupe">
   <canvas id="stripF" width="680" height="208"></canvas>
@@ -2114,6 +2128,9 @@ $('#imp').onclick = async () => {
   const s = await api('/api/state');
   st.presets = s.presets; $('#sess').textContent = s.session.split('/').pop();
   st.outDir = s.out_dir; st.home = s.home;
+  // Empty stays empty: the server returns "" if it could not read the manifest,
+  // and no badge is better than a wrong one in a bug report.
+  if (s.version) $('#ver').textContent = 'v' + s.version;
   // Say up front where Save will put things. With --out-dir this is usually the
   // project folder, and a designer should not have to press Save to find out.
   toast('info', `Fit the four edges, then Preview. Saves go to <code>${prettyDir(s.out_dir||'')}</code>.`,

@@ -304,6 +304,32 @@ def scrubber_reaches_the_compositor(td):
         ui.stop()
 
 
+def version_badge(td):
+    """The page's version badge must be the PACKAGE's version, not a copy.
+
+    A second place to write a version is a second place for it to go stale --
+    the reason check_package.py exists at all. A badge that quietly disagrees
+    with the build is worse than no badge, because it goes into bug reports.
+    """
+    print("\nthe version the page shows is the version that shipped")
+    ui = build(td, "v")
+    if ui is None:
+        return ok("could build the version fixture", False)
+    try:
+        manifest = json.load(open(os.path.join(ROOT, ".claude-plugin", "plugin.json")))
+        _, st = ui.get("/api/state")
+        ok("/api/state carries a version", bool(st.get("version")), str(st.get("version")))
+        ok("...and it is the manifest's, not a copy",
+           st.get("version") == manifest.get("version"),
+           f"served {st.get('version')} vs manifest {manifest.get('version')}")
+        page = open(os.path.join(ROOT, "ui", "index.html"), encoding="utf-8").read()
+        hardcoded = manifest["version"] in page
+        ok("the page does not hardcode a version of its own", not hardcoded,
+           "the literal version string is in index.html" if hardcoded else "")
+    finally:
+        ui.stop()
+
+
 def session_sweep(td):
     """SG39: copied and derived media must not outlive the run that needed it.
 
@@ -388,6 +414,7 @@ def main():
         encode_fails_late(td)
         scrubber_reaches_the_compositor(td)
         session_sweep(td)
+        version_badge(td)
     print()
     if FAILED:
         print(f"FAILED ({len(FAILED)}): " + "; ".join(FAILED))
