@@ -328,7 +328,11 @@
   .scroller{overflow:auto;background:var(--well);display:grid;
             min-height:0;min-width:0;
             box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
-  canvas#c{display:block;touch-action:none;cursor:crosshair;margin:auto}
+  /* tabindex -1, not 0: the canvas is not a tab stop — it takes focus only when
+     you actually click it, which is what makes space mean PAN rather than
+     re-pressing whichever rail button you last used. No ring, because the
+     focus is a side effect of clicking, never of tabbing. */
+  canvas#c{display:block;touch-action:none;cursor:crosshair;margin:auto;outline:none}
 
   /* Corner-jump bar floating over the canvas (Figma 16:121). position:sticky
      inside the scroller would drift with pan; fixed-to-the-pane absolute
@@ -719,6 +723,7 @@
             <span class="lbl">Fit</span>
             <span class="stepper"><button id="czOut">&minus;</button><button id="czIn">+</button></span>
             <span id="czSt" class="zoomval"></span>
+            <button class="info" type="button" aria-label="About canvas navigation"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Hold ⌘ and scroll to zoom to the pointer — the pixel under the cursor stays under the cursor, which is how you keep a corner in view while you magnify it. Hold space and drag to pan. Scrolling on its own pans too; the Result pane follows either way.</span></button>
           </div>
           <div class="ph-left-2">
             <button id="czFit">Fit</button>
@@ -728,7 +733,7 @@
         <span class="status" id="detSt"></span>
       </div>
       <div class="scroller" id="scroller">
-        <canvas id="c"></canvas>
+        <canvas id="c" tabindex="-1"></canvas>
       </div>
       <!-- Corner jump. It is a SIBLING of the scroller, not a child: anything
            positioned inside a scroll container scrolls with the content, so
@@ -1364,6 +1369,108 @@ $('#czFit').onclick = () => { computeFit(); setCanvasZoom(fitScale); };
 $('#cz100').onclick = () => setCanvasZoom(1);
 $('#czIn').onclick  = () => setCanvasZoom(scale*1.5);
 $('#czOut').onclick = () => setCanvasZoom(scale/1.5);
+/* ===== canvas navigation: zoom to the pointer, space-drag to pan ==========
+   The conventions every graphics tool already uses, so not having them means
+   the muscle memory misfires against a canvas that otherwise behaves like one.
+
+   Panning IS scrolling here — the canvas is sized in real pixels inside
+   #scroller — which is why the Result pane keeps up for free: it already
+   mirrors this element's scroll. */
+
+/* Zoom about a screen point rather than the canvas centre.
+
+   Measured rather than computed: after the resize, ask the DOM where the
+   pinned image point actually landed and scroll by the difference. The canvas
+   is `margin:auto` in a grid, so while it is smaller than the pane it sits
+   centred with a margin that changes as it grows — arithmetic that predicts
+   the scroll offset has to model that margin, and measuring does not. When the
+   whole image fits there is nothing to scroll and the pin cannot hold, which
+   is correct: nothing is moving off screen. */
+function zoomAt(z, clientX, clientY){
+  if (!img.naturalWidth) return;
+  const before = pos({clientX, clientY});
+  setCanvasZoom(z);
+  const sc = $('#scroller'), r = cv.getBoundingClientRect();
+  sc.scrollLeft += r.left + before[0] * scale * (r.width / cv.width) - clientX;
+  sc.scrollTop  += r.top  + before[1] * scale * (r.height / cv.height) - clientY;
+}
+
+/* A trackpad pinch arrives as a wheel event with ctrlKey synthesised true, and
+   a real cmd+scroll arrives with metaKey — both mean "zoom", so both are taken.
+   The listener MUST be {passive:false} or preventDefault is ignored and the
+   browser zooms the whole page instead of the picture. deltaMode is normalised
+   because a wheel mouse reports lines (1) or pages (2), not pixels. */
+$('#scroller').addEventListener('wheel', e => {
+  if (!(e.metaKey || e.ctrlKey)) return;          // plain scroll still pans
+  e.preventDefault();
+  const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+  zoomAt(scale * Math.exp(-dy * 0.0025), e.clientX, e.clientY);
+}, {passive: false});
+
+/* Space-drag. Space is ALSO how a keyboard user activates the focused button
+   or switch, so it is only a pan modifier when focus is not on a control —
+   otherwise adding this gesture would quietly break every rail control for
+   anyone not using a mouse. */
+let spaceHeld = false, panning = null;
+const onAControl = () => {
+  const a = document.activeElement;
+  return !!a && a !== document.body && a !== cv &&
+         a.matches('input, textarea, select, button, [role="switch"], [contenteditable]');
+};
+function setPanCursor(){
+  cv.style.cursor = panning ? 'grabbing' : (spaceHeld ? 'grab' : '');
+}
+addEventListener('keydown', e => {
+  if (e.code !== 'Space' || e.repeat || spaceHeld || onAControl()) return;
+  e.preventDefault();                              // or the page scrolls
+  spaceHeld = true; setPanCursor();
+});
+addEventListener('keyup', e => {
+  if (e.code !== 'Space') return;
+  spaceHeld = false; endPan();
+});
+// Held space survives a cmd-tab away and would come back stuck on.
+addEventListener('blur', () => { spaceHeld = false; endPan(); });
+
+function endPan(){
+  if (panning && cv.hasPointerCapture && panning.id != null){
+    try { $('#scroller').releasePointerCapture(panning.id); } catch (err) {}
+  }
+  panning = null; setPanCursor();
+}
+
+/* Capture phase on the SCROLLER, which is an ancestor of the canvas: it runs
+   before the canvas's own handlers, so stopPropagation keeps a pan from ever
+   reaching hitTest and grabbing a corner. Registering capture on the canvas
+   itself would race its onpointerdown property handler instead. */
+const sc0 = $('#scroller');
+/* Touching the canvas moves focus to it. Space is both "pan" and "activate the
+   focused control", and after clicking any rail button focus STAYS on that
+   button — so without this, holding space over the picture re-presses Fit or
+   toggles Realism instead of panning. Focus follows the thing you last used,
+   which is also what a keyboard user expects: they never clicked the canvas, so
+   space keeps activating their focused control. */
+sc0.addEventListener('pointerdown', () => {
+  if (document.activeElement && document.activeElement !== cv) cv.focus({preventScroll: true});
+}, true);
+sc0.addEventListener('pointerdown', e => {
+  if (!spaceHeld || e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  panning = {id: e.pointerId, x: e.clientX, y: e.clientY,
+             sl: sc0.scrollLeft, st: sc0.scrollTop};
+  try { sc0.setPointerCapture(e.pointerId); } catch (err) {}
+  setPanCursor();
+}, true);
+sc0.addEventListener('pointermove', e => {
+  if (!panning) { if (spaceHeld) e.stopPropagation(); return; }
+  e.preventDefault(); e.stopPropagation();
+  sc0.scrollLeft = panning.sl - (e.clientX - panning.x);
+  sc0.scrollTop  = panning.st - (e.clientY - panning.y);
+}, true);
+const stopPan = e => { if (!panning) return; e.stopPropagation(); endPan(); };
+sc0.addEventListener('pointerup', stopPan, true);
+sc0.addEventListener('pointercancel', stopPan, true);
+
 document.querySelectorAll('[data-jump]').forEach(b => {
   b.onclick = () => { if (!st.corners) return; const i=+b.dataset.jump;
     pick = {kind:'corner', i}; setCanvasZoom(Math.max(1, scale), st.corners[i]); drawStrip(); };

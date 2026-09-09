@@ -48,6 +48,33 @@ numbers are here.
   scaled, so the preview is honest about how the file will actually be seen, and
   the discrepancy only bites at 100%.
 
+## [0.22.0] - 2026-09-09
+
+### Added
+
+- **Canvas navigation now follows the conventions every graphics tool uses.**
+  Hold **⌘ and scroll** to zoom, and the pixel under the pointer stays under the
+  pointer — which is what lets you magnify a corner without losing it off the
+  edge. Hold **space and drag** to pan. Plain scrolling still pans, and the
+  Result pane keeps up with both for free, because panning here *is* scrolling
+  the element it already mirrors.
+
+  The zoom anchor is measured rather than computed: after the resize, the page
+  asks the DOM where the pinned image point actually landed and scrolls by the
+  difference. The canvas is `margin:auto` in a grid, so while it is smaller than
+  the pane it sits centred with a margin that changes as it grows, and
+  arithmetic that predicts the scroll offset has to model that margin. Measured
+  drift over zoom in, zoom out and a 2.2× jump is **under 0.25 image pixels**;
+  the centre-anchored path it replaces drifts **63px** at the same cursor point.
+
+  Two things the gesture must not break, both verified: a space-drag **cannot
+  grab a corner** (the pan is caught in the capture phase on the scroller, so it
+  never reaches the hit test), and **space still activates a focused control**
+  for anyone using the keyboard. The second needed the canvas to take focus when
+  you click it — `tabindex="-1"`, so it is not a tab stop — because focus
+  otherwise stays on whichever rail button you last pressed, and holding space
+  over the picture would re-press it instead of panning.
+
 ## [Unreleased]
 
 ### Added
