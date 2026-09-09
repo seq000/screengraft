@@ -75,6 +75,53 @@ numbers are here.
   otherwise stays on whichever rail button you last pressed, and holding space
   over the picture would re-press it instead of panning.
 
+## [0.22.1] - 2026-09-09
+
+Five defects in the render **route**. `test_video.py` proves the engine — same
+geometry, identical frames, frame 0 of a render equal to the still composite —
+and touches none of this. Every fault below would have passed it, and three of
+them broke a shipped feature. There is a `test/test_render_api.py` now that
+drives the real server over HTTP, and it is in CI.
+
+### Fixed
+
+- **A finished video render was never recorded as the session output.** The
+  worker set it on the render's own state; `/api/import` — Send to Claude —
+  reads the *session's*. So after a successful render it either answered
+  "nothing saved yet", or, if a still had been saved earlier in the session,
+  **silently handed over that still instead of the video**. The second is the
+  bad one: it failed quietly and passed on the wrong artefact.
+- **A validation failure locked rendering for the rest of the session.** The
+  "running" flag was set before corners, radius, fit frame and output directory
+  were checked, so anything that threw afterwards left it stuck on with no
+  worker to clear it, and every later attempt answered `409 a render is already
+  running`. The only recovery was restarting the server, and nothing said so.
+  The flag now means what it says — a thread is running — and is set
+  immediately before the thread exists.
+- **`result.json` claimed a video was saved before the encode had run.** The
+  sidecar is the first thing the bug template asks for, so a misleading one
+  sends the next investigation the wrong way. It is published by the worker
+  now, with the session output, and only on success — both before the state
+  flips to "done", so a page that polls and immediately asks to send the file
+  cannot race the worker.
+- **A request with no photo chosen killed the handler thread.** `None` reached
+  `os.path.expanduser`, raising a `TypeError` nobody had enumerated, and the
+  browser saw the connection drop with no status and no message —
+  indistinguishable from the server being gone. Missing sources are now named
+  in a 400, and any unhandled error returns a 500 **with the exception in it**
+  rather than hanging up.
+- **A malformed quad was accepted, started, and failed somewhere invisible.**
+  `corners` went to the engine unchecked, so a one-point "quad" produced an
+  accepted render that died on a worker thread. Shape is the route's business:
+  four points, two finite numbers each, or a 400 naming the problem.
+
+### Verification
+
+Each fix was watched to fail on the fault it claims to catch — the fix reverted,
+the suite run, the red assertion checked against the original symptom. Plant the
+first and Send to Claude answers "nothing saved yet"; plant the second and a
+good request after three bad ones answers 409.
+
 ## [Unreleased]
 
 ### Added

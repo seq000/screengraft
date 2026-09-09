@@ -42,6 +42,16 @@ jobs:
         env:
           SCREENGRAFT_REQUIRE_FFMPEG: "1"
         run: python test/test_video.py
+      # The render ROUTE, over HTTP, against a real server. test_video.py proves
+      # the engine and touches none of this -- and all three defects that made
+      # this file necessary lived in the route: a finished render never recorded
+      # as the session output, a flag set before validation that locked
+      # rendering for good, and a sidecar published before the encode. Each
+      # would have passed every engine test in this directory.
+      - name: Render route tests
+        env:
+          SCREENGRAFT_REQUIRE_FFMPEG: "1"
+        run: python test/test_render_api.py
       # Static analysis. Scoped to the rules that catch real defects — undefined
       # names, unused imports, silently-truncating zip() — rather than style,
       # so a red CI always means something is actually wrong.

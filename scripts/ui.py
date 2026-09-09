@@ -144,6 +144,39 @@ class Session:
 SESSION: Session = None
 
 
+def _quad(raw):
+    """Four corners of two finite numbers, or a ValueError naming the problem.
+
+    The compositing routes used to hand whatever arrived straight to the engine,
+    so a malformed quad became a failure deep inside a worker thread -- or, on
+    the render path, a job that was accepted, started, and then died somewhere
+    the user could not see. The shape of the request is the route's business.
+    """
+    try:
+        pts = [[float(x), float(y)] for x, y in raw]
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"corners must be four [x, y] pairs ({e})") from e
+    if len(pts) != 4:
+        raise ValueError(f"corners must be four points, got {len(pts)}")
+    if not all(v == v and abs(v) != float("inf") for pt in pts for v in pt):
+        raise ValueError("corners contain a non-finite value")
+    return pts
+
+
+def _need_sources():
+    """Both sources chosen, or a clean 400 saying which one is missing.
+
+    Without this the compositing routes indexed straight into the session and
+    handed `None` to `os.path.expanduser`, which raises TypeError -- a type the
+    handler does not catch, so the worker thread died and the browser saw the
+    connection drop with no status and no message at all. A request that cannot
+    be served should be answered, not hung up on.
+    """
+    missing = [k for k in ("photo", "screenshot") if not SESSION.state.get(k)]
+    if missing:
+        raise ValueError("choose a " + " and a ".join(missing) + " first")
+
+
 def _safe_local_path(p: str) -> str:
     """Only serve files under the user's home (the UI is local, but still)."""
     p = os.path.realpath(os.path.expanduser(p))
@@ -237,7 +270,20 @@ RENDER_LOCK = threading.Lock()
 
 
 def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
-                   blend="replace", reflection=None):
+                   blend="replace", reflection=None, result=None):
+    """Encode the clip, and only if that SUCCEEDS publish what it produced.
+
+    `result` is the sidecar this render would write. It is handed to the worker
+    rather than written by the route, because a sidecar written before the
+    encode asserts `saved` for a file that may never exist -- and the sidecar is
+    the first thing the bug template asks for, so a misleading one sends the
+    next investigation the wrong way.
+
+    Publication order matters: the sidecar and the session output are written
+    BEFORE the state flips to "done". The page polls for "done" and may ask to
+    send the file to Claude the moment it sees it, so the artefacts have to be
+    in place first or that request races the worker.
+    """
     def progress(done, total):
         with RENDER_LOCK:
             RENDER["done"], RENDER["total"] = done, total
@@ -248,6 +294,13 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
                                blend=blend,
                                reflection=(W.DEFAULT_REFLECTION if reflection is None
                                            else reflection))
+        if result is not None:
+            _write_json_atomic(SESSION.result_path, {**result, "saved": time.time()})
+        # The still path has always done this (see /api/save); the render path
+        # never did, so /api/import -- which reads SESSION.state["output"] --
+        # either found nothing or, worse, silently handed over the PREVIOUS
+        # still image after a successful render.
+        SESSION.update(output=dest)
         with RENDER_LOCK:
             RENDER.update(state="done", output=dest, info=info,
                           done=info["frames"], total=info["frames"], message=None)
@@ -371,6 +424,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "no such route"}, 404)
         except (PermissionError, FileNotFoundError, KeyError, ValueError) as e:
             return self._json({"error": str(e)}, 400)
+        except Exception as e:                 # noqa: BLE001 - the last resort
+            # A type nobody enumerated must still produce a RESPONSE. Without
+            # this the handler thread dies and the browser sees the connection
+            # drop with no status and no message -- indistinguishable from the
+            # server being gone, and impossible to report usefully. Twice in one
+            # afternoon a bad input did exactly that: a None photo path reaching
+            # expanduser, and a truncated clip whose frame read came back empty.
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     # ---- POST ----
     def do_POST(self):
@@ -489,6 +550,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/render":
                 # Video: same fit, same geometry, N frames instead of one.
+                _need_sources()
                 photo, ppath = _read_image(SESSION.state["photo"])
                 spath = _safe_local_path(SESSION.state["screenshot"])
                 if not _is_video(spath):
@@ -496,12 +558,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not _have_ffmpeg():
                     return self._json({"error": "ffmpeg is not installed",
                                        "needs_ffmpeg": True}, 400)
+                # Cheap early out. The flag that actually reserves the render
+                # is set further down, once nothing is left that can throw.
                 with RENDER_LOCK:
                     if RENDER["state"] == "running":
                         return self._json({"error": "a render is already running"}, 409)
-                    RENDER.update(state="running", done=0, total=0,
-                                  output=None, message=None)
-                corners = b["corners"]
+                corners = _quad(b["corners"])
                 frac = float(b.get("radius_frac") or 0.0)
                 fit_frame = int(b.get("fit_frame") if b.get("fit_frame") is not None
                                 else _fit_frame())
@@ -529,19 +591,38 @@ class Handler(BaseHTTPRequestHandler):
                           "corners": corners, "radius_frac": frac, "radius_px": radius_px,
                           "device": b.get("device"), "grade": gr, "grain": grain,
                           "video": True, "preset": preset, "fit_frame": fit_frame,
-                          "blend": blend, "reflection": reflection,
-                          "saved": time.time()}
-                _write_json_atomic(SESSION.result_path, result)
-                threading.Thread(target=_render_worker, daemon=True,
-                                 args=(photo, spath, corners, dest, radius_px,
-                                       gr, grain, preset, fit_frame,
-                                       blend, reflection)).start()
+                          "blend": blend, "reflection": reflection}
+                # `state="running"` means "a thread is running", so it is set
+                # here -- after every line that can raise, immediately before the
+                # thread exists. It used to be set at the top of this route, so a
+                # KeyError on corners, a bad radius, an unreadable frame or an
+                # unwritable out_dir left the flag stuck ON with no worker to
+                # clear it, and every later render answered 409 for the rest of
+                # the session. The only recovery was restarting the server, and
+                # nothing said so.
+                with RENDER_LOCK:
+                    if RENDER["state"] == "running":
+                        return self._json({"error": "a render is already running"}, 409)
+                    RENDER.update(state="running", done=0, total=0,
+                                  output=None, message=None)
+                try:
+                    threading.Thread(target=_render_worker, daemon=True,
+                                     args=(photo, spath, corners, dest, radius_px,
+                                           gr, grain, preset, fit_frame,
+                                           blend, reflection, result)).start()
+                except BaseException:
+                    # If the thread cannot even be created, the flag must not
+                    # outlive the request.
+                    with RENDER_LOCK:
+                        RENDER.update(state="error", message="could not start the render")
+                    raise
                 return self._json({"started": True, "output": dest, "preset": preset})
 
             if u.path in ("/api/preview", "/api/save"):
+                _need_sources()
                 photo, ppath = _read_image(SESSION.state["photo"])
                 shot, spath, _meta = _read_source(SESSION.state["screenshot"])
-                corners = b["corners"]
+                corners = _quad(b["corners"])
                 frac = float(b.get("radius_frac") or 0.0)
                 radius_px = frac * shot.shape[1]
                 # M2 realism pass. Off is a real option, not a fallback: a flat
@@ -597,6 +678,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": str(e)}, 409)
         except (PermissionError, FileNotFoundError, KeyError, ValueError) as e:
             return self._json({"error": str(e)}, 400)
+        except Exception as e:                 # noqa: BLE001 - the last resort
+            # A type nobody enumerated must still produce a RESPONSE. Without
+            # this the handler thread dies and the browser sees the connection
+            # drop with no status and no message -- indistinguishable from the
+            # server being gone, and impossible to report usefully. Twice in one
+            # afternoon a bad input did exactly that: a None photo path reaching
+            # expanduser, and a truncated clip whose frame read came back empty.
+            return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
 
 def free_port():
