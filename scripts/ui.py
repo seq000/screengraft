@@ -183,6 +183,13 @@ def _is_video(path: str) -> bool:
     return str(path).lower().endswith(VIDEO_EXT)
 
 
+def _fit_frame() -> int:
+    try:
+        return int(SESSION.state.get("fit_frame") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _read_source(path: str):
     """Read the screen source, which may be a still OR a video.
 
@@ -197,13 +204,27 @@ def _read_source(path: str):
         im, rp = _read_image(real)
         return im, rp, {"video": False}
     n, fps, vw, vh = W.probe_video(real)
-    frame = W.read_frame_at(real, 0)
+    # The frame the designer scrubbed to, NOT frame 0. Preview and Save read the
+    # source through here, so reading frame 0 unconditionally made the scrubber
+    # look decorative: it moved the thumbnail and the composite never changed
+    # (reported 9 Sep 2026). The fitted frame is session state for exactly this
+    # reason — more than one route needs it.
+    frame = W.read_frame_at(real, _fit_frame())
     # Report the encoder's absence HERE, when the clip is chosen, rather than
     # letting the render fail at the end of the job. Someone who installed
     # screengraft before video existed has a working venv with no ffmpeg in it,
     # and nothing else would tell them until they had done all the fitting.
+    # A poster for the chip. The chip used to be handed the .mov path directly,
+    # and an <img> cannot render a video, so the thumbnail was silently blank for
+    # every clip. It is always FRAME 0 and never follows the scrubber: at chip
+    # size one frame looks like any other, so redrawing it would be movement
+    # without information.
+    poster = os.path.join(SESSION.dir,
+                          "poster-" + os.path.splitext(os.path.basename(real))[0] + ".jpg")
+    if not os.path.exists(poster):
+        cv2.imwrite(poster, W.read_frame_at(real, 0), [cv2.IMWRITE_JPEG_QUALITY, 82])
     return frame, real, {"video": True, "frames": n, "fps": fps, "size": [vw, vh],
-                         "ffmpeg": _have_ffmpeg()}
+                         "ffmpeg": _have_ffmpeg(), "poster": poster}
 
 
 # Render progress, read by /api/render_status. A ten-second clip is a few
@@ -364,6 +385,7 @@ class Handler(BaseHTTPRequestHandler):
                     f.write(self._body())
                 # A video is only ever a screen source; a photo must be a still.
                 if role == "screenshot":
+                    SESSION.update(fit_frame=0)
                     im, real, meta = _read_source(dest)
                 else:
                     im, real = _read_image(dest)
@@ -376,6 +398,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/use":
                 role = b["role"]
                 if role == "screenshot":
+                    SESSION.update(fit_frame=0)
                     im, real, meta = _read_source(b["path"])
                 else:
                     im, real = _read_image(b["path"])
@@ -456,12 +479,13 @@ class Handler(BaseHTTPRequestHandler):
                 spath = _safe_local_path(SESSION.state["screenshot"])
                 if not _is_video(spath):
                     return self._json({"error": "the screen source is not a video"}, 400)
+                # Records which frame the fit is judged on. Nothing is written:
+                # the page re-renders the COMPOSITE from it, and the chip stays
+                # on frame 0 deliberately, so a per-step PNG would be disk churn
+                # nobody looks at.
                 idx = int(b.get("index") or 0)
-                frame = W.read_frame_at(spath, idx)
-                dest = os.path.join(SESSION.dir, f"frame-{idx:06d}.png")
-                cv2.imwrite(dest, frame, [cv2.IMWRITE_PNG_COMPRESSION, 1])
-                return self._json({"path": dest, "index": idx,
-                                   "size": [frame.shape[1], frame.shape[0]]})
+                SESSION.update(fit_frame=idx)
+                return self._json({"index": idx})
 
             if u.path == "/api/render":
                 # Video: same fit, same geometry, N frames instead of one.
@@ -479,7 +503,8 @@ class Handler(BaseHTTPRequestHandler):
                                   output=None, message=None)
                 corners = b["corners"]
                 frac = float(b.get("radius_frac") or 0.0)
-                fit_frame = int(b.get("fit_frame") or 0)
+                fit_frame = int(b.get("fit_frame") if b.get("fit_frame") is not None
+                                else _fit_frame())
                 first = W.read_frame_at(spath, fit_frame)
                 radius_px = frac * first.shape[1]
                 gr = float(b.get("grade") if b.get("grade") is not None else 0.0)

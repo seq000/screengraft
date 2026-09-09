@@ -188,6 +188,28 @@ def main():
         ok("...and grain was actually exercised (a clean fixture would not)",
            plan.grain_sigma > 0.5, f"sigma {plan.grain_sigma:.3f}")
 
+        print("\nthe scrubbed frame reaches the compositor")
+        # It did not, and the scrubber looked decorative: /api/frame updated the
+        # thumbnail while _read_source still read frame 0, so Preview and Save
+        # always composited the first frame whatever the slider said (reported
+        # 9 Sep 2026). Parsed from the source, like the sidecar contract, because
+        # the failure is "this function forgot to ask" — invisible to any test
+        # that only exercises the engine.
+        import re as _re
+        ui_src = open(os.path.join(ROOT, "scripts", "ui.py"), encoding="utf-8").read()
+        body = _re.search(r"def _read_source\(.*?\n(?=def )", ui_src, _re.DOTALL)
+        ok("_read_source asks for the fitted frame, not frame 0",
+           bool(body) and "_fit_frame()" in body.group(0),
+           "" if body else "could not find _read_source")
+        ok("choosing a new screen source resets the fitted frame",
+           ui_src.count("SESSION.update(fit_frame=0)") >= 2,
+           f"{ui_src.count('SESSION.update(fit_frame=0)')} reset(s)")
+        ok("/api/frame records the frame it was asked for",
+           "SESSION.update(fit_frame=idx)" in ui_src)
+        # And the frames really are different, or none of the above would matter.
+        a, b = W.read_frame_at(src, 0), W.read_frame_at(src, 11)
+        ok("frames of the test clip actually differ", not np.array_equal(a, b))
+
         print("\npresets and metadata")
         ok("both presets are defined", set(W.PRESETS) == {"web", "prores"}, str(list(W.PRESETS)))
         ok("web is tagged for compatibility and quality",

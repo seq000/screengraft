@@ -221,6 +221,12 @@
      buttons beside them. Only the corner radii and the shared middle border
      are special. */
   .stepper{display:inline-flex;align-items:center}
+  /* A segmented control has to show which segment is on. `.sel` was only ever
+     styled for the thumbnail picker (.th.sel), so the web/ProRes pair rendered
+     with no selected state at all — reported 9 Sep 2026. Same step as the
+     device chips: selected sits on --raise-hi with the brighter border. */
+  .stepper button.sel{background:var(--raise-hi);border-color:var(--edge-hi);color:var(--ink)}
+  .stepper button.sel:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .stepper button{border-radius:0}
   .stepper button:first-child{border-top-left-radius:var(--r-sm);border-bottom-left-radius:var(--r-sm)}
   .stepper button:last-child{border-top-right-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
@@ -758,8 +764,8 @@
           <input type="range" id="vframe" min="0" max="0" value="0" step="1"
                  aria-label="Which frame of the clip to match the edges on">
           <span class="sm" id="vframeLbl" style="color:var(--mute);min-width:9ch">0</span>
-          <span class="stepper" role="group" aria-label="Output format">
-            <button class="sm sel" data-preset="web" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button class="sm" data-preset="prores" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
+          <span class="stepper" role="radiogroup" aria-label="Output format">
+            <button class="sm sel" data-preset="web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button class="sm" data-preset="prores" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
           </span>
         </span>
       </div>
@@ -1147,12 +1153,14 @@ function setChosen(role, path, size, el, meta){
   const n = role==='photo'?1:2;
   document.querySelectorAll('#recent'+n+' .th').forEach(x=>x.classList.remove('sel'));
   if (el) el.classList.add('sel');
-  $('#pv'+n).innerHTML = `<img src="${fileURL(path)}" alt="">`;
+  // A video cannot be shown by <img>, so a clip gets its poster frame instead.
+  const thumb = (meta && meta.poster) ? meta.poster : path;
+  $('#pv'+n).innerHTML = `<img src="${fileURL(thumb)}" alt="">`;
   const chip = $('#chip'+n);
   chip.classList.remove('is-empty');
   chip.querySelector('.nm').textContent = `${path.split('/').pop()} · ${size[0]}×${size[1]}`
     + (meta && meta.video ? ` · ${meta.frames} frames @ ${Math.round(meta.fps)}fps` : '');
-  $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(path)}")`;
+  $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(thumb)}")`;
   if (role==='photo'){ st.photo = path; st.corners = null; }
   else { st.shot = path; st.video = meta && meta.video ? meta : null; syncVideoUI(); }
   closePop();
@@ -1846,7 +1854,11 @@ let preset = 'web';
 document.querySelectorAll('[data-preset]').forEach(btn => {
   btn.onclick = () => {
     preset = btn.dataset.preset;
-    document.querySelectorAll('[data-preset]').forEach(o => o.classList.toggle('sel', o === btn));
+    document.querySelectorAll('[data-preset]').forEach(o => {
+      const on = o === btn;
+      o.classList.toggle('sel', on);
+      o.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
   };
 });
 
@@ -1879,10 +1891,11 @@ $('#vframe').onchange = async () => {
   // Swapping the poster frame re-runs preview through the same path a still
   // uses, so what you match the edges against is the frame you chose.
   try{
-    const r = await api('/api/frame', {index: +$('#vframe').value});
-    $('#pv2').innerHTML = `<img src="${fileURL(r.path)}" alt="">`;
-    $('#sw2').style.background = `center/cover no-repeat url("${fileURL(r.path)}")`;
-    autoPreview();
+    await api('/api/frame', {index: +$('#vframe').value});
+    // Only the composite changes. The chip keeps frame 0 on purpose — at that
+    // size one frame looks like any other, so updating it would be movement
+    // without meaning.
+    if (st.corners) renderPreview();
   }catch(e){ toast('err', 'Could not read that frame: ' + e.message); }
 };
 
