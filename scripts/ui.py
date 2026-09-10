@@ -47,6 +47,7 @@ sys.path.insert(0, HERE)
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 import detect as D  # noqa: E402
+import fits as FIT  # noqa: E402
 import scan as S  # noqa: E402
 import warp as W  # noqa: E402
 
@@ -498,6 +499,11 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
                                            else reflection))
         if result is not None:
             _write_json_atomic(SESSION.result_path, {**result, "saved": time.time()})
+            # Same rule as /api/save, and for the same reason it lives after the
+            # encode: the fit is remembered by the run that produced a file.
+            FIT.remember(FIT.key_for(photo), corners, result.get("radius_frac"),
+                         result.get("device"), result.get("photo"),
+                         (photo.shape[1], photo.shape[0]))
         # The still path has always done this (see /api/save); the render path
         # never did, so /api/import -- which reads SESSION.state["output"] --
         # either found nothing or, worse, silently handed over the PREVIOUS
@@ -524,6 +530,34 @@ def _blend_args(b):
     if r is None:
         return "replace", W.DEFAULT_REFLECTION
     return "emissive", float(max(0.0, min(1.0, float(r))))
+
+
+def _adopt(role, path):
+    """Make a chosen source the session's, and answer what the page needs.
+
+    /api/use and /api/upload differ only in where the bytes came from --
+    everything after that (the video probe, the session state, and now the
+    remembered fit) has to be identical for a drag-drop and a path pick, or the
+    feature works one way in and not the other. It was already written twice;
+    the fit lookup would have made it three, and a set of writers that
+    disagree is a defect this project has already shipped once.
+    """
+    if role == "screenshot":
+        SESSION.update(fit_frame=0)
+        im, real, meta = _read_source(path)
+    else:
+        im, real = _read_image(path)
+        meta = {"video": False}
+    SESSION.update(**{role: real})
+    if role == "photo":
+        # The quad is a property of the PHOTOGRAPH, so a fit saved on an earlier
+        # run is a better starting position than any detector -- and a stronger
+        # claim, which is why the page states where the quad came from rather
+        # than presenting a memory as a detection.
+        e = FIT.recall(FIT.key_for(im))
+        if e:
+            meta["remembered"] = e
+    return {"path": real, "size": [im.shape[1], im.shape[0]], **meta}
 
 
 def _guess_type(corners):
@@ -648,27 +682,12 @@ class Handler(BaseHTTPRequestHandler):
                 with open(dest, "wb") as f:
                     f.write(self._body())
                 # A video is only ever a screen source; a photo must be a still.
-                if role == "screenshot":
-                    SESSION.update(fit_frame=0)
-                    im, real, meta = _read_source(dest)
-                else:
-                    im, real = _read_image(dest)
-                    meta = {"video": False}
-                SESSION.update(**{role: real})
-                return self._json({"path": real, "size": [im.shape[1], im.shape[0]], **meta})
+                return self._json(_adopt(role, dest))
 
             b = self._jbody()
 
             if u.path == "/api/use":
-                role = b["role"]
-                if role == "screenshot":
-                    SESSION.update(fit_frame=0)
-                    im, real, meta = _read_source(b["path"])
-                else:
-                    im, real = _read_image(b["path"])
-                    meta = {"video": False}
-                SESSION.update(**{role: real})
-                return self._json({"path": real, "size": [im.shape[1], im.shape[0]], **meta})
+                return self._json(_adopt(b["role"], b["path"]))
 
             if u.path == "/api/figma":
                 return self._json(SESSION.enqueue({
@@ -894,6 +913,12 @@ class Handler(BaseHTTPRequestHandler):
                           "saved": time.time()}
                 _write_json_atomic(SESSION.result_path, result)
                 SESSION.update(output=dest)
+                # A fit is remembered when it PRODUCED something, not while it
+                # is being dragged: a quad on the canvas is a work in progress,
+                # a quad that made an output is one the person looked at and
+                # kept. Next run on this photograph starts from it.
+                FIT.remember(FIT.key_for(photo), corners, frac, b.get("device"),
+                             ppath, (photo.shape[1], photo.shape[0]))
                 return self._json(result)
 
             return self._json({"error": "no such route"}, 404)

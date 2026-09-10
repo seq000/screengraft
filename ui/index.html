@@ -1140,7 +1140,12 @@ const api = async (p, body, raw) => {
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
 };
 const fileURL = p => '/file?path=' + encodeURIComponent(p);
-const st = {photo:null, shot:null, corners:null, frac:0, type:null, preset:null, measured:null, presets:[]};
+const st = {photo:null, shot:null, corners:null, frac:0, type:null, preset:null, measured:null,
+            // Where the quad on screen came from: 'detected' | 'remembered' | 'restored'
+            // | 'default'. The tool's contract is that it never presents a guess as a
+            // fact, and each of those is a different strength of claim, so the status
+            // line has to be able to say which one is on the canvas.
+            remembered:null, quadFrom:null, presets:[]};
 const remember = (k,v) => { try{ localStorage.setItem('sg.'+k, v); }catch(e){} };
 const recall = (k,d) => { try{ const v = localStorage.getItem('sg.'+k); return v===null?d:v; }catch(e){ return d; } };
 
@@ -1222,7 +1227,11 @@ function setChosen(role, path, size, el, meta){
   chip.querySelector('.nm').textContent = `${path.split('/').pop()} · ${size[0]}×${size[1]}`
     + (meta && meta.video ? ` · ${meta.frames} frames @ ${Math.round(meta.fps)}fps` : '');
   $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(thumb)}")`;
-  if (role==='photo'){ st.photo = path; st.corners = null; }
+  // A fit the server recognised from this photograph's own pixels. Held
+  // rather than applied here: the quad only means anything once there is a
+  // screenshot to put inside it, which is what maybeStart() waits for.
+  if (role==='photo'){ st.photo = path; st.corners = null;
+    st.remembered = (meta && meta.remembered) || null; }
   else { st.shot = path; st.video = meta && meta.video ? meta : null; syncVideoUI(); }
   closePop();
   maybeStart();
@@ -1389,12 +1398,36 @@ async function maybeStart(){
       // something. No quad yet — there is nothing to fit into it.
       draw();
       $('#cvbar').hidden = true;
-      $('#detSt').className = 'status';
-      $('#detSt').textContent = 'Now choose the screenshot to place on the screen.';
+      $('#detSt').className = 'status' + (st.remembered ? ' ok' : '');
+      // Naming it here is the whole point: this is the first moment the page
+      // knows, and a feature nobody notices is a feature that does not exist.
+      $('#detSt').textContent = st.remembered
+        ? 'Your saved fit for this photo will be used — now choose the screenshot.'
+        : 'Now choose the screenshot to place on the screen.';
       return;
     }
     $('#cvbar').hidden = false;
-    if (!st.corners) detect(); else { draw(); drawStrip(); }
+    if (st.corners){
+      draw(); drawStrip();
+      // A reload arrives here with the session's corners already in hand, and
+      // the only thing on the status line is the "now choose the screenshot"
+      // text from the photo-only step above — a message about a step already
+      // done, and on this path it also claimed the SAVED fit was in use when
+      // the corners on screen are the ones from this session. Every other route
+      // to a quad states itself at the moment it acts; this one had nobody.
+      if (st.quadFrom === 'restored'){
+        const s = $('#detSt'); s.className = 'status ok';
+        s.textContent = 'Corners restored from this session — drag any edge to adjust';
+        // The pill is ~200px at 742px wide and every status this page sets is
+        // longer than that (measured: 278-426px against 197-207 available), so
+        // the full sentence lives on hover and the first three words have to
+        // carry the meaning on their own. Same shape as the abstain message.
+        s.title = 'These are the corners this session already had — a reload does not '
+                + 'throw away work. Press Re-detect or Reset to start over.';
+      }
+    }
+    else if (st.remembered) applyRemembered();
+    else detect();
   };
   img.src = fileURL(st.photo);
 }
@@ -1561,7 +1594,7 @@ async function pointAt(x, y){
   try {
     const r = await api('/api/detect', {click: [x, y]});
     if (r.found){
-      st.corners = r.corners; st.measured = r.corner_radius;
+      st.corners = r.corners; st.measured = r.corner_radius; st.quadFrom = 'detected';
       s.className = 'status ok';
       s.textContent = `Screen found from your click (${r.method})`;
       if (!st.type) setType(r.type_guess || 'phone');
@@ -1591,7 +1624,7 @@ async function detect(){
   const s = $('#detSt'); s.className='status busy'; s.textContent = 'Detecting…';
   const r = await api('/api/detect', {});
   if (r.found){
-    st.corners = r.corners; st.measured = r.corner_radius;
+    st.corners = r.corners; st.measured = r.corner_radius; st.quadFrom = 'detected';
     const corroborated = r.confidence === 'corroborated';
     s.className = 'status ' + (corroborated ? 'ok' : 'warn');
     s.textContent = corroborated ? `Both detectors agree (${r.method})`
@@ -1600,7 +1633,7 @@ async function detect(){
     if (r.corner_radius && r.corner_radius.confident){ setFrac(r.corner_radius.frac_of_width, 'measured from the photo'); }
     else { applyPreset(); $('#radSt').textContent = 'Radius not measurable here — using the device preset.'; }
   } else {
-    st.corners = defaultQuad();
+    st.corners = defaultQuad(); st.quadFrom = 'default';
     s.className='status warn';
     // Naming the control is the whole fix. The page knows the detector just
     // failed, which is exactly the moment "Point at screen" is worth doing —
@@ -1617,6 +1650,40 @@ async function detect(){
   draw(); drawStrip();
   autoPreview();   // if the compare pane is open, fill it straight away
 }
+/* The third source of a starting quad, beside detection and the default
+   rectangle — and the strongest of the three, so it says so.
+
+   It is not a guess being dressed up: the key is a hash of the photograph's
+   decoded pixels, so a hit means THIS image, not a similar one, and the corners
+   are the ones that produced a saved composite. Every correction path still
+   applies — Re-detect, Reset and dragging all work exactly as before. */
+function applyRemembered(){
+  const r = st.remembered;
+  st.corners = r.corners.map(c => c.slice());
+  st.measured = null;                      // nothing was measured on this run
+  st.quadFrom = 'remembered';
+  if (r.device) setType(r.device);
+  else if (!st.type) setType('phone');
+  // setType rebuilds the preset list but does not touch the radius, so the
+  // remembered fraction is applied after it and survives.
+  if (r.radius_frac != null) setFrac(r.radius_frac, 'remembered from your last fit');
+  else applyPreset();
+  const s = $('#detSt'); s.className = 'status ok';
+  s.textContent = 'Your saved fit for this photo' + (r.saved ? ' — ' + savedWhen(r.saved) : '');
+  s.title = 'These four corners come from a composite you saved from this exact '
+          + 'photograph. Drag any edge to adjust, or press Re-detect to start over.';
+  pick = {kind:'edge', i:0};
+  draw(); drawStrip(); autoPreview();
+}
+/* Dates on this page are relative: "3 days ago" answers "is this still the fit I
+   mean?" without the reader doing arithmetic against today. */
+function savedWhen(t){
+  const days = Math.floor((Date.now()/1000 - t) / 86400);
+  if (days <= 0) return 'saved today';
+  if (days === 1) return 'saved yesterday';
+  if (days < 30) return `saved ${days} days ago`;
+  return 'saved ' + new Date(t*1000).toLocaleDateString();
+}
 // One definition of "a sane starting position", used by the abstention path and
 // by Reset. Deliberately a plain centred rectangle: it claims nothing about
 // where the screen is, and every handle is on the picture where it can be
@@ -1628,7 +1695,7 @@ function defaultQuad(){
 $('#redetect').onclick = detect;
 $('#resetquad').onclick = () => {
   if (!img.naturalWidth) return;
-  st.corners = defaultQuad();
+  st.corners = defaultQuad(); st.quadFrom = 'default';
   const s = $('#detSt'); s.className='status warn';
   s.textContent = 'Edges reset — place them on the screen';
   s.title = '';
@@ -2266,7 +2333,6 @@ $('#imp').onclick = async () => {
   // The server keeps the session; the page used to start blank on reload,
   // silently discarding a photo, a screenshot and any corner work.
   if (s.photo || s.screenshot){
-    if (s.corners) st.corners = s.corners;
     if (s.radius_frac) st.frac = s.radius_frac;
     if (s.device) st.type = s.device;
     for (const [role, path] of [['photo', s.photo], ['screenshot', s.screenshot]]){
@@ -2274,6 +2340,13 @@ $('#imp').onclick = async () => {
       try { const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, null, r); }
       catch(e){ /* file moved since: leave that slot empty */ }
     }
+    // AFTER the loop, not before it: choosing a photo clears the quad, because
+    // in every other case the new photo has nothing to do with the old corners.
+    // On the restore path it is the SAME photo, so the assignment above was
+    // being wiped by the /api/use it preceded, and a reload silently re-detected
+    // over hand-placed edges. maybeStart's fit runs on the image's load event,
+    // which cannot fire before this line, so the value is in place by then.
+    if (s.corners){ st.corners = s.corners; st.quadFrom = 'restored'; }
     // Populate the radius dropdown on the restore path too. detect() only
     // calls setType when st.type is unset, so a restored session used to come
     // back with an empty preset list and a zeroed slider.

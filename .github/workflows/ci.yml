@@ -39,6 +39,13 @@ jobs:
       # the recipe; this checks the ingredients are still there.
       - name: Session sweep retention
         run: python test/test_sweep.py
+      # Remembered fits (SG51). The property is not "a dict round-trips" but
+      # that the same PHOTOGRAPH is recognised however it arrives -- renamed,
+      # re-exported, or dragged in as bytes with no origin. A key on the path
+      # passes a naive test and fails every one of those, so each route gets its
+      # own check. Still path only, so it never depends on ffmpeg.
+      - name: Remembered fits
+        run: python test/test_fits.py
       # The contract that keeps the still and video paths from drifting: frame 0
       # of a render must equal the still composite byte for byte. It shares
       # Plan with compose(), and a refactor that split them would pass every

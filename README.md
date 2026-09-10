@@ -38,6 +38,11 @@ prototype, then put the recording inside a real photograph.
   You match the edges on one frame and every frame gets that same geometry — the
   photograph is still, so there is nothing to track and nothing to drift. Output
   is H.264 at CRF 16 or ProRes 422 HQ.
+- **It remembers a photograph.** Fit a photo once and save, and the next run on
+  that photograph starts from those exact corners instead of a detection —
+  including a second screenshot into the same shot, which is the common case.
+  The photo is recognised by its pixels, not its name, so a re-export, a rename
+  or a drag-drop from a different folder all still match.
 - **You confirm every fit.** Detection is advisory and says so; you drag the four
   edges onto the glass with a magnified loupe. A silent misdetection producing a
   confident, wrong result is the one failure this tool refuses to have.
@@ -153,6 +158,12 @@ What happens to that copy depends on whether the run produced anything:
 What survives either way is the `result.json` sidecar: a few hundred bytes
 recording the corners, radius, grade and blend of that fit. It reproduces a
 composite exactly, and it is the first thing a bug report should include.
+
+**Remembered fits** live in `~/.screengraft/fits.json`, outside any session so a
+sweep cannot take them. Each entry is the four corners, the radius fraction and
+the device, keyed by a hash of the photograph's decoded pixels — no image data,
+no absolute paths, a couple of hundred bytes each, and the oldest are dropped
+past 500. Delete the file to forget every fit; nothing else depends on it.
 
 Sidecars written by v0.23.0–v0.25.1 may name a dragged-in source that release
 deleted. Those cannot be repaired — the bytes are gone — but screengraft now

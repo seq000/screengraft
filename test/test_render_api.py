@@ -301,6 +301,13 @@ def scrubber_reaches_the_compositor(td):
            f"mean |diff| to frame {n} = {d_want:.2f}, to frame 0 = {d_first:.2f}")
         ok("...and the two frames are far enough apart for that to mean something",
            diff(want, first) > 5.0, f"{diff(want, first):.1f} levels")
+
+        # The other half of the same contract, and the half only a live server
+        # can answer: choosing a NEW screen source has to put the scrubber back
+        # to frame 0, or the next clip is fitted on an index from the last one.
+        ui.post("/api/use", {"role": "screenshot", "path": clip})
+        ok("choosing a screen source resets the fitted frame",
+           ui.state().get("fit_frame") == 0, str(ui.state().get("fit_frame")))
     finally:
         ui.stop()
 

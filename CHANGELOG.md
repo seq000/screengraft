@@ -9,6 +9,68 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.26.0] - 2026-09-10
+
+### Added
+
+- **A photograph you have fitted before comes back fitted (SG51).** Matching the
+  four edges is the only part of this job that costs real attention, and it is a
+  property of the **photograph**, not of the screenshot — put a second screenshot
+  into the same shot and the corners are identical. Until now they were thrown
+  away when the run ended, so the second screenshot meant doing the whole
+  interview again. Save a composite and those corners, the radius fraction and
+  the device are kept; pick that photograph again and they are the starting
+  position, in place of a detection.
+
+  **The key is the photograph's decoded pixels, not its path.** A photo gets
+  re-exported, renamed and downloaded twice constantly, and a path key would miss
+  every one of those — including the case screengraft creates itself, where a
+  drag-drop is copied into the session under a name invented from the clock and
+  no original path exists at all. Hashing what the file decodes to costs **4ms on
+  a 12MP photo and 18ms on 48MP**, measured, against the read that produced the
+  array. Each route has its own test for this, because a path key passes a naive
+  one; planting the path key turns four checks red, including *"a remembered fit
+  reproduces the composite it came from, pixel for pixel"* (max |diff| = 0).
+
+  **A fit is remembered when it produced an output, not while it is being
+  dragged.** A quad on the canvas is a work in progress; a quad that made a file
+  is one you looked at and kept. That also keeps the store trivial — an entry is
+  a couple of hundred bytes, capped at 500, in `~/.screengraft/fits.json`, which
+  sits outside every session so the sweep cannot take it. Numbers and a basename
+  for display; no image data, no absolute paths.
+
+  The page **says where the quad came from**, because a remembered fit is a much
+  stronger claim than a detection and this tool does not present a guess as a
+  fact: *"Your saved fit for this photo — saved 3 days ago"*, with the age
+  relative so nobody does arithmetic against today. It is named one step earlier
+  too, on the photo-only step, since a feature nobody notices is a feature that
+  does not exist (the lesson of 0.24.1).
+
+### Fixed
+
+- **A reload no longer re-detects over hand-placed edges.** The session restore
+  assigned the saved corners *before* re-adopting the photo — and choosing a
+  photo clears the quad, correctly, because in every other case a new photo has
+  nothing to do with the old corners. On the restore path it is the same photo,
+  so the assignment was wiped by the call it preceded and `maybeStart()` ran a
+  fresh detection over work the designer had already done. Found while reading
+  the same code for the feature above.
+
+### Changed
+
+- **`/api/use` and `/api/upload` share one `_adopt()`.** They differed only in
+  where the bytes came from, and everything after that — the video probe, the
+  session state, and now the remembered fit — has to be identical or a feature
+  works when you browse and not when you drag. The duplication was already
+  written twice; the fit lookup would have made it three.
+- **The scrubber-reset check moved from parsing source to speaking HTTP.** It
+  counted two `fit_frame=0` resets, one per route, so collapsing that duplication
+  turned a correct refactor red — pinning the shape of the code rather than what
+  it does. What is parsed now is that the one place a source is adopted still
+  resets; that it *happens* is asserted against a live server, where a stale
+  index would show. Verified by planting the removal: the HTTP check reports
+  `fit_frame = 11`.
+
 ## [0.25.2] - 2026-09-10
 
 ### Fixed

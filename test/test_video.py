@@ -201,9 +201,16 @@ def main():
         ok("_read_source asks for the fitted frame, not frame 0",
            bool(body) and "_fit_frame()" in body.group(0),
            "" if body else "could not find _read_source")
-        ok("choosing a new screen source resets the fitted frame",
-           ui_src.count("SESSION.update(fit_frame=0)") >= 2,
-           f"{ui_src.count('SESSION.update(fit_frame=0)')} reset(s)")
+        # This used to count TWO resets, one per route -- which pinned the
+        # shape of the code, not what it does: /api/use and /api/upload now
+        # share one _adopt(), and collapsing the duplication turned a correct
+        # refactor red. What is worth pinning is that the one place a source is
+        # adopted still resets the frame; that it actually HAPPENS is proved
+        # over HTTP in test_render_api.py, where a stale index would show.
+        adopt = _re.search(r"def _adopt\(.*?\n(?=def )", ui_src, _re.DOTALL)
+        ok("adopting a new screen source resets the fitted frame",
+           bool(adopt) and "SESSION.update(fit_frame=0)" in adopt.group(0),
+           "" if adopt else "could not find _adopt")
         ok("/api/frame records the frame it was asked for",
            "SESSION.update(fit_frame=idx)" in ui_src)
         # And the frames really are different, or none of the above would matter.
