@@ -1197,6 +1197,68 @@ function casedText(c, text, x, y, color){
   c.restore();
 }
 
+/* ===== a saved fit, dropped back in =====================================
+   The corners are the expensive part of this job and they belong to the
+   photograph, so a fit written beside a mockup is worth carrying between runs:
+   the same scene with next week's UI, a re-export the automatic memory cannot
+   recognise (it keys on pixels, and a re-export changes them), or someone
+   else's machine entirely.
+
+   No file dialog is involved and none is needed. The file sits in the folder
+   the user already chose, Finder finds it, and it arrives here the same way a
+   photograph does. The drop is on the DOCUMENT rather than a zone, because a
+   fit is not a third source — it is an instruction about the photo already
+   loaded, and hunting for the right rectangle to aim at would be worse than
+   pasting a path.
+
+   The page reads the bytes and the SERVER judges them: whether this is the
+   photograph the fit was made for is a question only the side holding the
+   pixels can answer. */
+async function loadFitFile(file){
+  const s = $('#detSt');
+  try {
+    const text = await file.text();
+    s.className = 'status busy'; s.textContent = 'Reading that fit…';
+    const r = await api('/api/fit', {fit: JSON.parse(text)});
+    st.corners = r.corners.map(c => c.slice());
+    st.measured = null;
+    st.quadFrom = 'file';
+    if (r.device) setType(r.device);
+    else if (!st.type) setType('phone');
+    if (r.radius_frac != null) setFrac(r.radius_frac, 'from the fit you loaded');
+    else applyPreset();
+    // 'exact' and 'same-size' are the cases where the corners are used as they
+    // were saved; 'scaled' and 'reshaped' moved them, and 'reshaped' means the
+    // photograph is a different SHAPE, which is where a plausible-looking wrong
+    // answer comes from. Only the first is stated as a fact.
+    s.className = 'status ' + (r.match === 'exact' ? 'ok' : 'warn');
+    s.textContent = r.match === 'exact' ? `Fit loaded from ${file.name}`
+                  : r.match === 'same-size' ? 'Fit loaded — same size, different pixels'
+                  : r.match === 'reshaped' ? 'Fit loaded and STRETCHED — check every corner'
+                  : 'Fit loaded and scaled — check a corner';
+    s.title = r.message || '';
+    toast(r.match === 'exact' ? 'ok' : 'info', r.message || 'Fit loaded.',
+          { ms: 9000, dismissible: true });
+    pick = {kind:'edge', i:0};
+    draw(); drawStrip(); autoPreview();
+  } catch (e) {
+    s.className = 'status warn'; s.textContent = 'That fit could not be used';
+    s.title = e.message || '';
+    toast('err', 'Could not load that fit: ' + (e.message || e));
+  }
+}
+// Capture phase, so the per-role drop zones never see a fit file and try to
+// decode it as an image.
+addEventListener('dragover', e => {
+  if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) e.preventDefault();
+}, true);
+addEventListener('drop', e => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!f || !/\.json$/i.test(f.name)) return;      // not ours: let the zones have it
+  e.preventDefault(); e.stopPropagation();
+  loadFitFile(f);
+}, true);
+
 /* ===== pickers (popovers over the canvas) ===== */
 async function loadRecent(){
   const {items} = await api('/api/recent?days=14&limit=40');
@@ -2250,7 +2312,12 @@ $('#save').onclick = async () => {
     // The real destination, not a hardcoded one: --out-dir means saves usually
     // land in the project folder now, and telling the user "~/Desktop" when
     // they aren't there is how you lose a file.
-    toast('ok', `Saved <code>${r.output.split('/').pop()}</code> to <code>${prettyDir(st.outDir || '')}</code>`);
+    // Naming the fit file here is the whole reason it is discoverable: it is
+    // written silently beside the mockup, and a file nobody knows about is a
+    // file nobody drags back in.
+    toast('ok', `Saved <code>${r.output.split('/').pop()}</code> to <code>${prettyDir(st.outDir || '')}</code>`
+      + (r.fit_file ? ` · the fit is beside it as <code>${r.fit_file.split('/').pop()}</code> — drop that back on this page to reuse these corners` : ''),
+      { ms: 9000, dismissible: true });
     const imp = $('#imp');
     imp.disabled = false; imp.textContent = 'Send to Claude';
     // Hand the accent on: the file exists, so sending it is what is next.

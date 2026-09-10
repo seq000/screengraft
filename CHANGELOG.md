@@ -9,6 +9,46 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.29.0] - 2026-09-11
+
+### Added
+
+- **A fit is a file you can keep, and dropping it back on the page restores the
+  corners (SG72).** Matching the four edges is the only part of this job that
+  costs real attention, and the scene gets reused — the same photograph with next
+  week's UI. 0.26.0 already remembered a fit automatically, keyed by the
+  photograph's decoded pixels, and that covers "same photo, same machine, later"
+  and nothing else. It has no artefact to find, name, keep beside the project or
+  send to anyone; it **misses a re-export**, because saving the same scene again
+  at another quality changes the pixels and therefore the key; and it does not
+  travel.
+
+  So every save and render now writes `<mockup>.fit.json` **beside the output**,
+  in the folder you already chose. Four corners, the radius fraction, the device,
+  and which photograph it was made for. Drag it back onto the page — the way a
+  photograph already arrives — and the quad comes back. **No file dialog is
+  involved and none is needed:** the file lands where the work is, Finder finds
+  it, drag-and-drop carries it.
+
+  **It never applies silently**, because corners are meaningless on the wrong
+  image and *plausible but wrong* on a crop of the right one. Four answers, each
+  stated in the page: the **same photograph** (applied as saved); **the same size
+  with different pixels** — the re-export this exists for — applied as saved and
+  named as such; a **scaled** photograph, corners scaled and worth a check; and a
+  **differently shaped** one, which means a crop, where the corners are stretched
+  and every one of them needs correcting.
+
+  A fit carries geometry only. Grade, blend and grain describe a *composite* and
+  stay in `result.json`, which reproduces one exactly — keeping the two apart
+  stops either file quietly becoming a worse copy of the other. Anything can be
+  dropped on a page, so a file that is not a fit is refused with a sentence
+  rather than applied as four numbers that happen to parse.
+
+### Changed
+
+- The save toast names the fit file. It is written silently beside the mockup,
+  and a file nobody knows about is a file nobody drags back in.
+
 ## [0.28.0] - 2026-09-10
 
 ### Fixed

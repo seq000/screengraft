@@ -41,8 +41,13 @@ prototype, then put the recording inside a real photograph.
 - **It remembers a photograph.** Fit a photo once and save, and the next run on
   that photograph starts from those exact corners instead of a detection —
   including a second screenshot into the same shot, which is the common case.
-  The photo is recognised by its pixels, not its name, so a re-export, a rename
-  or a drag-drop from a different folder all still match.
+  The photo is recognised by its pixels, not its name, so a rename or a
+  drag-drop from a different folder still match.
+- **And the fit is a file you can keep.** Every save writes `<mockup>.fit.json`
+  beside the output. Drag it back onto the page and the corners come back — on
+  another machine, from a colleague, or onto the same scene exported again,
+  which the pixel key cannot recognise. It says which photograph it was made
+  for, and stretches nothing without telling you.
 - **You confirm every fit.** Detection is advisory and says so; you drag the four
   edges onto the glass with a magnified loupe. A silent misdetection producing a
   confident, wrong result is the one failure this tool refuses to have.
@@ -165,6 +170,12 @@ its score and whether it was accepted, rejected, never reached, or filtered out
 by your click. Ask for it with `POST /api/detect {"trace": true}`, or from the
 CLI with `scripts/detect.py --trace FILE`. Nothing produces it unless asked, and
 it is the right thing to attach to a bug report about detection.
+
+**The fit file** is written beside every mockup as `<name>.fit.json` — four
+corners, the corner radius, the device, and which photograph it was made for. It
+is yours: keep it with the project, send it to someone, drop it back on the page
+to reuse the fit. Geometry only; the grade and blend of a *composite* live in
+`result.json`.
 
 **Remembered fits** live in `~/.screengraft/fits.json`, outside any session so a
 sweep cannot take them. Each entry is the four corners, the radius fraction and

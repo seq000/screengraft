@@ -254,6 +254,103 @@ def concurrent_remembers(td):
     ok("every concurrent fit survived", len(got) == 40, f"{len(got)} of 40")
 
 
+def fit_file(td):
+    print("\na fit is a file beside the mockup, and it can be dropped back in")
+    ui, home, photo, shot = build(td, "f")
+    try:
+        ui.post("/api/use", {"role": "photo", "path": photo})
+        ui.post("/api/use", {"role": "screenshot", "path": shot})
+        _, saved = ui.post("/api/save", BODY)
+
+        fitp = saved.get("fit_file")
+        ok("saving writes a fit beside the mockup",
+           bool(fitp) and os.path.isfile(fitp)
+           and os.path.dirname(fitp) == os.path.dirname(saved["output"]),
+           str(fitp))
+        ok("...named after the mockup, so the pair is obvious in Finder",
+           bool(fitp) and os.path.splitext(saved["output"])[0] + ".fit.json" == fitp,
+           str(fitp))
+        doc = json.load(open(fitp))
+        ok("...carrying the corners that produced it",
+           doc["corners"] == [[float(x), float(y)] for x, y in CORNERS], str(doc["corners"]))
+        ok("...the radius and device", doc["radius_frac"] == BODY["radius_frac"]
+           and doc["device"] == "phone")
+        ok("...and which photograph it was made for",
+           doc["photo"]["size"] == [900, 700] and bool(doc["photo"]["key"])
+           and doc["photo"]["name"] == "photo.png", str(doc["photo"]))
+        ok("no absolute path travels with it — it is meant to be shared",
+           home not in json.dumps(doc), "the fit names a real path")
+
+        # The same photograph: the corners are used exactly as saved.
+        code, r = ui.post("/api/fit", {"fit": doc})
+        ok("dropping it back on the same photo is an exact match",
+           code == 200 and r.get("match") == "exact"
+           and r["corners"] == doc["corners"], f"{code} {str(r)[:90]}")
+
+        # THE case this feature exists for: the same scene exported again. The
+        # pixels differ, so the automatic memory cannot recognise it; the size
+        # does not, so the corners still hold.
+        again = os.path.join(home, "photo-again.png")
+        im = synth_photo()
+        im[0, 0] = (255 - im[0, 0, 0], im[0, 0, 1], im[0, 0, 2])   # one pixel
+        cv2.imwrite(again, im)
+        ui.post("/api/use", {"role": "photo", "path": again})
+        code, r = ui.post("/api/fit", {"fit": doc})
+        ok("a re-export is recognised as the same size, not refused",
+           code == 200 and r.get("match") == "same-size"
+           and r["corners"] == doc["corners"], f"{code} {r.get('match')}")
+        ok("...and says so rather than pretending it is the same file",
+           "exported again" in (r.get("message") or ""), r.get("message", "")[:80])
+
+        # A resize: corners scale, and it says the result wants checking.
+        big = os.path.join(home, "photo-2x.png")
+        cv2.imwrite(big, cv2.resize(synth_photo(), (1800, 1400)))
+        ui.post("/api/use", {"role": "photo", "path": big})
+        code, r = ui.post("/api/fit", {"fit": doc})
+        want = [[x * 2, y * 2] for x, y in doc["corners"]]
+        ok("a scaled photograph gets scaled corners",
+           code == 200 and r.get("match") == "scaled"
+           and all(abs(a - b) < 0.01 for p, q in zip(r["corners"], want, strict=True)
+                   for a, b in zip(p, q, strict=True)),
+           f"{r.get('match')} {str(r.get('corners'))[:70]}")
+
+        # A crop is the dangerous one: scaled corners land somewhere plausible
+        # and wrong, so the aspect change has to be called out by name.
+        crop = os.path.join(home, "photo-crop.png")
+        cv2.imwrite(crop, synth_photo()[0:700, 0:600])
+        ui.post("/api/use", {"role": "photo", "path": crop})
+        code, r = ui.post("/api/fit", {"fit": doc})
+        ok("a differently-SHAPED photograph is flagged, not quietly stretched",
+           code == 200 and r.get("match") == "reshaped"
+           and "cropped" in (r.get("message") or ""), f"{r.get('match')}")
+
+        print("\n  ...and anything can be dropped on a page, so junk is refused with a sentence")
+        for name, payload in [
+            ("a plain object", {"corners": CORNERS}),
+            ("something else's JSON", {"kind": "not-screengraft", "corners": CORNERS}),
+            ("a fit with three corners", {**doc, "corners": doc["corners"][:3]}),
+            ("corners that are not numbers", {**doc, "corners": [["a", "b"]] * 4}),
+            ("a fit from the future", {**doc, "version": 99}),
+        ]:
+            code, r = ui.post("/api/fit", {"fit": payload})
+            ok(f"{name}: refused with a reason",
+               code == 400 and len(r.get("error", "")) > 20, f"{code} {str(r)[:70]}")
+    finally:
+        ui.stop()
+
+
+def fit_needs_a_photo(td):
+    print("\na fit is an instruction about the photo already open")
+    ui, _home, _photo, _shot = build(td, "g")
+    try:
+        code, r = ui.post("/api/fit", {"fit": {"kind": "screengraft-fit", "version": 1,
+                                               "corners": CORNERS}})
+        ok("dropping a fit before a photo says what to do first",
+           code == 400 and "photo" in r.get("error", ""), f"{code} {str(r)[:80]}")
+    finally:
+        ui.stop()
+
+
 def main():
     home = os.environ.get("HOME")
     try:
@@ -261,6 +358,8 @@ def main():
             remembering(td)
             reproduces(td)
             role_is_not_a_write_primitive(td)
+            fit_file(td)
+            fit_needs_a_photo(td)
             store_behaviour(td)
             concurrent_remembers(td)
     finally:

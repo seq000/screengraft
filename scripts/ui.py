@@ -47,6 +47,7 @@ sys.path.insert(0, HERE)
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 import detect as D  # noqa: E402
+import fitfile as FF  # noqa: E402
 import fits as FIT  # noqa: E402
 import scan as S  # noqa: E402
 import warp as W  # noqa: E402
@@ -501,9 +502,13 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
             _write_json_atomic(SESSION.result_path, {**result, "saved": time.time()})
             # Same rule as /api/save, and for the same reason it lives after the
             # encode: the fit is remembered by the run that produced a file.
-            FIT.remember(FIT.key_for(photo), corners, result.get("radius_frac"),
+            key = FIT.key_for(photo)
+            FIT.remember(key, corners, result.get("radius_frac"),
                          result.get("device"), result.get("photo"),
                          (photo.shape[1], photo.shape[0]))
+            FF.write(dest, FF.build(corners, result.get("radius_frac"),
+                                    result.get("device"), result.get("photo"),
+                                    (photo.shape[1], photo.shape[0]), key))
         # The still path has always done this (see /api/save); the render path
         # never did, so /api/import -- which reads SESSION.state["output"] --
         # either found nothing or, worse, silently handed over the PREVIOUS
@@ -732,6 +737,29 @@ class Handler(BaseHTTPRequestHandler):
                 SESSION.update(screenshot=real)
                 return self._json({"path": real, "size": [im.shape[1], im.shape[0]]})
 
+            if u.path == "/api/fit":
+                # A fit file dropped onto the page. The page reads the bytes and
+                # posts the parsed document; only the server can judge it,
+                # because judging it means knowing what the OPEN photograph is.
+                #
+                # It never applies silently. Corners are meaningless on the wrong
+                # image and *plausible but wrong* on a crop of the right one,
+                # which is the more dangerous of the two — so every answer says
+                # which of four situations it is and the page says it out loud.
+                if not SESSION.state.get("photo"):
+                    raise ValueError("choose the photo first, then drop the fit onto it")
+                doc, err = FF.parse(b.get("fit"))
+                if err:
+                    return self._json({"error": err}, 400)
+                photo, _p = _read_image(SESSION.state["photo"])
+                corners, match, message = FF.apply_to(
+                    doc, (photo.shape[1], photo.shape[0]), FIT.key_for(photo))
+                return self._json({"corners": corners, "match": match,
+                                   "message": message,
+                                   "radius_frac": doc.get("radius_frac"),
+                                   "device": doc.get("device"),
+                                   "from": doc.get("photo", {}).get("name")})
+
             if u.path == "/api/detect":
                 if not SESSION.state.get("photo"):
                     raise ValueError("choose a photo first")
@@ -938,14 +966,27 @@ class Handler(BaseHTTPRequestHandler):
                           "grade": gr, "grain": bool(b.get("grain", gr > 0)),
                           "blend": blend, "reflection": reflection,
                           "saved": time.time()}
-                _write_json_atomic(SESSION.result_path, result)
-                SESSION.update(output=dest)
                 # A fit is remembered when it PRODUCED something, not while it
                 # is being dragged: a quad on the canvas is a work in progress,
                 # a quad that made an output is one the person looked at and
                 # kept. Next run on this photograph starts from it.
-                FIT.remember(FIT.key_for(photo), corners, frac, b.get("device"),
+                key = FIT.key_for(photo)
+                FIT.remember(key, corners, frac, b.get("device"),
                              ppath, (photo.shape[1], photo.shape[0]))
+                # ...and the portable half: a file beside the mockup, in the
+                # folder the user already chose. The store above is invisible and
+                # keyed on this machine's copy of the pixels; this one can be
+                # found in Finder, kept with the project, sent to someone, and
+                # dragged back in against a re-export the key would miss.
+                result["fit_file"] = FF.write(dest, FF.build(
+                    corners, frac, b.get("device"), ppath,
+                    (photo.shape[1], photo.shape[0]), key))
+                # Sidecar first, THEN the session output: /api/import reads that
+                # pointer and may be called the moment this returns, and the
+                # bug template asks for the sidecar first. Same publication order
+                # the render worker uses, and for the same reason.
+                _write_json_atomic(SESSION.result_path, result)
+                SESSION.update(output=dest)
                 return self._json(result)
 
             return self._json({"error": "no such route"}, 404)
