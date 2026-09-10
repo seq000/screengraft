@@ -238,6 +238,29 @@ commit still changes the package, so it still needs a version.
   fixture a click inside a screen detection had already found moves the answer
   by **0.0px** — where detection works the click is a no-op.
 
+## [0.24.1] - 2026-09-10
+
+### Fixed
+
+- **Nobody could find Point at screen.** Reported within minutes of 0.24.0
+  shipping — *"I haven't noticed new button"* — and the tool had no excuse: it
+  knows the exact moment that button is worth pressing, because it just
+  abstained. It said "place the edges by hand" instead, which sent people to
+  the slowest remaining option without mentioning the fast one.
+
+  The status now names the control — "Detector abstained — try **Point at
+  screen**, or place the edges by hand" — and the button lifts on the surface
+  ladder while the suggestion stands. It drops back as soon as the suggestion
+  stops being true: you arm it, or you grab a corner and start fitting by hand.
+
+  A first attempt gave the button the **accent**, and measuring caught it: Save
+  is already accent-filled by then, and the visual language allows exactly one
+  accent-filled control on screen — the accent means "the next action", so two
+  of them means neither does. Emphasis without colour is what the raise ladder
+  is for, and it is the same treatment a selected chip gets. Measured across the
+  three states: rest `#2b2b30`, suggested `#3a3a40`, armed `#46464e`, with one
+  accent-filled button on screen throughout.
+
 ## [Unreleased]
 
 ### Added

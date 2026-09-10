@@ -584,7 +584,14 @@
   .ver.dev{color:var(--mute)}
   /* Armed: the canvas is waiting for one click. The button holds the accent
      because it IS the next action while armed, which is the accent's one job. */
-  #pointat.armed{background:var(--acc);border-color:var(--acc);color:#160b06}
+  /* Suggested (detection just failed) and armed (waiting for your click).
+     Deliberately NOT the accent: Save carries that, and the visual language
+     allows exactly one accent-filled control on screen — measured and violated
+     by a first version of this, which put a second one here while Save was
+     already live. Emphasis without colour is what the raise ladder is for, and
+     it is the same treatment a selected chip gets. */
+  #pointat.suggest{background:var(--raise-hi);border-color:var(--edge-hi);color:var(--ink)}
+  #pointat.armed{background:var(--raise-highest);border-color:var(--edge-hi);color:var(--ink)}
   .scroller.pointing canvas#c{cursor:crosshair}
   /* Figma 8:29 is a 28px header holding 24px buttons — the header does not
      shrink to hug them. */
@@ -1510,6 +1517,7 @@ sc0.addEventListener('pointercancel', stopPan, true);
 let pointing = false;
 function setPointing(on){
   pointing = on;
+  if (on) suggestPointing(false);      // taken up; stop nagging
   $('#pointat').classList.toggle('armed', on);
   $('#scroller').classList.toggle('pointing', on);
   $('#pointat').textContent = on ? 'Click the screen…' : 'Point at screen';
@@ -1517,6 +1525,7 @@ function setPointing(on){
     const s = $('#detSt'); s.className = 'status'; s.textContent = 'Click once inside the screen';
   }
 }
+function suggestPointing(on){ $('#pointat').classList.toggle('suggest', !!on); }
 $('#pointat').onclick = () => setPointing(!pointing);
 // Capture phase on the scroller, exactly as the space-pan is, and for the same
 // reason: this must never reach hitTest and start dragging a corner.
@@ -1573,8 +1582,13 @@ async function detect(){
   } else {
     st.corners = defaultQuad();
     s.className='status warn';
-    s.textContent = r.abstained ? 'Detector abstained — place the edges by hand'
-                                : 'No screen found — place the edges by hand';
+    // Naming the control is the whole fix. The page knows the detector just
+    // failed, which is exactly the moment "Point at screen" is worth doing —
+    // and the old wording sent people to the slowest remaining option without
+    // mentioning the fast one. Reported 10 Sep: "I haven't noticed new button".
+    s.textContent = r.abstained ? 'Detector abstained — try Point at screen, or place the edges by hand'
+                                : 'No screen found — try Point at screen, or place the edges by hand';
+    suggestPointing(true);
     // The full reason is long and belongs on hover, not in a 40-character chip.
     s.title = r.message || '';
     if (!st.type) setType('phone'); applyPreset();
@@ -1716,6 +1730,8 @@ function moveEdge(C, i, mode, delta){
 
 cv.onpointerdown = e => {
   const p = pos(e), h = hitTest(p);
+  // You have started placing edges by hand, so stop advertising the shortcut.
+  if (h) suggestPointing(false);
   if (!h){ pick = null; draw(); drawStrip(); return; }
   drag = {...h, grab: p, start: st.corners.map(c => c.slice())};
   pick = {kind:h.kind, i:h.i};
