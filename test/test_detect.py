@@ -156,6 +156,61 @@ def trace_checks(photo_path, truth):
     return failures
 
 
+def perspective_checks():
+    """A collapsed corner must not pass validation (SG70).
+
+    The quad that made this necessary was returned CONFIDENTLY from a real
+    photograph with three corners on the glass and the fourth ~800px into the
+    middle of the screen — and it passed every check there was: convex, no
+    sliver, area in range, blob filling it. What gives it away is that one pair
+    of opposite sides is wildly unequal while the other is not, which is a thing
+    a rectangle cannot do at any angle a device is photographed from.
+
+    Both directions are checked. A gate that only ever refuses is safe against
+    the failure it exists to stop and dangerous in the other direction — it can
+    refuse a real steep-angle screen — so the second case is the one that stops
+    this being tightened onto the data.
+    """
+    failures = 0
+    img_area = 2000.0 * 1500.0
+
+    def q(pts):
+        return np.array(pts, dtype=np.float64)
+
+    # ratio 1.00 — a rectangle, straight on
+    flat = q([[400, 300], [1400, 300], [1400, 1100], [400, 1100]])
+    ok, why = D.validate_quad(flat, None, img_area, (1500, 2000))
+    failures += not check("a plain rectangle passes", ok, why)
+
+    # A real screen at a steep angle: the far edge foreshortened to 62% of the
+    # near one (ratio 1.6). Every measured true screen sits at 1.01-1.05, so
+    # this is far beyond anything in the corpus and still has to pass — the
+    # ceiling must not be tightened onto seven photographs of phones lying flat.
+    # Past 1.9 the tool abstains and the edges get placed by hand, which is the
+    # deliberate trade: an honest refusal rather than a confident wrong quad.
+    steep = q([[400, 300], [1400, 490], [1400, 1110], [400, 1300]])
+    ok, why = D.validate_quad(steep, None, img_area, (1500, 2000))
+    failures += not check("a steeply foreshortened screen still passes", ok, why)
+
+    # the shape from the photograph: one corner pulled inward
+    collapsed = q([[400, 300], [1400, 320], [1450, 750], [900, 1300]])
+    ok, why = D.validate_quad(collapsed, None, img_area, (1500, 2000))
+    failures += not check("a collapsed corner is refused", not ok, why or "accepted")
+    failures += not check("...and the reason names what is wrong",
+                          (not ok) and "opposite sides" in why, why)
+    # It is worth being explicit that the OTHER checks would have let it through,
+    # or the test above proves nothing about why this one exists.
+    convex = bool(cv2.isContourConvex(collapsed.astype(np.float32).reshape(-1, 1, 2)))
+    sides = [float(np.linalg.norm(collapsed[(i + 1) % 4] - collapsed[i])) for i in range(4)]
+    sliver = min(sides) < D.MIN_SIDE_RATIO * max(sides)
+    failures += not check("...and every other check would have let it through",
+                          convex and not sliver,
+                          "" if (convex and not sliver) else
+                          f"convex={convex} sliver={sliver} — this shape is caught "
+                          "by an older rule, so it proves nothing about the new one")
+    return failures
+
+
 def main():
     failures = 0
     photo_path = os.path.join(FIXTURES, "photo.png")
@@ -427,6 +482,9 @@ def main():
     failures += not check("fixture detection survives the abstention gate",
                           bool(rf) and not rf.get("abstained"),
                           (rf or {}).get("abstain_reason", ""))
+
+    print("perspective plausibility (SG70)")
+    failures += perspective_checks()
 
     print("the detection instrument")
     failures += trace_checks(photo_path, load_truth())

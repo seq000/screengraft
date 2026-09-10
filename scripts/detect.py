@@ -54,6 +54,22 @@ MIN_AREA_FRAC = 0.01
 MAX_AREA_FRAC = 0.60
 MIN_FILL = 0.60      # the source blob must fill this much of the final quad
 MIN_SIDE_RATIO = 0.08  # reject slivers: shortest side vs longest, after perspective
+# How unequal two OPPOSITE sides of the quad may be. A screen is a rectangle, and
+# the image of a rectangle under perspective foreshortens one end relative to the
+# other -- but not without limit at the angles anyone photographs a device from.
+#
+# Measured 10 Sep 2026 against seven hand-placed labels (the first real ground
+# truth this project has had): every true screen sits at 1.01-1.05, the two
+# usable detections at 1.04 and 1.11, and a quad returned CONFIDENTLY with one
+# corner collapsed ~800px into the middle of the screen sits at 2.26. Worst
+# correct 1.11 against best wrong 2.26 is a 2.0x margin.
+#
+# Set LOOSE at 1.9, not near the data. All seven are phones at modest angles;
+# a laptop or a monitor shot from the side genuinely foreshortens more, and this
+# check can only ever ADD refusals -- the cost of being wrong here is an honest
+# abstention and a manual fit, never a bad composite. Re-derive it on a wider
+# set of angles and device classes before tightening.
+MAX_OPPOSITE_RATIO = 1.9
 # Size stops being a virtue past this fraction of the frame. score_contour used
 # to reward area linearly, so on a real photo (7 Sep 2026) the sunlit TABLE at
 # 34% of the frame beat the phone screen at 9% by 3.6x on that term alone, and
@@ -481,6 +497,20 @@ def validate_quad(corners: np.ndarray, contour, img_area: float, img_shape=None)
     if min(sides) < MIN_SIDE_RATIO * max(sides):
         return False, ("final quad is a sliver (shortest side %.0f%% of the longest) "
                        % (100 * min(sides) / max(sides)))
+    # A collapsed corner passes every check above: the quad stays convex, no side
+    # is a sliver, the area is in range and the blob still fills it. What gives it
+    # away is that one PAIR of opposite sides is wildly unequal while the other is
+    # not -- which is what a rectangle cannot do, at any angle a device is
+    # photographed from. Found on a real photograph where three corners sat on the
+    # glass and the fourth was in the middle of the screen, returned with no
+    # abstention: the one failure this tool says it does not have.
+    opposite = max(max(sides[0], sides[2]) / max(min(sides[0], sides[2]), 1e-6),
+                   max(sides[1], sides[3]) / max(min(sides[1], sides[3]), 1e-6))
+    if opposite > MAX_OPPOSITE_RATIO:
+        return False, ("opposite sides of the final quad differ by %.1fx (ceiling "
+                       "%.1fx) — a rectangle in perspective does not do that, so a "
+                       "corner has been pulled off the screen"
+                       % (opposite, MAX_OPPOSITE_RATIO))
     if contour is not None:
         fill = float(cv2.contourArea(contour)) / max(area, 1e-6)
         if fill < MIN_FILL:

@@ -9,6 +9,39 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.28.0] - 2026-09-10
+
+### Fixed
+
+- **A quad with one corner collapsed into the middle of the screen was being
+  returned as a confident answer (SG70).** Found on a real photograph, with the
+  first hand-placed labels this project has had: three corners sat on the glass
+  and the fourth ~800px inside it, and detection reported it without abstaining
+  — the single failure this tool says it does not have.
+
+  Nothing caught it because nothing measured the right property. The quad is
+  **convex**, no side is a **sliver**, its **area** is in range and the source
+  blob **fills** it — every existing check passes. What is wrong is that one
+  pair of opposite sides differs by **2.26×** while the other pair does not, and
+  a rectangle photographed from any angle a device is photographed from cannot
+  do that.
+
+  Measured against seven hand-fitted photographs: **every true screen sits at
+  1.01–1.05**, the two usable detections at 1.04 and 1.11, the confident miss at
+  2.26. Worst correct 1.11 against best wrong 2.26 is a **2.0× margin** — better
+  than every threshold in `detect.py` except those set at 4×.
+
+  `MAX_OPPOSITE_RATIO` is deliberately **loose at 1.9**, not near the data: all
+  seven photographs are phones at modest angles, and a laptop or monitor shot
+  from the side genuinely foreshortens more. The check can only ever *add*
+  refusals, so its failure mode is an honest abstention and a manual fit, never
+  a bad composite.
+
+  On that photograph the outcome changes from a confident 154%-of-screen-width
+  error to an abstention — and a single click now resolves it to 11%, because
+  the collapsed quad no longer wins the walk. No other photograph's outcome
+  changed.
+
 ## [0.27.1] - 2026-09-10
 
 ### Fixed
