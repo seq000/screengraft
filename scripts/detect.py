@@ -558,7 +558,11 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
     # change the answer: it observes the same lists the walk below uses.
     walked = {}
     for cand in sorted(candidates, key=lambda c: c[0], reverse=True):
-        score, quad, contour, tag = pick_innermost(candidates, cand)
+        # NOT necessarily `cand`: pick_innermost steps inward from it while a
+        # comparably screen-like quad nests inside, so the quad that gets
+        # validated -- and returned -- can belong to a different candidate.
+        picked = pick_innermost(candidates, cand)
+        score, quad, contour, tag = picked
         if refine:
             refined, did_refine = refine_corners(contour, quad)
         else:
@@ -571,7 +575,25 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
             # arbitrates between them. The file's top-level `chosen` says which
             # channel actually won, so a trace with three accepted rows and one
             # chosen method is right, not a contradiction.
-            walked[id(cand)] = ("accepted", "") if ok else ("rejected", why)
+            #
+            # And the walked candidate is not always the one whose quad came
+            # back. Measured on five real photographs: pick_innermost stepped
+            # inward on one of them, so a trace that credited `cand` would show
+            # the accepted row holding a quad that never became the answer,
+            # while the quad that DID sat in an `unreached` row. An instrument
+            # that misattributes the win is worse than no instrument -- a recall
+            # analysis reading it would draw the opposite conclusion.
+            if not ok:
+                walked[id(cand)] = ("rejected", why)
+            elif picked is cand:
+                walked[id(cand)] = ("accepted", "")
+            else:
+                walked[id(cand)] = ("accepted", "this candidate won the walk, but the "
+                                                "quad returned came from the nested "
+                                                "candidate marked supplied_the_answer")
+                walked[id(picked)] = ("supplied_the_answer",
+                                      "nested inside the accepted candidate; "
+                                      "pick_innermost stepped inward to it")
         if ok:
             if trace is not None:
                 trace.extend(_walk_rows(generated, candidates, walked, method, click))
@@ -599,11 +621,17 @@ def _walk_rows(generated, survived, walked, method, click):
     first. A recall analysis needs to see quads in all four states, so nothing
     is dropped from this list -- it is written to a file, not to a page.
     """
+    # Identity, not equality: two candidates can hold equal numbers and be
+    # different proposals. `survived` is a filtered view of `generated`, so the
+    # objects are shared and `is` holds -- but only while nobody rebuilds the
+    # list, which is why `click is None` is checked explicitly below rather than
+    # inferred from the sets matching. A future `[transform(c) for c in ...]`
+    # would otherwise relabel every row `filtered_by_click` in silence.
     kept = {id(c) for c in survived}
     rows = []
     for cand in generated:
         score, quad, _contour, tag = cand
-        if id(cand) not in kept:
+        if click is not None and id(cand) not in kept:
             verdict, why = "filtered_by_click", "the click was not inside this quad"
         else:
             verdict, why = walked.get(id(cand), ("unreached",

@@ -9,6 +9,29 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.27.1] - 2026-09-10
+
+### Fixed
+
+- **The detection trace could credit the wrong candidate.** `_finalize()` walks
+  candidates best-score-first, and `pick_innermost()` then steps *inward* from
+  the one it is looking at while a comparably screen-like quad nests inside — so
+  the quad that gets validated and returned can belong to a **different**
+  candidate. The trace recorded the verdict against the walked one, which meant
+  an `accepted` row could hold a quad that never became the answer while the
+  quad that did sat in an `unreached` row. A recall analysis reading that would
+  reach the opposite conclusion, which is the one failure an instrument must not
+  have. Measured across five real photographs: `pick_innermost` stepped inward
+  on one of them.
+
+  The nested candidate now gets its own verdict, `supplied_the_answer`, and the
+  walked one says so. Pinned by a hand-built pair of nested quads rather than by
+  hunting for a photograph that triggers it, so the case runs every time.
+- **`filtered_by_click` is only reachable when there was a click.** It was
+  inferred from object identity between the generated and surviving lists, which
+  holds today and would break in silence the moment anything rebuilt that list —
+  relabelling every row as filtered by a click nobody made.
+
 ## [0.27.0] - 2026-09-10
 
 ### Added

@@ -67,7 +67,8 @@ def trace_checks(photo_path, truth):
                           "" if a == b else "the traced run returned something else")
     failures += not check("...and it produced rows", len(rows) > 0, f"{len(rows)} candidates")
 
-    VERDICTS = {"accepted", "rejected", "unreached", "filtered_by_click"}
+    VERDICTS = {"accepted", "rejected", "unreached", "filtered_by_click",
+                "supplied_the_answer"}
     shaped = all(isinstance(r.get("score"), float)
                  and r.get("method") in ("tone", "edge", "saturation")
                  and r.get("verdict") in VERDICTS
@@ -111,6 +112,32 @@ def trace_checks(photo_path, truth):
     failures += not check("...and every surviving candidate really does contain the click",
                           all(D.contains(r["quad"], centre) >= 0 for r in inside),
                           f"{len(inside)} survivors")
+
+    # The walked candidate is not always the one whose quad comes back:
+    # pick_innermost steps inward from it. A trace that credits the walked one
+    # shows an accepted row holding a quad that never became the answer, while
+    # the quad that DID sits in an unreached row — and a recall analysis reading
+    # that draws the opposite conclusion. Built directly rather than hunted for
+    # in a photograph, so the case is exercised on every run: two nested quads,
+    # the outer scoring higher.
+    def quad(x0, y0, x1, y1):
+        return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.float64)
+
+    outer, inner = quad(100, 100, 700, 900), quad(112, 112, 688, 888)
+    cands = [(9.0, outer, outer.reshape(-1, 1, 2).astype(np.int32), (0, 31)),
+             (5.0, inner, inner.reshape(-1, 1, 2).astype(np.int32), (0, 31))]
+    nested = []
+    res = D._finalize(cands, 1000.0 * 1000.0, refine=False, img_shape=(1000, 1000),
+                      trace=nested, method="tone")
+    got = {r["verdict"]: r for r in nested}
+    failures += not check("a nested pick is reported as one",
+                          res is not None and set(got) == {"accepted", "supplied_the_answer"},
+                          str([r["verdict"] for r in nested]))
+    if res is not None and "supplied_the_answer" in got:
+        failures += not check("...crediting the quad that actually came back",
+                              got["supplied_the_answer"]["quad"][0] == [112.0, 112.0]
+                              and res["corners"][0] == [112.0, 112.0],
+                              f"{got['supplied_the_answer']['quad'][0]} vs {res['corners'][0]}")
 
     # The file is the product: a benchmark reads it, not the return value.
     with tempfile.TemporaryDirectory() as td:
