@@ -155,14 +155,54 @@ _RESIDUE_PREFIXES = ("photo-", "screenshot-", "poster-", "frame-")
 _RESIDUE_NAMES = ("preview.png", "figma-export.png")
 
 
+def _sidecar_sources(d):
+    """Absolute paths inside `d` that this session's result.json still names.
+
+    v0.23.0 swept these too, and the sidecar's whole promise is that a fit can
+    be re-run from it. That promise held for a source picked by PATH, which
+    was never copied -- and quietly broke for a drag-drop or browse, where the
+    browser hands over bytes with no origin and the copy in the session IS the
+    original as far as the sidecar is concerned. Measured after the first sweep:
+    9 of 9 such sidecars pointed at a deleted file.
+
+    So the rule is now: a session that produced output keeps what its sidecar
+    names. A session that produced nothing keeps nothing -- there is no recipe
+    to protect, which is the common case and where the volume is.
+
+    Only paths INSIDE the session are returned. A path-picked source lives in
+    the user's own folders and was never ours to keep or delete.
+
+    Note the sidecar is rewritten on every save, so it names the LAST fit. An
+    earlier source replaced within the same session is not protected: the record
+    is what survives, and the record says what it says.
+    """
+    try:
+        with open(os.path.join(d, "result.json")) as f:
+            res = json.load(f)
+    except (OSError, ValueError):
+        return set()
+    root = os.path.realpath(d)
+    keep = set()
+    for key in ("photo", "screenshot"):
+        p = res.get(key)
+        if not p:
+            continue
+        rp = os.path.realpath(p)
+        if rp == root or rp.startswith(root + os.sep):
+            keep.add(rp)
+    return keep
+
+
 def _sweep_session(d):
     """Delete a session's copied and derived media. Returns bytes reclaimed.
 
-    Never touches *.json, and never touches OUT_DIR -- the actual outputs live
-    in the project folder and are the point of the whole exercise.
+    Never touches *.json, never touches OUT_DIR -- the actual outputs live in
+    the project folder and are the point of the whole exercise -- and never
+    touches a source the session's own result.json still names (see above).
     """
     freed = 0
     thumbs = os.path.join(d, "thumbs")
+    protected = _sidecar_sources(d)
     for base, _, files in os.walk(d):
         for f in files:
             keep = f.endswith(".json")
@@ -171,12 +211,47 @@ def _sweep_session(d):
             if keep or not residue:
                 continue
             fp = os.path.join(base, f)
+            if os.path.realpath(fp) in protected:
+                continue
             try:
                 freed += os.path.getsize(fp)
                 os.remove(fp)
             except OSError:
                 pass
     return freed
+
+
+def _mark_unreproducible(d):
+    """Stamp a sidecar whose named source no longer exists.
+
+    For the sessions v0.23.0 already swept, nothing can be recovered -- the
+    bytes are gone and the browser never said where they came from. What can be
+    fixed is the claim: a sidecar that names a deleted file reads exactly like
+    one that works, and the difference only shows up when someone tries to
+    re-run it. `source_retained: false` says so up front.
+
+    Idempotent, and it never touches a sidecar whose files are intact.
+    """
+    path = os.path.join(d, "result.json")
+    try:
+        with open(path) as f:
+            res = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if "source_retained" in res:
+        return False
+    named = [res.get(k) for k in ("photo", "screenshot")]
+    if not any(named) or all(p and os.path.exists(p) for p in named if p):
+        return False
+    res["source_retained"] = False
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(res, f, indent=1)
+        os.replace(tmp, path)
+    except OSError:
+        return False
+    return True
 
 
 def _prune_sessions(keep):
@@ -191,7 +266,10 @@ def _prune_sessions(keep):
     /api/use records the path and reads through it. Only a drag-drop or a browse
     has to be copied, because the browser hands over bytes and will not say
     where they came from. So this is the other half of the same policy: what
-    cannot avoid being copied does not outlive the run that needed it.
+    cannot avoid being copied does not outlive the run that needed it --
+    UNLESS the run produced something, in which case its sidecar names the
+    source and _sweep_session keeps it. See _sidecar_sources: reproducibility
+    beats disk exactly where a fit actually happened, and nowhere else.
     """
     root = os.path.dirname(keep)
     freed = 0
@@ -204,6 +282,10 @@ def _prune_sessions(keep):
         if d == keep or not os.path.isdir(d):
             continue
         freed += _sweep_session(d)
+        # After sweeping, not before: a sidecar is only unreproducible once its
+        # source is actually gone, and from here on the sweep leaves it alone.
+        # This is for the sessions the previous release already emptied.
+        _mark_unreproducible(d)
     return freed
 
 

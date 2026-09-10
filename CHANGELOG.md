@@ -9,6 +9,46 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.25.2] - 2026-09-10
+
+### Fixed
+
+- **A run that saved a mockup now keeps the source its sidecar names (SG63).**
+  0.23.0 swept every copied source, and said in three places that what survived
+  was *"the recipe, referencing your originals by path"*. That was true only for
+  a source picked by **path** — which was never copied in the first place. A
+  dragged-in or browsed source has no original to reference: the browser hands
+  over bytes without an origin, so the copy in the session **was** the original
+  as far as the sidecar was concerned, and the sweep deleted it. Measured after
+  the first sweep: **9 of 9 such sidecars named a file that no longer existed.**
+
+  The rule is now conditional on output, which is where reproducibility actually
+  matters: a session with a `result.json` keeps exactly the sources that sidecar
+  names; a session that produced nothing keeps nothing. Derived media — previews,
+  thumbnails, poster frames, re-fetchable Figma exports — is still swept from
+  both, so the common case, which is where the volume was, is unchanged.
+
+  Nothing of the user's own was ever at risk: a path-picked source lives in their
+  own folders and screengraft does not delete their files.
+
+- **Sidecars already broken by 0.23.0 now say so.** They cannot be repaired — the
+  bytes are gone — but a sidecar naming a deleted file reads exactly like a
+  working one, and the difference only surfaces when someone tries to re-run it.
+  They are marked `"source_retained": false` at the next launch.
+
+### Added
+
+- `test/test_sweep.py`, in CI. It pins the **rule** rather than the
+  implementation: nothing kept without output, exactly the named sources kept
+  with it, derived media swept either way, a source outside the session never
+  touched, and an unreadable sidecar protecting *nothing* rather than everything
+  — failing open there would quietly restore the unbounded growth 0.23.0 existed
+  to stop. Verified by planting the 0.23.0 behaviour back and watching three
+  checks go red.
+
+  `test_sidecar.py` checks the contents of the recipe; this checks the
+  ingredients are still there. The first passed throughout SG63.
+
 ## [0.25.1] - 2026-09-10
 
 ### Fixed
@@ -223,6 +263,14 @@ commit still changes the package, so it still needs a version.
   and blend, referencing the originals by path — so a composite stays
   reproducible without keeping a copy of everything it was made from. Keep the
   recipe, not the ingredients.
+
+  > **Correction, added in 0.25.2.** That claim held only for a source picked by
+  > path. A dragged-in or browsed source has no original to reference: the copy
+  > in the session *was* the original as far as the sidecar was concerned, and
+  > this release deleted it. Measured afterwards: 9 of 9 such sidecars named a
+  > file that no longer existed. Fixed in 0.25.2 — a run that produced output now
+  > keeps the source its sidecar names. Sidecars broken in the interval cannot be
+  > repaired and are marked `"source_retained": false` instead.
 
   Run against a copy of the real 492 MB tree: **475.6 MB reclaimed (97%)**, all
   23 sidecars and 90 state files intact, the live session untouched.

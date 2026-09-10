@@ -138,15 +138,25 @@ you, and nothing below ever touches it.
 
 **Working files** live in `~/.screengraft/sessions/<timestamp>/` — one directory
 per run. A source you pick by path is never copied: screengraft reads it where it
-is. A source you drag in or browse to has to be copied, because a browser hands
-over bytes and will not say where they came from — and that copy, along with the
-preview and thumbnails, is **deleted when the run ends**. Anything left behind by
-a crash is swept the next time you launch.
+is, and screengraft never deletes a file of yours. A source you drag in or browse
+to has to be copied, because a browser hands over bytes and will not say where
+they came from.
 
-What survives is the `result.json` sidecar: a few hundred bytes recording the
-corners, radius, grade and blend of that fit, referencing your original files by
-path. It reproduces a composite exactly, and it is the first thing a bug report
-should include. Keep the recipe, not the ingredients.
+What happens to that copy depends on whether the run produced anything:
+
+- **A run that saved a mockup keeps its source.** The `result.json` sidecar names
+  it, and a recipe naming a file that no longer exists is not a recipe.
+- **A run that produced nothing keeps nothing.** That is the common case and
+  where the disk goes — previews, thumbnails, poster frames and abandoned
+  uploads are all swept when the run ends, or at the next launch after a crash.
+
+What survives either way is the `result.json` sidecar: a few hundred bytes
+recording the corners, radius, grade and blend of that fit. It reproduces a
+composite exactly, and it is the first thing a bug report should include.
+
+Sidecars written by v0.23.0–v0.25.1 may name a dragged-in source that release
+deleted. Those cannot be repaired — the bytes are gone — but screengraft now
+marks them `"source_retained": false` rather than leaving them looking valid.
 
 
 ## Roadmap
