@@ -101,12 +101,27 @@
 
   /* The shell IS the viewport. Nothing scrolls except the canvas, so the
      fitting surface can never be pushed off-screen by finished work. */
-  .app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;
+  /* The ROWS were given minmax(0,1fr) and the column was left implicit,
+     which means `auto` — and an auto track is floored at its content's
+     min-content width, so the whole app grew to 896px inside a 742px viewport
+     and the page scrolled sideways. Same discipline, same axis: a track that
+     may not exceed its share needs the 0 minimum stated. This is the root of
+     the overflow; the topbar and #stage reported with it were victims, sized by
+     a container that had already grown. */
+  .app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+       grid-template-columns:minmax(0,1fr);min-height:0;
        padding-bottom:32px;background:var(--bg)}
 
   .topbar{display:flex;align-items:center;gap:8px;padding:0 12px 0 var(--s4);height:56px;
           background:var(--card);border-bottom:1px solid var(--line);
           box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 1px 0 rgba(0,0,0,.25)}
+  /* A nowrap flex row whose children keep min-width:auto cannot shrink
+     below their content, so at 742px Save and Send to Claude sat at x=750..885
+     — outside the viewport and unclickable. The chips carry a filename and are
+     the part that should give; the actions are fixed-size and must not. */
+  .topbar > *{min-width:0}
+  .tb-chips{overflow:hidden}
+  .tb-actions{flex:none}
   .tb-left{display:flex;align-items:center;gap:var(--s9)}
   .tb-chips{display:flex;align-items:center;gap:var(--s2)}
   .tb-arrow{color:var(--mute)}
@@ -302,7 +317,12 @@
     .stage > .rail{grid-column:2;grid-row:1 / span 2}
   }
   #types{flex-wrap:nowrap}
+  /* The same omission one level down: rows constrained, column implicit.
+     min-width:0 lets the PANE shrink; it does nothing for the auto track
+     inside it, which was still sizing to the header's min-content — 798px
+     wide in a 398px column. */
   .pane{min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);
+        grid-template-columns:minmax(0,1fr);
         position:relative;   /* the frame the corner bar is anchored to */
         border-right:1px solid var(--line)}
   .panehead{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);background:var(--card);

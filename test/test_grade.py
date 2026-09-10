@@ -85,18 +85,53 @@ ok('stronger settings move it further, monotonically',
    ' -> '.join('%.2f' % g for g in gaps))
 
 # --- grain is measured, not invented -----------------------------------------
-clean = np.full((400, 600, 3), 100, np.uint8)
-ok('a noiseless photo yields no grain',
-   grade.measure_grain(clean, grade.surround_ring(m)) < 0.2)
-noisy = np.clip(clean + np.random.default_rng(1).normal(0, 4.0, clean.shape), 0, 255).astype(np.uint8)
-sig = grade.measure_grain(noisy, grade.surround_ring(m))
-ok('a noisy photo yields grain near its true sigma', 2.5 < sig < 5.5, 'sigma %.2f (true 4.0)' % sig)
+RING = grade.surround_ring(m)
 
-# A hard edge inside the sample ring must not be read as noise — this is why the
-# estimator is MAD-based rather than a standard deviation.
+def flat(sigma, seed=1, base=100):
+    """A flat patch plus MONOCHROME noise of known sigma.
+
+    Monochrome on purpose. The old fixture added independent noise to all three
+    channels and then called the result "true sigma 4.0" — but measure_grain
+    greys the photo first, so three independent channels average down to
+    4/sqrt(3) = 2.31. The assertion band was wide enough to hide it. Sensor
+    noise after demosaicing is correlated across channels anyway, which is why
+    add_grain lays it monochrome, so this is also the honest fixture.
+    """
+    n = np.random.default_rng(seed).normal(0, sigma, (400, 600))
+    return np.clip(np.full((400, 600, 3), float(base)) + n[:, :, None], 0, 255).astype(np.uint8)
+
+clean = np.full((400, 600, 3), 100, np.uint8)
+ok('a noiseless photo yields no grain', grade.measure_grain(clean, RING) < 0.2)
+
+# Accuracy at several levels, INCLUDING below 1.5 grey levels. That band is the
+# whole of SG50: the old median-of-integers estimator returned a flat 0 under
+# 1.4826 and could not tell a clean render from a lightly-noisy photograph.
+for true in (0.6, 1.0, 1.5, 2.5, 4.0):
+    got = grade.measure_grain(flat(true), RING)
+    ok('grain within 15%% of a known sigma %.1f' % true,
+       abs(got - true) / true < 0.15, 'measured %.3f' % got)
+
+# The plateau itself, pinned as a property: three sigmas under 1.5 must give
+# three different answers. This is the regression that would come back if the
+# estimator ever went back to an order statistic over integer residuals.
+low = [grade.measure_grain(flat(s), RING) for s in (0.5, 0.9, 1.3)]
+ok('it resolves continuously below 1.5 grey levels',
+   len({round(v, 3) for v in low}) == 3 and low[0] < low[1] < low[2],
+   ' < '.join('%.3f' % v for v in low))
+
+# A hard edge inside the sample ring must not be read as noise. Note WHY this
+# passes: a 3x3 median is edge-preserving, so a clean step leaves a residual of
+# exactly zero. It is not the statistic that saves this case.
 edged = clean.copy(); edged[:, 300:] = 200
 ok('a hard edge in the ring is not mistaken for grain',
-   grade.measure_grain(edged, grade.surround_ring(m)) < 0.5)
+   grade.measure_grain(edged, RING) < 0.5)
+
+# Fine repeating texture IS what leaks, and what GRAIN_GATE exists for. Ungated
+# this reads ~27 against a true 1.0.
+tex = flat(1.0).copy(); tex[:, ::9] = 200
+ok('fine repeating texture is gated off, not read as grain',
+   grade.measure_grain(tex, RING) < 1.3,
+   'measured %.3f (true 1.0)' % grade.measure_grain(tex, RING))
 
 # --- specular lift -----------------------------------------------------------
 off = np.full_like(photo, 8)                      # a dark screen-off frame

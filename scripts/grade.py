@@ -130,21 +130,46 @@ def match_light(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
     return apply_light(warped, light_params(photo, warped, mask, strength))
 
 
+GRAIN_GATE = 20.0        # grey levels: above this a residual is an edge, not grain
+_MEDIAN_HP_GAIN = 0.909  # a 3x3 median high-pass absorbs this much of iid noise
+                         # (measured, 5 seeds x sigma 1-5, spread < 0.3%)
+
+
 def measure_grain(photo: np.ndarray, ring: np.ndarray) -> float:
     """The photo's noise floor, in grey levels, measured where the screen isn't.
 
-    High-pass with a 3x3 median (cheap, edge-preserving) and take the MEDIAN
-    absolute deviation of the residual rather than its standard deviation: a
-    bezel edge or a highlight inside the ring is a huge outlier, and a mean-based
-    estimate would read the edge as noise and dump visible grain on the screen.
-    0.6745 converts MAD to a sigma for a normal distribution.
+    High-pass with a 3x3 median (cheap, edge-preserving), gate the outliers off,
+    then take the MEAN absolute deviation of what is left.
+
+    Why the mean and not the median: `photo` is uint8 and so is the
+    median blur, so the residual is integer-valued, and a median of integers is
+    an integer or a half. The old MAD/0.6745 could therefore only ever return
+    multiples of 1.4826 — and under one grey level it returned a flat 0, so a
+    lightly-noisy photograph got no grain at all. Two of the three surviving
+    reference photos measured exactly 0.0 that way while actually carrying 0.39
+    and 1.46. A mean over the same integers resolves continuously.
+
+    Robustness moves from the statistic to the GATE. A 3x3 median is
+    edge-preserving, so a clean step edge leaves a residual of exactly 0 and was
+    never the danger the old docstring guarded against; what does leak is fine
+    repeating texture and specks, whose residuals are large. Discarding
+    |resid| > GRAIN_GATE drops those and leaves the noise floor untouched:
+    identical for any gate in 8..40, unbiased out to sigma 4, and 5x below the
+    smallest texture residual that breaks it — a 9px-pitch line pattern reads
+    27.0 ungated against a true 1.0.
+
+    0.7979 is E|X|/sigma for a normal; _MEDIAN_HP_GAIN undoes the noise the
+    median filter itself absorbs.
     """
     g = cv2.cvtColor(photo, cv2.COLOR_BGR2GRAY)
     resid = g.astype(np.float32) - cv2.medianBlur(g, 3).astype(np.float32)
     px = resid[ring.astype(bool)]
     if px.size < 500:
         return 0.0
-    return float(np.median(np.abs(px - np.median(px))) / 0.6745)
+    px = px[np.abs(px) <= GRAIN_GATE]
+    if px.size < 500:
+        return 0.0
+    return float(np.mean(np.abs(px - px.mean())) / 0.7979 / _MEDIAN_HP_GAIN)
 
 
 def add_grain(img: np.ndarray, mask: np.ndarray, sigma: float, seed: int = 0) -> np.ndarray:
