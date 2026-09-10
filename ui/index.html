@@ -582,6 +582,10 @@
      something to do. Brighter than the plain version because "you are not
      testing what you think you are testing" is worth noticing. */
   .ver.dev{color:var(--mute)}
+  /* Armed: the canvas is waiting for one click. The button holds the accent
+     because it IS the next action while armed, which is the accent's one job. */
+  #pointat.armed{background:var(--acc);border-color:var(--acc);color:#160b06}
+  .scroller.pointing canvas#c{cursor:crosshair}
   /* Figma 8:29 is a 28px header holding 24px buttons — the header does not
      shrink to hug them. */
   .striphead{display:flex;align-items:center;gap:8px;font-size:12px;min-height:28px}
@@ -762,6 +766,7 @@
         <span class="cvbar-actions">
           <span class="stepper"><button class="sm" data-jump="0">TL</button><button class="sm" data-jump="1">TR</button><button class="sm" data-jump="2">BR</button><button class="sm" data-jump="3">BL</button></span>
           <button class="sm" id="redetect">Re-detect</button>
+          <button class="sm" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button>
           <button class="sm" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button>
         </span>
       </div>
@@ -1494,6 +1499,59 @@ sc0.addEventListener('pointermove', e => {
 const stopPan = e => { if (!panning) return; e.stopPropagation(); endPan(); };
 sc0.addEventListener('pointerup', stopPan, true);
 sc0.addEventListener('pointercancel', stopPan, true);
+
+/* ===== point at the screen =====================================================
+   The detectors nearly always FIND the screen; what they cannot do is tell
+   which of the regions they found is one. Measured on the two photographs that
+   defeated every detector: the correct quad was already among the candidates
+   both times. So this sends a single point and the server filters the candidate
+   list by it — no new segmentation, and every existing guard (validation,
+   corner refinement, the radius measurement) still applies to whatever wins. */
+let pointing = false;
+function setPointing(on){
+  pointing = on;
+  $('#pointat').classList.toggle('armed', on);
+  $('#scroller').classList.toggle('pointing', on);
+  $('#pointat').textContent = on ? 'Click the screen…' : 'Point at screen';
+  if (on){
+    const s = $('#detSt'); s.className = 'status'; s.textContent = 'Click once inside the screen';
+  }
+}
+$('#pointat').onclick = () => setPointing(!pointing);
+// Capture phase on the scroller, exactly as the space-pan is, and for the same
+// reason: this must never reach hitTest and start dragging a corner.
+$('#scroller').addEventListener('pointerdown', e => {
+  if (!pointing || e.button !== 0 || spaceHeld) return;
+  e.preventDefault(); e.stopPropagation();
+  const p = pos(e);
+  setPointing(false);
+  pointAt(p[0], p[1]);
+}, true);
+async function pointAt(x, y){
+  const s = $('#detSt'); s.className = 'status busy'; s.textContent = 'Reading that point…';
+  try {
+    const r = await api('/api/detect', {click: [x, y]});
+    if (r.found){
+      st.corners = r.corners; st.measured = r.corner_radius;
+      s.className = 'status ok';
+      s.textContent = `Screen found from your click (${r.method})`;
+      if (!st.type) setType(r.type_guess || 'phone');
+      if (r.corner_radius && r.corner_radius.confident) setFrac(r.corner_radius.frac_of_width, 'measured from the photo');
+      else { applyPreset(); $('#radSt').textContent = 'Radius not measurable here — using the device preset.'; }
+      markStale();
+    } else {
+      s.className = 'status warn';
+      s.textContent = 'Nothing screen-shaped at that point — try again or place the edges by hand';
+      s.title = r.message || '';
+    }
+  } catch (err) {
+    s.className = 'status warn'; s.textContent = 'Could not read that point: ' + err.message;
+  }
+  pick = {kind:'edge', i:0};
+  draw(); drawStrip(); autoPreview();
+}
+// Escape disarms, like every other transient mode on this page.
+addEventListener('keydown', e => { if (e.key === 'Escape' && pointing) setPointing(false); });
 
 document.querySelectorAll('[data-jump]').forEach(b => {
   b.onclick = () => { if (!st.corners) return; const i=+b.dataset.jump;

@@ -382,6 +382,62 @@ def version_badge(td):
         ui.stop()
 
 
+def click_to_pick(td):
+    """SG46: a single click picks the screen out of the candidate list.
+
+    The detectors nearly always FIND the screen; what they cannot do is say
+    which of the regions they found is one. On the two real photographs that
+    defeated every detector, the correct quad was already among the candidates
+    both times -- so the click filters, and the existing score ranks what is
+    left. No new segmentation, and every existing guard still applies.
+    """
+    print("\na click picks the screen out of the candidates (SG46)")
+    ui = build(td, "k")
+    if ui is None:
+        return ok("could build the click fixture", False)
+    try:
+        # Ground truth on this fixture is the UNCLICKED answer, not CORNERS:
+        # CORNERS is where the screenshot gets warped TO, deliberately inset
+        # from the body rectangle synth_photo draws, so a detector that is
+        # working perfectly still sits ~30px from it. Comparing against it
+        # would be measuring the fixture's geometry, not the click.
+        code, r0 = ui.post("/api/detect", {})
+        ok("plain detection answers on the fixture", code == 200 and r0.get("found"),
+           str(r0.get("message", ""))[:90])
+        q0 = np.array(r0["corners"], float) if r0.get("found") else None
+
+        cx = sum(c[0] for c in CORNERS) / 4.0
+        cy = sum(c[1] for c in CORNERS) / 4.0
+        code, r = ui.post("/api/detect", {"click": [cx, cy]})
+        ok("a click inside the screen finds it", code == 200 and r.get("found"),
+           str(r.get("message", ""))[:90])
+        if r.get("found") and q0 is not None:
+            q1 = np.array(r["corners"], float)
+            moved = float(np.max(np.linalg.norm(q1 - q0, axis=1)))
+            # The property that matters: pointing at a screen the detector had
+            # ALREADY found must confirm it, not perturb it. Where detection
+            # works the click is a no-op; where it fails the click is the whole
+            # answer, and that half is measured on real photographs.
+            ok("...and does not move an answer detection already had",
+               moved < 2.0, f"moved {moved:.1f}px")
+
+        # The click must not be able to invent a screen where there is none.
+        code, r2 = ui.post("/api/detect", {"click": [2.0, 2.0]})
+        far_ok = code == 200 and (not r2.get("found") or q0 is None or float(np.max(
+            np.linalg.norm(np.array(r2["corners"], float) - q0, axis=1))) > 20.0)
+        ok("a click in the far corner does not return the screen anyway", far_ok,
+           "found=%s" % r2.get("found"))
+
+        # And it is validated like any other input.
+        for bad, why in [([-5, 10], "outside the photograph"),
+                         (["x", 1], "not a number"),
+                         ([10], "not a pair")]:
+            code, r = ui.post("/api/detect", {"click": bad})
+            ok(f"a click that is {why} is refused", code >= 400, f"status {code}")
+    finally:
+        ui.stop()
+
+
 def session_sweep(td):
     """SG39: copied and derived media must not outlive the run that needed it.
 
@@ -465,6 +521,7 @@ def main():
         failed_encode(td)
         encode_fails_late(td)
         scrubber_reaches_the_compositor(td)
+        click_to_pick(td)
         session_sweep(td)
         version_badge(td)
     print()

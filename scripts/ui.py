@@ -622,16 +622,36 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"path": real, "size": [im.shape[1], im.shape[0]]})
 
             if u.path == "/api/detect":
+                if not SESSION.state.get("photo"):
+                    raise ValueError("choose a photo first")
                 photo, _ = _read_image(SESSION.state["photo"])
                 gray = cv2.cvtColor(photo, cv2.COLOR_BGR2GRAY)
+                # An optional seed point, in PHOTO pixels. The detectors already
+                # find the screen on these photographs -- 23 of 93 candidates
+                # contained the click on the iPad that used to abstain -- they
+                # just cannot tell which region is a screen. That is the one
+                # question a person answers instantly, so the click filters the
+                # candidate list and the existing score ranks what is left.
+                click = b.get("click") if isinstance(b, dict) else None
+                if click is not None:
+                    try:
+                        click = (float(click[0]), float(click[1]))
+                    except (TypeError, ValueError, IndexError) as e:
+                        raise ValueError(f"click must be [x, y] in photo pixels ({e})") from e
+                    h, w = photo.shape[:2]
+                    if not (0 <= click[0] < w and 0 <= click[1] < h):
+                        raise ValueError("the click is outside the photograph")
                 # `color` gives detect() the saturation detector — devices are
                 # neutral, furniture is not, and grayscale throws that away.
-                res = D.detect(gray, None, color=photo)
+                res = D.detect(gray, None, color=photo, click=click)
                 if res is None:
-                    return self._json({"found": False,
-                                       "message": "Neither detector could find a screen here "
-                                                  "(nothing separable by tone, no screen-shaped "
-                                                  "boundary). Place the four corners by hand."})
+                    return self._json({"found": False, "clicked": click is not None,
+                                       "message": ("Nothing screen-shaped was found around that "
+                                                   "point — try clicking nearer the middle of the "
+                                                   "screen." if click is not None else
+                                                   "Neither detector could find a screen here "
+                                                   "(nothing separable by tone, no screen-shaped "
+                                                   "boundary). Place the four corners by hand.")})
                 # An abstention is a miss, and must reach the page as one. On
                 # 7 Sep 2026 a quad on a table was shown as a checkable guess
                 # with two corners off the canvas, which cannot be dragged back

@@ -202,6 +202,42 @@ published `v0.23.0` — the release-consistency problem raised in the 9 Sep revi
 in a new instance. Re-cutting 0.23.0 would have entrenched it. A metadata-only
 commit still changes the package, so it still needs a version.
 
+## [0.24.0] - 2026-09-10
+
+### Added
+
+- **Point at screen.** When detection cannot tell which region is a screen, click
+  once inside it and it will.
+
+  Measured first, and the measurement chose the design. Of eleven real mockup
+  photographs, nine detect correctly and two abstain — an iPad on a pale tiled
+  floor and an iPhone against a pale wall, the cases where the background is as
+  neutral as the device. Instrumenting the candidate list showed **the correct
+  quad was already there both times**: 23 of 93 candidates contained the click
+  on one photo, 16 of 118 on the other, and in each case the right one was the
+  top-scoring candidate that contained it.
+
+  So the failure was never detection — it was **selection**, and which region is
+  a screen is the one question a person answers instantly. The click filters the
+  candidate list before ranking; the existing score decides among what is left.
+  No new segmentation, and every existing guard — validation, corner refinement,
+  the radius measurement, the abstention — still applies to whatever wins.
+
+  A click also counts as corroboration, so a result the user pointed at is no
+  longer withheld for want of a second algorithm agreeing. Gross disagreement
+  between two credible detectors still abstains: that means the click landed
+  somewhere genuinely ambiguous, which is worth saying.
+
+  **A GrabCut prototype was built first and rejected on measurement.** Seeded at
+  the same click it solved the iPhone exactly, and failed on the iPad — that
+  screen shows a large photograph, and a colour model segments the screen along
+  its own content boundary rather than its edge. Reusing the detectors' own
+  candidates is both simpler and better: it fixed both.
+
+  The no-click path is **byte-identical on all eleven photographs**, and on the
+  fixture a click inside a screen detection had already found moves the answer
+  by **0.0px** — where detection works the click is a no-op.
+
 ## [Unreleased]
 
 ### Added

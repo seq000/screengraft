@@ -490,7 +490,22 @@ def validate_quad(corners: np.ndarray, contour, img_area: float, img_shape=None)
     return True, ""
 
 
-def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None):
+def contains(quad, point) -> bool:
+    """Is `point` inside this quad? The whole of the click feature, in one line.
+
+    A click cannot make a bad candidate good, and it is not asked to. It answers
+    the one question the pixels cannot: WHICH of the regions we already found is
+    the screen. Measured on the two photos that defeated every detector, the
+    correct quad was already in the candidate list both times -- 23 of 93
+    candidates contained the click on one, 16 of 118 on the other -- so the
+    failure was never detection, it was selection.
+    """
+    return cv2.pointPolygonTest(np.asarray(quad, np.float32),
+                                (float(point[0]), float(point[1])), False) >= 0
+
+
+def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
+              click=None):
     """Best candidate that survives refinement AND validation.
 
     Walks candidates best-score-first rather than trusting the top one: a
@@ -506,6 +521,12 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None):
     78px off an otherwise correct quad . The polygon approximation of a
     Canny boundary is already on the edge, so there is nothing to recover.
     """
+    if click is not None:
+        # Before ranking, not after: the point of the click is to shrink the
+        # field to the things the user actually pointed at, and let the existing
+        # score decide among those. Ranking first and filtering after would just
+        # re-confirm whichever candidate already won.
+        candidates = [c for c in candidates if contains(c[1], click)]
     rejected = []
     for cand in sorted(candidates, key=lambda c: c[0], reverse=True):
         score, quad, contour, tag = pick_innermost(candidates, cand)
@@ -529,7 +550,7 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None):
     return None
 
 
-def detect_tone(gray: np.ndarray, tone=None):
+def detect_tone(gray: np.ndarray, tone=None, click=None):
     """Tone-band segmentation. Assumes the screen sits in a narrow tone band."""
     h, w = gray.shape[:2]
     img_area = float(h * w)
@@ -560,7 +581,7 @@ def detect_tone(gray: np.ndarray, tone=None):
             score *= (16.0 / (hi - lo + 1)) ** 0.25
             candidates.append((score, order_quad(quad), contour, (lo, hi)))
 
-    res = _finalize(candidates, img_area, img_shape=gray.shape[:2])
+    res = _finalize(candidates, img_area, img_shape=gray.shape[:2], click=click)
     if res is None:
         return None
     band = res.pop("_tag")
@@ -569,7 +590,7 @@ def detect_tone(gray: np.ndarray, tone=None):
     return res
 
 
-def detect_edges(gray: np.ndarray):
+def detect_edges(gray: np.ndarray, click=None):
     """Canny-and-quad detection — the document-scanner path.
 
     Tone banding assumes a near-uniform screen, which breaks the moment the
@@ -608,7 +629,7 @@ def detect_edges(gray: np.ndarray):
             if score > 0 and quad is not None:
                 candidates.append((score, order_quad(quad), c, (lo, hi)))
 
-    res = _finalize(candidates, img_area, refine=False, img_shape=gray.shape[:2])
+    res = _finalize(candidates, img_area, refine=False, img_shape=gray.shape[:2], click=click)
     if res is None:
         return None
     thr = res.pop("_tag")
@@ -617,7 +638,7 @@ def detect_edges(gray: np.ndarray):
     return res
 
 
-def detect_saturation(bgr: np.ndarray):
+def detect_saturation(bgr: np.ndarray, click=None):
     """Neutral-region segmentation — the third detector, and the only one that
     looks at colour.
 
@@ -654,7 +675,7 @@ def detect_saturation(bgr: np.ndarray):
                 candidates.append((score * (32.0 / max(thr, 1)) ** 0.25,
                                    order_quad(quad), contour, thr))
 
-    res = _finalize(candidates, img_area, img_shape=sat.shape[:2])
+    res = _finalize(candidates, img_area, img_shape=sat.shape[:2], click=click)
     if res is None:
         return None
     res.pop("_tag")
@@ -681,7 +702,7 @@ def has_rounded_corners(result) -> bool:
     return spread <= MAX_RADIUS_SPREAD
 
 
-def detect(gray: np.ndarray, tone=None, method="auto", color=None):
+def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None):
     """Run both detectors; arbitrate on how the two quads nest.
 
     The two fail on opposite things. Tone banding needs a tonally uniform
@@ -707,15 +728,15 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None):
     """
     results = []
     if method in ("auto", "tone"):
-        r = detect_tone(gray, tone)
+        r = detect_tone(gray, tone, click=click)
         if r:
             results.append(r)
     if method in ("auto", "edge") and tone is None:
-        r = detect_edges(gray)
+        r = detect_edges(gray, click=click)
         if r:
             results.append(r)
     if method in ("auto", "saturation") and tone is None and color is not None:
-        r = detect_saturation(color)
+        r = detect_saturation(color, click=click)
         if r:
             results.append(r)
 
@@ -842,7 +863,14 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None):
     # the thing found is shaped like a screen, which is what abstention exists
     # to doubt. Without this a good saturation result on a hard photo would be
     # thrown away for want of a second opinion.
-    uncorroborated = bool(not ag.get("agree")
+    # A click IS corroboration, and the strongest kind available: a person
+    # looked at the photograph and said "the screen is here". Abstaining for
+    # want of a second algorithm after that would be refusing the only evidence
+    # that outranks the algorithms. Gross disagreement between two credible
+    # peers still counts -- that says the click landed somewhere ambiguous, and
+    # is worth reporting -- but being alone no longer does.
+    uncorroborated = bool(click is None
+                          and not ag.get("agree")
                           and not best["corner_radius"]["confident"]
                           and not has_rounded_corners(best))
     if gross or uncorroborated:
