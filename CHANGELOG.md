@@ -9,6 +9,33 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.30.1] - 2026-09-11
+
+### Fixed
+
+- **An empty video box sat below the result the whole time.** `#outImg,#outVid
+  {display:block}` is an ID selector, so it beat the browser's own
+  `[hidden]{display:none}` — which switched the `hidden` attribute off for both
+  elements. Invisible on the `<img>` (no source, no height) and glaring on the
+  `<video>`, which renders a black panel with a play button. The clip is meant
+  to **replace the still in the same frame**, not appear under it, and now does.
+  Reported from a screenshot: *"there is some video layer at the bottom below
+  result"*.
+- **A preview is six seconds, not the whole clip.** Compositing a 2460-frame
+  recording took about as long as the render it exists to save you from, which
+  makes it a render with a worse output. It now composites `PREVIEW_SECONDS`
+  from the frame you fitted on — measured on a 21s clip: **10s against 18s for
+  the full length**, and far more on a longer one. Move the scrubber to preview
+  a different moment. The pane says how long the segment is and where it starts,
+  because a preview that silently showed six seconds of a forty-second clip
+  would look like a broken render.
+
+### Changed
+
+- `compose_video()` takes `start_frame` and `max_frames`. Only the preview passes
+  them, so the full-clip contract — frame 0 of a render equals the still
+  composite, byte for byte — is untouched.
+
 ## [0.30.0] - 2026-09-11
 
 ### Added

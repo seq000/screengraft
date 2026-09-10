@@ -387,7 +387,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                   corner_radius: float = 0.0, grade: float = 0.0, grain: bool = False,
                   preset: str = "web", fit_frame: int = 0, audio: bool = True,
                   frames_dir: str = None, progress=None, blend: str = "replace",
-                  reflection: float = DEFAULT_REFLECTION) -> dict:
+                  reflection: float = DEFAULT_REFLECTION,
+                  start_frame: int = 0, max_frames: int = None) -> dict:
     """Inject a VIDEO into a still photo. The photo does not move, so there is
     exactly one homography and the whole of Plan is computed once.
 
@@ -395,6 +396,13 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     sequence: a ten-second clip is several hundred frames and several GB of
     intermediate PNGs, for no benefit. `frames_dir` still dumps them when a
     test or a human needs to look at individual frames.
+
+    `start_frame` and `max_frames` render a SEGMENT rather than the whole clip.
+    They exist for the preview: compositing a 2460-frame recording to look at it
+    takes about as long as the render it is meant to save you from, and a
+    preview you wait a minute for is a render with a worse output. Nothing else
+    passes them, so the full-clip contract -- frame 0 of a render equals the
+    still composite, byte for byte -- is untouched.
 
     Time is deliberately NOT resampled. The output runs at the source's own
     frame rate; converting fps by dropping or duplicating frames is judder, and
@@ -424,10 +432,26 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     if frames_dir:
         os.makedirs(frames_dir, exist_ok=True)
     cap = cv2.VideoCapture(video_path)
+    if start_frame > 0:
+        # Same fallback read_frame_at uses: seeking is unreliable on some
+        # containers, and a segment that silently began somewhere else would be
+        # a preview of the wrong moment.
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        if not cap.grab():
+            cap.release()
+            cap = cv2.VideoCapture(video_path)
+            for _ in range(start_frame):
+                if not cap.grab():
+                    break
+        else:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     count = 0
+    total_hint = n_hint if max_frames is None else min(n_hint or max_frames, max_frames)
     try:
         while True:
+            if max_frames is not None and count >= max_frames:
+                break
             ok, frame = cap.read()
             if not ok:
                 break
@@ -438,7 +462,7 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
             proc.stdin.write(out.tobytes())
             count += 1
             if progress and count % 10 == 0:
-                progress(count, n_hint)
+                progress(count, total_hint)
     finally:
         cap.release()
         try:
@@ -453,7 +477,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
         raise RuntimeError(f"no frames could be read from {video_path}")
     return {"frames": count, "fps": fps, "source_size": [vw, vh],
             "output_size": [pw, ph], "preset": preset, "fit_frame": fit_frame,
-            "blend": blend, "reflection": plan.reflection}
+            "blend": blend, "reflection": plan.reflection,
+            "start_frame": start_frame}
 
 
 def main() -> None:

@@ -480,10 +480,17 @@ RENDER_LOCK = threading.Lock()
 # emissive blend against changing content -- are visible. It is a PROXY: it
 # never reaches --out-dir and never becomes the session output.
 PREVIEW_WIDTH = 720
+# ...and how much of the clip. A 2460-frame recording takes about as long to
+# composite as the render it is meant to save you from, and a preview you wait a
+# minute for is a render with a worse output. Six seconds from the frame you
+# fitted on is enough to watch the light match hold and the emissive blend move
+# with the content; the scrubber picks a different moment if you want one.
+PREVIEW_SECONDS = 6.0
 
 
 def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
-                   blend="replace", reflection=None, result=None, kind="render"):
+                   blend="replace", reflection=None, result=None, kind="render",
+                   start_frame=0, max_frames=None):
     """Encode the clip, and only if that SUCCEEDS publish what it produced.
 
     `result` is the sidecar this render would write. It is handed to the worker
@@ -506,7 +513,8 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
                                preset=preset, fit_frame=fit_frame, progress=progress,
                                blend=blend,
                                reflection=(W.DEFAULT_REFLECTION if reflection is None
-                                           else reflection))
+                                           else reflection),
+                               start_frame=start_frame, max_frames=max_frames)
         if kind == "preview":
             # A preview publishes NOTHING. It is not a save: no sidecar, no fit
             # file, and above all not the session output -- /api/import reads
@@ -921,6 +929,8 @@ class Handler(BaseHTTPRequestHandler):
                     sx, sy = nw / float(photo.shape[1]), nh / float(photo.shape[0])
                     photo = cv2.resize(photo, (nw, nh), interpolation=cv2.INTER_AREA)
                     corners = [[x * sx, y * sy] for x, y in corners]
+                _n, _fps, _vw, _vh = W.probe_video(spath)
+                max_frames = max(1, int(round(PREVIEW_SECONDS * (_fps or 30))))
                 dest = os.path.join(SESSION.dir, "preview.mp4")
                 with RENDER_LOCK:
                     if RENDER["state"] == "running":
@@ -931,13 +941,16 @@ class Handler(BaseHTTPRequestHandler):
                     threading.Thread(target=_render_worker, daemon=True,
                                      args=(photo, spath, corners, dest, radius_px,
                                            gr, grain, "web", fit_frame,
-                                           blend, reflection, None, "preview")).start()
+                                           blend, reflection, None, "preview",
+                                           fit_frame, max_frames)).start()
                 except BaseException:
                     with RENDER_LOCK:
                         RENDER.update(state="error", message="could not start the preview")
                     raise
                 return self._json({"started": True, "preview": dest,
-                                   "scale": round(scale, 4)})
+                                   "scale": round(scale, 4),
+                                   "seconds": PREVIEW_SECONDS,
+                                   "from_frame": fit_frame})
 
             if u.path == "/api/render":
                 # Video: same fit, same geometry, N frames instead of one.
@@ -982,7 +995,15 @@ class Handler(BaseHTTPRequestHandler):
                           "corners": corners, "radius_frac": frac, "radius_px": radius_px,
                           "device": b.get("device"), "grade": gr, "grain": grain,
                           "video": True, "preset": preset, "fit_frame": fit_frame,
-                          "blend": blend, "reflection": reflection}
+                          "blend": blend, "reflection": reflection,
+                          # A render is always the whole clip; only the preview
+                          # passes a segment. Recorded anyway, because the
+                          # sidecar's promise is EVERY argument that changes the
+                          # output — and if rendering a segment ever ships, the
+                          # recipe already carries it rather than silently
+                          # reproducing something else. test_sidecar.py caught
+                          # their absence the moment they were added.
+                          "start_frame": 0, "max_frames": None}
                 # `state="running"` means "a thread is running", so it is set
                 # here -- after every line that can raise, immediately before the
                 # thread exists. It used to be set at the top of this route, so a

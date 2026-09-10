@@ -458,6 +458,13 @@
   #outPane{display:grid}
   #outWrap{overflow:auto;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
   #outImg,#outVid{display:block;margin:auto}
+  /* An ID selector beats the UA's [hidden]{display:none}, so the rule above was
+     switching `hidden` OFF for both of these. Invisible on the <img> (no src,
+     no height) and glaring on the <video>, which renders a black box with a
+     play button: a "video layer below the result" that was never meant to be
+     on screen at all. The clip is supposed to REPLACE the still in the same
+     box, not sit under it. */
+  #outImg[hidden],#outVid[hidden]{display:none}
   .empty{color:var(--mute);font-size:12px;padding:24px;text-align:center;align-self:center;justify-self:center;max-width:320px}
 
   .rail{min-width:0;overflow:auto;padding:0;display:grid;align-content:start;background:var(--card)}
@@ -819,7 +826,7 @@
              two settings that change over time — the light match is bound once
              from the fitted frame, and the emissive blend moves with the
              content's own brightness. Neither is visible in a still. -->
-        <button class="sm" id="playclip" title="Composite the whole clip at preview size and play it here. This is the real pipeline at a smaller size, so the grade, grain and emissive blend are all applied — a still cannot show how those hold up as the UI changes.">Play</button>
+        <button class="sm" id="playclip" title="Composite a few seconds from the fitted frame at preview size and play it here. This is the real pipeline at a smaller size, so the grade, grain and emissive blend are all applied — a still cannot show how those hold up as the UI changes.">Play</button>
         <span class="sm" style="color:var(--mute)">Fit on frame</span>
         <span class="cvbar-actions">
           <input type="range" id="vframe" min="0" max="0" value="0" step="1"
@@ -2265,7 +2272,12 @@ async function playClip(){
       v.src = `${fileURL(d.output)}&t=${Date.now()}`;
       showResult('clip'); syncOut();
       v.play().catch(()=>{});         // a blocked autoplay is not an error
-      s.textContent = `Preview · ${d.done} frames at ${(d.info && d.info.output_size || []).join('×')} — drag an edge to go back to the still`;
+      // Say it is a SEGMENT. A preview that silently showed six seconds of a
+      // forty-second clip would look like a broken render.
+      const secs = d.info && d.info.fps ? (d.done / d.info.fps) : 0;
+      const at = d.info && d.info.start_frame ? ` from frame ${d.info.start_frame}` : '';
+      s.textContent = `Preview · ${secs ? secs.toFixed(1) + 's' : d.done + ' frames'}${at}`
+                    + ` at ${(d.info && d.info.output_size || []).join('×')} — drag an edge for the still`;
     } else if (d.state === 'error'){
       clearInterval(tick); building = false;
       btn.disabled = false; btn.textContent = 'Play';
