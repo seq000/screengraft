@@ -9,6 +9,55 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.30.0] - 2026-09-11
+
+### Added
+
+- **Play the composite before rendering it (SG73).** The Result pane composited
+  a single frame, so every judgement about a clip was made on a still — and the
+  two settings most likely to misbehave over time are exactly the two a still
+  cannot show. The **light match is bound once**, from the fitted frame
+  (deliberately: measuring per frame makes the screen pulse as the UI scrolls),
+  so a badly chosen frame is wrong for the whole clip. The **emissive blend**
+  mixes the screenshot with the glass beneath it, so its effect moves with the
+  content's own brightness. Press **Play**, in the Result pane before the frame
+  scrubber, and the clip is composited and played there.
+
+  It is a **proxy through the same pipeline**, not a shortcut: the photo is
+  downscaled to 720px and the quad scaled with it, so grade, grain and emissive
+  are all applied and what you watch is what will render. The obvious cheap
+  version — a `<video>` under a CSS perspective transform — would show the
+  geometry moving and none of those three, which is to say none of what this is
+  for. Measured on a 21s clip: **18s at 720px against 57s full size**.
+
+  A preview **publishes nothing**: no sidecar, no fit file, and above all not the
+  session output, so *Send to Claude* can never be handed a proxy instead of the
+  mockup. It lands in the session as `preview.mp4`, which the sweep already
+  treats as residue.
+
+### Fixed
+
+- **A finished render left the page saying "Rendering…" for ever.** The status
+  poll called `api('/api/render_status', null, {method:'GET'})` — but `api`'s
+  third argument is `raw` (headers and body for an upload), not options, so this
+  was a **POST with a null body** to a GET-only route. Every poll threw *no such
+  route* into a `catch` that swallows it. The encode finished correctly and the
+  page never noticed: no toast, no re-enabled button, and *Send to Claude* never
+  offered. Shipped since v0.18.0, and it is why the symptom was reported as "no
+  progress" rather than as a broken poll. Found by watching the first preview
+  complete on the server while the button sat still.
+- **The frame counter is no longer wiped by a preview nobody asked for.**
+  Dragging an edge during a build re-renders the still, and that path owns the
+  same status line — so the count vanished mid-wait.
+
+### Changed
+
+- Even dimensions are forced on the proxy. H.264 with `yuv420p` refuses an odd
+  width or height, and refuses by killing ffmpeg mid-stream — which arrives in
+  Python as a broken pipe with the real complaint nowhere in sight. 720 x
+  1536/2752 rounds to 401, and the whole preview vanished. The quad is scaled by
+  what the resize *actually did*, not by the ratio asked for.
+
 ## [0.29.0] - 2026-09-11
 
 ### Added

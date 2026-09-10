@@ -154,7 +154,7 @@ SESSION: Session = None
 _RESIDUE_PREFIXES = ("photo-", "screenshot-", "poster-", "frame-")
 # figma-export.png is a copy too -- the agent fetches the frame and drops it
 # here -- and re-exporting is one MCP round trip, so it is residue like the rest.
-_RESIDUE_NAMES = ("preview.png", "figma-export.png")
+_RESIDUE_NAMES = ("preview.png", "preview.mp4", "figma-export.png")
 
 
 def _sidecar_sources(d):
@@ -469,12 +469,21 @@ def _read_source(path: str):
 # an HTTP request open — so the render runs on its own thread and the page
 # polls. ThreadingHTTPServer is already the server class, so this needs no
 # other machinery.
-RENDER = {"state": "idle", "done": 0, "total": 0, "output": None, "message": None}
+RENDER = {"state": "idle", "done": 0, "total": 0, "output": None, "message": None,
+          "kind": "render"}
 RENDER_LOCK = threading.Lock()
 
 
+# How wide a preview proxy is composited. Small enough that a clip can be
+# watched in seconds rather than minutes, large enough that the two things a
+# preview exists to judge -- the light match holding across the clip, and the
+# emissive blend against changing content -- are visible. It is a PROXY: it
+# never reaches --out-dir and never becomes the session output.
+PREVIEW_WIDTH = 720
+
+
 def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
-                   blend="replace", reflection=None, result=None):
+                   blend="replace", reflection=None, result=None, kind="render"):
     """Encode the clip, and only if that SUCCEEDS publish what it produced.
 
     `result` is the sidecar this render would write. It is handed to the worker
@@ -498,6 +507,15 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
                                blend=blend,
                                reflection=(W.DEFAULT_REFLECTION if reflection is None
                                            else reflection))
+        if kind == "preview":
+            # A preview publishes NOTHING. It is not a save: no sidecar, no fit
+            # file, and above all not the session output -- /api/import reads
+            # that pointer, and handing Claude a 720px proxy instead of the
+            # mockup would be the render-output defect of 9 Sep, inverted.
+            with RENDER_LOCK:
+                RENDER.update(state="done", output=dest, info=info, kind=kind,
+                              done=info["frames"], total=info["frames"], message=None)
+            return
         if result is not None:
             _write_json_atomic(SESSION.result_path, {**result, "saved": time.time()})
             # Same rule as /api/save, and for the same reason it lives after the
@@ -515,11 +533,11 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
         # still image after a successful render.
         SESSION.update(output=dest)
         with RENDER_LOCK:
-            RENDER.update(state="done", output=dest, info=info,
+            RENDER.update(state="done", output=dest, info=info, kind=kind,
                           done=info["frames"], total=info["frames"], message=None)
     except Exception as e:                     # noqa: BLE001 - surfaced to the page
         with RENDER_LOCK:
-            RENDER.update(state="error", message=str(e))
+            RENDER.update(state="error", message=str(e), kind=kind)
 
 
 def _blend_args(b):
@@ -845,6 +863,82 @@ class Handler(BaseHTTPRequestHandler):
                 SESSION.update(fit_frame=idx)
                 return self._json({"index": idx})
 
+            if u.path == "/api/preview_video":
+                # Watch the composite move before committing to a render.
+                #
+                # The one-frame preview cannot answer the two questions a CLIP
+                # raises, and they are the two settings most likely to misbehave
+                # over time: the light match is bound ONCE from the fitted frame
+                # (deliberately -- measuring per frame makes the screen pulse as
+                # the UI scrolls), so a badly chosen frame is wrong for the whole
+                # clip; and the emissive blend mixes the screenshot with the
+                # glass beneath it, so its effect changes as the content's own
+                # brightness does. Neither shows in a still.
+                #
+                # So this is a real composite through the same pipeline, at a
+                # smaller size -- not a CSS transform over a <video>, which would
+                # show the geometry moving and NONE of the grade, grain or blend,
+                # which is to say none of what it is for.
+                _need_sources()
+                photo, ppath = _read_image(SESSION.state["photo"])
+                spath = _safe_local_path(SESSION.state["screenshot"])
+                if not _is_video(spath):
+                    return self._json({"error": "the screen source is not a video"}, 400)
+                if not _have_ffmpeg():
+                    return self._json({"error": "ffmpeg is not installed",
+                                       "needs_ffmpeg": True}, 400)
+                with RENDER_LOCK:
+                    if RENDER["state"] == "running":
+                        return self._json({"error": "a render is already running"}, 409)
+                corners = _quad(b["corners"])
+                frac = float(b.get("radius_frac") or 0.0)
+                fit_frame = int(b.get("fit_frame") if b.get("fit_frame") is not None
+                                else _fit_frame())
+                first = W.read_frame_at(spath, fit_frame)
+                radius_px = frac * first.shape[1]
+                gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
+                grain = bool(b.get("grain", gr > 0))
+                blend, reflection = _blend_args(b)
+                # Downscale the PHOTO and scale the quad with it, rather than
+                # teaching compose_video about proxies: the same code path then
+                # produces the preview, so what is watched is what will render.
+                # The corner radius is in SCREENSHOT pixels and does not move.
+                scale = min(1.0, PREVIEW_WIDTH / float(photo.shape[1]))
+                if scale < 1.0:
+                    # EVEN dimensions, both of them. H.264 with yuv420p refuses an
+                    # odd width or height, and ffmpeg's way of refusing is to die
+                    # mid-stream -- which reaches Python as a BrokenPipeError on
+                    # the frame pipe, with the real complaint nowhere in sight.
+                    # Found by measuring rather than reading: 720 x 1536/2752
+                    # rounds to 401, and the whole preview vanished.
+                    def _even(v):
+                        return max(2, int(round(v / 2.0)) * 2)
+                    nw, nh = _even(photo.shape[1] * scale), _even(photo.shape[0] * scale)
+                    # Scale the quad by what the resize ACTUALLY did, not by the
+                    # ratio that was asked for: the evening moves it by up to a
+                    # pixel, and a quad scaled by the wrong factor is a fit that
+                    # does not match the preview it is shown in.
+                    sx, sy = nw / float(photo.shape[1]), nh / float(photo.shape[0])
+                    photo = cv2.resize(photo, (nw, nh), interpolation=cv2.INTER_AREA)
+                    corners = [[x * sx, y * sy] for x, y in corners]
+                dest = os.path.join(SESSION.dir, "preview.mp4")
+                with RENDER_LOCK:
+                    if RENDER["state"] == "running":
+                        return self._json({"error": "a render is already running"}, 409)
+                    RENDER.update(state="running", done=0, total=0, kind="preview",
+                                  output=None, message=None)
+                try:
+                    threading.Thread(target=_render_worker, daemon=True,
+                                     args=(photo, spath, corners, dest, radius_px,
+                                           gr, grain, "web", fit_frame,
+                                           blend, reflection, None, "preview")).start()
+                except BaseException:
+                    with RENDER_LOCK:
+                        RENDER.update(state="error", message="could not start the preview")
+                    raise
+                return self._json({"started": True, "preview": dest,
+                                   "scale": round(scale, 4)})
+
             if u.path == "/api/render":
                 # Video: same fit, same geometry, N frames instead of one.
                 _need_sources()
@@ -900,7 +994,7 @@ class Handler(BaseHTTPRequestHandler):
                 with RENDER_LOCK:
                     if RENDER["state"] == "running":
                         return self._json({"error": "a render is already running"}, 409)
-                    RENDER.update(state="running", done=0, total=0,
+                    RENDER.update(state="running", done=0, total=0, kind="render",
                                   output=None, message=None)
                 try:
                     threading.Thread(target=_render_worker, daemon=True,

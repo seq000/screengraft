@@ -457,7 +457,7 @@
 
   #outPane{display:grid}
   #outWrap{overflow:auto;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
-  #outImg{display:block;margin:auto}
+  #outImg,#outVid{display:block;margin:auto}
   .empty{color:var(--mute);font-size:12px;padding:24px;text-align:center;align-self:center;justify-self:center;max-width:320px}
 
   .rail{min-width:0;overflow:auto;padding:0;display:grid;align-content:start;background:var(--card)}
@@ -807,12 +807,19 @@
         <span class="spacer"></span>
         <span class="sm" style="color:var(--mute)">shares zoom &amp; pan</span>
       </div>
-      <div id="outWrap"><span class="empty" id="outEmpty">The composite appears here and updates as you drag.</span><img id="outImg" alt="" hidden></div>
+      <div id="outWrap"><span class="empty" id="outEmpty">The composite appears here and updates as you drag.</span><img id="outImg" alt="" hidden><video id="outVid" hidden loop muted playsinline controls></video></div>
       <!-- Video controls. Hidden entirely for a still source: a scrubber over a
            screenshot is a control that can only confuse. The fit itself is
            unchanged — you match the edges on one frame and every frame gets the
            same geometry, because the photo does not move. -->
       <div class="cvbar" id="vidbar" hidden>
+        <!-- Play comes BEFORE the frame scrubber deliberately: both answer
+             "which moment of the clip am I looking at", and watching the whole
+             thing is the broader question. It is also the only way to judge the
+             two settings that change over time — the light match is bound once
+             from the fitted frame, and the emissive blend moves with the
+             content's own brightness. Neither is visible in a still. -->
+        <button class="sm" id="playclip" title="Composite the whole clip at preview size and play it here. This is the real pipeline at a smaller size, so the grade, grain and emissive blend are all applied — a still cannot show how those hold up as the UI changes.">Play</button>
         <span class="sm" style="color:var(--mute)">Fit on frame</span>
         <span class="cvbar-actions">
           <input type="range" id="vframe" min="0" max="0" value="0" step="1"
@@ -2177,9 +2184,14 @@ function markStale(){
   $('#imp').classList.remove('primary');
 }
 function syncOut(){
-  const im = $('#outImg');
-  if (!im.hidden && outNat){
-    im.style.width = Math.round(img.naturalWidth * scale) + 'px';
+  // Whichever of the two is showing gets the SAME treatment: the pane exists to
+  // be compared with the fit beside it, and a clip that ignored the zoom would
+  // break the pairing the moment you looked closely at a corner. The proxy is
+  // smaller than the photo, so it is sized by the PHOTO's width — the composite
+  // covers the same frame either way.
+  const el = $('#outImg').hidden ? ($('#outVid').hidden ? null : $('#outVid')) : $('#outImg');
+  if (el && (outNat || el.id === 'outVid')){
+    el.style.width = Math.round(img.naturalWidth * scale) + 'px';
     const a = $('#scroller'), b = $('#outWrap');
     b.scrollLeft = a.scrollLeft; b.scrollTop = a.scrollTop;
   }
@@ -2194,21 +2206,94 @@ function autoPreview(){
   clearTimeout(autoTimer);
   autoTimer = setTimeout(renderPreview, 350);
 }
+/* The Result pane holds either the still composite or a played clip, never
+   both. Several writers disagreeing about which is visible is a defect this
+   project has already shipped once: one function, and everything else calls
+   it. */
+function showResult(what){
+  $('#outImg').hidden = what !== 'still';
+  const v = $('#outVid');
+  if (what !== 'clip' && !v.hidden){ try { v.pause(); } catch(e){} }
+  v.hidden = what !== 'clip';
+  $('#outEmpty').style.display = (what === 'empty') ? '' : 'none';
+}
+
+/* Watch the composite move before committing to a full render.
+
+   A proxy, not a shortcut: the same pipeline at PREVIEW_WIDTH, so the grade,
+   grain and emissive blend are all applied and what is watched is what will
+   render. The alternative — a <video> under a CSS perspective transform — would
+   show the geometry moving and none of the three, which is to say none of what
+   this is for. Measured on a 21s clip: 18s at 720px against 57s full size. */
+let building = false;
+async function playClip(){
+  const btn = $('#playclip'), s = $('#outSt');
+  btn.disabled = true; btn.textContent = 'Building…';
+  // Dragging an edge during a build re-renders the still, and renderPreview
+  // owns this same status line — so without this the frame counter is wiped by
+  // a preview the user did not ask for, and the wait goes silent again.
+  building = true;
+  try{
+    await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(),
+                                     device: st.type, grade: gradeValue(),
+                                     reflection: emisValue(), fit_frame: +$('#vframe').value});
+  }catch(e){
+    building = false;
+    btn.disabled = false; btn.textContent = 'Play';
+    toast('err', 'Could not build the preview: ' + e.message); return;
+  }
+  const tick = setInterval(async () => {
+    // fetch, NOT api(): api's third argument is `raw` (headers + body for an
+    // upload), not options — so `{method:'GET'}` made this a POST with a null
+    // body, /api/render_status is GET-only, and every poll threw "no such
+    // route" into a catch that swallows it. Shipped since v0.18.0: a render
+    // that FINISHED left the button on "Rendering…" for ever, with no toast and
+    // Send to Claude never enabled. It looks exactly like a hung encode, which
+    // is why it was reported as "no progress" rather than as a broken poll.
+    let d; try { d = await (await fetch('/api/render_status')).json(); }
+    catch(e){ return; }
+    if (d.state === 'running'){
+      // The wait is real — tens of seconds on a long clip — so it counts frames
+      // rather than spinning. A number that stops moving is a stall you can see;
+      // a spinner is not, and in a hidden pane it does not even animate.
+      s.textContent = d.total ? `Building preview — ${d.done} / ${d.total} frames`
+                              : 'Building preview…';
+    } else if (d.state === 'done'){
+      clearInterval(tick); building = false;
+      btn.disabled = false; btn.textContent = 'Play';
+      const v = $('#outVid');
+      v.src = `${fileURL(d.output)}&t=${Date.now()}`;
+      showResult('clip'); syncOut();
+      v.play().catch(()=>{});         // a blocked autoplay is not an error
+      s.textContent = `Preview · ${d.done} frames at ${(d.info && d.info.output_size || []).join('×')} — drag an edge to go back to the still`;
+    } else if (d.state === 'error'){
+      clearInterval(tick); building = false;
+      btn.disabled = false; btn.textContent = 'Play';
+      s.textContent = 'Preview failed';
+      toast('err', 'Preview failed: ' + (d.message || 'unknown'));
+    }
+  }, 900);
+}
+$('#playclip').onclick = playClip;
+
 async function renderPreview(){
   if (!(st.photo && st.shot && st.corners)) return;
-  const s = $('#outSt'); s.textContent = 'Rendering…';
+  syncPlayable();
+  const s = $('#outSt');
+  const say = t => { if (!building) s.textContent = t; };
+  say('Rendering…');
   try{
     const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     const im = $('#outImg');
-    im.onload = () => { outNat = im.naturalWidth; im.hidden = false; $('#outEmpty').style.display='none'; syncOut(); };
+    im.onload = () => { outNat = im.naturalWidth; showResult('still'); syncOut(); };
     im.src = `${fileURL(r.path)}&t=${Date.now()}`;
-    s.textContent = `radius ${r.radius_px}px on the screenshot`;
+    say(`radius ${r.radius_px}px on the screenshot`);
     const b = $('#save'); b.disabled = false; b.textContent = saveLabel();
     b.classList.add('primary');            // Save is now the next action
     if (!previewHinted){ previewHinted = true;
       toast('info', 'Check the corners in Result, then <b>Save</b> — Save renders at full resolution.');
     }
-  }catch(e){ s.textContent = e.message; }
+  }catch(e){ say(e.message); }
 }
 function prettyDir(p){
   // ~ for home, and show the last two segments of a long path: the interesting
@@ -2235,11 +2320,18 @@ document.querySelectorAll('[data-preset]').forEach(btn => {
    is shown on, and what the primary button does. Everything else — the edge
    matching, the loupe, the compare view, the realism rail — is untouched,
    because the geometry does not care whether the pixels move. */
+function syncPlayable(){
+  const b = $('#playclip');
+  if (b) b.disabled = !(st.video && st.corners);
+}
 function syncVideoUI(){
   const v = st.video;
   $('#vidbar').hidden = !v;
+  syncPlayable();
   const b = $('#save');
   if (v && v.ffmpeg === false){
+    $('#playclip').disabled = true;
+    $('#playclip').title = 'Playing the clip means compositing it, which needs ffmpeg.';
     // Say it now, not after the fit. The fitting still works — it is only the
     // encode that cannot run — so the page stays usable and the message names
     // the one thing to do.
@@ -2281,7 +2373,14 @@ async function renderVideo(){
   // Poll rather than hold a request open: a clip is hundreds of frames and a
   // browser would time the request out long before the render finished.
   const tick = setInterval(async () => {
-    let d; try { d = await api('/api/render_status', null, {method:'GET'}); }
+    // fetch, NOT api(): api's third argument is `raw` (headers + body for an
+    // upload), not options — so `{method:'GET'}` made this a POST with a null
+    // body, /api/render_status is GET-only, and every poll threw "no such
+    // route" into a catch that swallows it. Shipped since v0.18.0: a render
+    // that FINISHED left the button on "Rendering…" for ever, with no toast and
+    // Send to Claude never enabled. It looks exactly like a hung encode, which
+    // is why it was reported as "no progress" rather than as a broken poll.
+    let d; try { d = await (await fetch('/api/render_status')).json(); }
     catch(e){ return; }
     if (d.state === 'running'){
       // The button says what it is doing; the frame counter beside the

@@ -38,6 +38,10 @@ prototype, then put the recording inside a real photograph.
   You match the edges on one frame and every frame gets that same geometry — the
   photograph is still, so there is nothing to track and nothing to drift. Output
   is H.264 at CRF 16 or ProRes 422 HQ.
+- **Watch it before you render it.** Press Play and the clip is composited at
+  preview size and played in the result pane — the same pipeline, so the grade,
+  grain and emissive blend are all applied. A still cannot show you how those
+  hold up as the UI changes, and those are the two things that move.
 - **It remembers a photograph.** Fit a photo once and save, and the next run on
   that photograph starts from those exact corners instead of a detection —
   including a second screenshot into the same shot, which is the common case.

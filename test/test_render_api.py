@@ -534,6 +534,108 @@ def session_sweep(td):
        all(os.path.exists(os.path.join(live, n)) for n in keep))
 
 
+def preview_is_not_a_render(td):
+    """A played preview must publish NOTHING (SG73).
+
+    It is a proxy: smaller, in the session, thrown away by the sweep. The
+    failure to guard against is the SG53 defect inverted — a preview that set
+    the session output would have `/api/import` hand Claude a 720px proxy
+    instead of the mockup, and the page would look exactly the same while it
+    happened.
+    """
+    print("\na preview is a proxy, and publishes nothing (SG73)")
+    ui = build(td, "p")
+    if ui is None:
+        return ok("could build the preview fixture", False)
+    try:
+        had_side = ui.sidecar()
+        had_out = ui.state().get("output")
+
+        code, r = ui.post("/api/preview_video", BODY)
+        ok("the preview starts", code == 200 and bool(r.get("started")),
+           f"{code} {r.get('error', '')}")
+        s = ui.wait_render()
+        ok("...and finishes", s["state"] == "done", s.get("message") or s["state"])
+        ok("...tagged as a preview, so the page can tell the two apart",
+           s.get("kind") == "preview", str(s.get("kind")))
+
+        dest = s.get("output") or ""
+        ok("the proxy lives in the session, not in the output folder",
+           os.path.realpath(os.path.dirname(dest)) == os.path.realpath(ui.info["session"]),
+           dest)
+        ok("...and is called preview.mp4, which the sweep already treats as residue",
+           os.path.basename(dest) == "preview.mp4", os.path.basename(dest))
+
+        ok("the session output is UNCHANGED — Send to Claude must not offer a proxy",
+           ui.state().get("output") == had_out, str(ui.state().get("output")))
+        ok("no sidecar was written for it", ui.sidecar() == had_side)
+        ok("no fit file was written beside it",
+           not os.path.exists(os.path.splitext(dest)[0] + ".fit.json"))
+
+        # Smaller than the photo, or it is not a proxy and the wait was pointless.
+        w, h = (s.get("info") or {}).get("output_size", [0, 0])
+        photo = cv2.imread(ui.state()["photo"])
+        ok("the proxy is smaller than the photograph", 0 < w < photo.shape[1],
+           f"{w}x{h} against {photo.shape[1]}x{photo.shape[0]}")
+        # H.264 with yuv420p refuses odd dimensions, and refuses by killing
+        # ffmpeg mid-stream — which arrives as a broken pipe with the real
+        # complaint nowhere in sight. Found this way, not by reading.
+        ok("...with EVEN dimensions, which is what H.264 requires",
+           w % 2 == 0 and h % 2 == 0, f"{w}x{h}")
+        ok("...and it plays: the file has bytes", os.path.getsize(dest) > 1000,
+           str(os.path.getsize(dest)))
+
+        print("\n  the fit is the same fit — a proxy you cannot trust is not a preview")
+        # The quad is scaled by what the resize ACTUALLY did. If the preview
+        # composited a differently-placed screen, watching it would tell you
+        # nothing about the render.
+        frames = os.path.join(td, "pf")
+        os.makedirs(frames, exist_ok=True)
+        scale = w / float(photo.shape[1])
+        small = cv2.resize(photo, (w, h), interpolation=cv2.INTER_AREA)
+        sx, sy = w / float(photo.shape[1]), h / float(photo.shape[0])
+        want = W.compose(small, W.read_frame_at(ui.state()["screenshot"], 0),
+                         [[x * sx, y * sy] for x, y in CORNERS],
+                         BODY["radius_frac"] * W.read_frame_at(
+                             ui.state()["screenshot"], 0).shape[1],
+                         grade=0.0, grain=False)
+        cap = cv2.VideoCapture(dest)
+        okf, got = cap.read()
+        cap.release()
+        d = (float(np.abs(got.astype(np.int16) - want.astype(np.int16)).mean())
+             if okf and got is not None and got.shape == want.shape else float("inf"))
+        # What this can and cannot see, measured rather than assumed: encode
+        # noise against the correct quad is 3.4 levels, a quad 20px out is 4.7 —
+        # so a whole-frame mean does NOT discriminate small drift and must not
+        # claim to. What it catches with an 8x margin is the quad not being
+        # scaled with the photo at all: 27.0. That is the actual failure mode
+        # here, because the resize is rounded to even dimensions and the scale
+        # the corners get has to be the one the resize really used.
+        ok("the proxy composites the SCALED quad, not the original",
+           d < 8.0, f"mean |diff| {d:.2f} (unscaled would be ~27), scale {scale:.3f}")
+    finally:
+        ui.stop()
+
+
+def preview_refuses_a_still(td):
+    print("\nplaying a still is not a thing")
+    home = os.path.join(td, "q", "home")
+    os.makedirs(home)
+    photo, shot = os.path.join(home, "photo.png"), os.path.join(home, "shot.png")
+    cv2.imwrite(photo, synth_photo())
+    cv2.imwrite(shot, synth_photo(w=300, h=300))
+    ui = UI(home, os.path.join(home, ".screengraft", "sessions", "q"),
+            os.path.join(td, "q", "out"))
+    try:
+        ui.post("/api/use", {"role": "photo", "path": photo})
+        ui.post("/api/use", {"role": "screenshot", "path": shot})
+        code, r = ui.post("/api/preview_video", BODY)
+        ok("a still screen source is refused, not encoded",
+           code == 400 and "not a video" in r.get("error", ""), f"{code} {str(r)[:70]}")
+    finally:
+        ui.stop()
+
+
 def main():
     if not W.ffmpeg_exe():
         msg = "ffmpeg unavailable - the render route cannot be exercised"
@@ -552,6 +654,8 @@ def main():
         click_to_pick(td)
         session_sweep(td)
         version_badge(td)
+        preview_is_not_a_render(td)
+        preview_refuses_a_still(td)
     print()
     if FAILED:
         print(f"FAILED ({len(FAILED)}): " + "; ".join(FAILED))
