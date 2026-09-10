@@ -428,6 +428,27 @@ def click_to_pick(td):
             ok("...and does not move an answer detection already had",
                moved < 2.0, f"moved {moved:.1f}px")
 
+        # The instrument, over HTTP. Asked for, or it does not appear:
+        # the page renders none of this and a few hundred quads in a response
+        # nobody reads is a cost with no reader.
+        code, plain = ui.post("/api/detect", {})
+        ok("no trace unless it is asked for", "trace" not in plain, str(plain.get("trace"))[:60])
+        code, tr = ui.post("/api/detect", {"trace": True})
+        info = tr.get("trace") or {}
+        ok("asking for a trace answers with where it went",
+           code == 200 and info.get("candidates", 0) > 0 and os.path.isfile(info.get("path", "")),
+           str(info)[:120])
+        if info.get("path"):
+            doc = json.load(open(info["path"]))
+            ok("...and the file holds one row per candidate",
+               len(doc["candidates"]) == info["candidates"] == doc["counts"]["candidates"],
+               f"{len(doc['candidates'])} rows")
+            ok("...beside the session, where a .json survives the sweep",
+               os.path.realpath(os.path.dirname(info["path"]))
+               == os.path.realpath(ui.info["session"])
+               and info["path"].endswith(".json"),
+               info["path"])
+
         # The click must not be able to invent a screen where there is none.
         code, r2 = ui.post("/api/detect", {"click": [2.0, 2.0]})
         far_ok = code == 200 and (not r2.get("found") or q0 is None or float(np.max(

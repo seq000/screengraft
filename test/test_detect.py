@@ -40,6 +40,95 @@ def check(name, cond, detail=""):
     return cond
 
 
+def trace_checks(photo_path, truth):
+    """The detection instrument.
+
+    Its job is to answer one question the project has never been able to ask:
+    when detection is wrong, was the true screen never PROPOSED, or proposed and
+    beaten? Those have opposite fixes — recall work against ranking work — and
+    every diagnosis so far has come from printing this list by hand.
+
+    So the checks are about the instrument being trustworthy, in this order:
+    it must not change what it measures, it must account for every candidate,
+    and it must actually be able to answer the recall question on a photograph
+    where the answer is known.
+    """
+    failures = 0
+    photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
+    gray = cv2.cvtColor(photo, cv2.COLOR_BGR2GRAY)
+
+    plain = D.detect(gray, color=photo)
+    rows = []
+    traced = D.detect(gray, color=photo, trace=rows)
+    a = {k: v for k, v in plain.items() if k != "_corners_np"}
+    b = {k: v for k, v in traced.items() if k != "_corners_np"}
+    # An instrument that perturbs what it measures is worse than no instrument.
+    failures += not check("tracing does not change the answer", a == b,
+                          "" if a == b else "the traced run returned something else")
+    failures += not check("...and it produced rows", len(rows) > 0, f"{len(rows)} candidates")
+
+    VERDICTS = {"accepted", "rejected", "unreached", "filtered_by_click"}
+    shaped = all(isinstance(r.get("score"), float)
+                 and r.get("method") in ("tone", "edge", "saturation")
+                 and r.get("verdict") in VERDICTS
+                 and len(r.get("quad", [])) == 4
+                 and all(len(p) == 2 for p in r["quad"])
+                 for r in rows)
+    failures += not check("every row carries a method, a score, a quad and a verdict", shaped,
+                          "" if shaped else str(next(r for r in rows if r.get("verdict")
+                                                     not in VERDICTS or len(r.get("quad", [])) != 4)))
+
+    # The recall question, asked and answered on a photograph whose screen is
+    # known: is the truth among the things the detectors PROPOSED? On this
+    # fixture it must be, and the winner must be that candidate — a trace where
+    # the best candidate is not the accepted one is exactly the ranking failure
+    # this file exists to be able to name.
+    def worst(quad):
+        return float(np.max(np.linalg.norm(np.array(quad, float) - truth, axis=1)))
+
+    best = min(rows, key=lambda r: worst(r["quad"]))
+    failures += not check("the trace can answer the recall question",
+                          worst(best["quad"]) < 40.0,
+                          f"closest candidate is {worst(best['quad']):.1f}px from the truth")
+    failures += not check("...and on this fixture the closest candidate is one that WON",
+                          best["verdict"] == "accepted",
+                          f"closest candidate was {best['verdict']}")
+
+    # A click filters before ranking, and the trace has to show what it removed
+    # — "never judged because the user pointed elsewhere" and "never judged
+    # because something better was accepted first" are different facts.
+    centre = tuple(truth.mean(axis=0))
+    crows = []
+    D.detect(gray, color=photo, click=centre, trace=crows)
+    filtered = [r for r in crows if r["verdict"] == "filtered_by_click"]
+    failures += not check("a click marks the candidates it removed",
+                          len(filtered) > 0 and all(r["contains_click"] is False for r in filtered),
+                          f"{len(filtered)} of {len(crows)} filtered")
+    failures += not check("...and nothing it removed was then accepted",
+                          not any(r["verdict"] == "accepted" and not r.get("contains_click", True)
+                                  for r in crows))
+    inside = [r for r in crows if r["verdict"] != "filtered_by_click"]
+    failures += not check("...and every surviving candidate really does contain the click",
+                          all(D.contains(r["quad"], centre) >= 0 for r in inside),
+                          f"{len(inside)} survivors")
+
+    # The file is the product: a benchmark reads it, not the return value.
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "candidates.json")
+        D.write_trace(path, photo_path, photo.shape, centre, traced, crows)
+        with open(path) as f:
+            doc = json.load(f)
+        failures += not check("the trace file accounts for every candidate",
+                              doc["counts"]["candidates"] == len(crows)
+                              and sum(v for k, v in doc["counts"].items()
+                                      if k != "candidates") == len(crows),
+                              str(doc["counts"]))
+        failures += not check("...and names the run it came from",
+                              doc["photo"] == photo_path and doc["click"] == list(centre)
+                              and doc["chosen"]["method"] in ("tone", "edge", "saturation"))
+    return failures
+
+
 def main():
     failures = 0
     photo_path = os.path.join(FIXTURES, "photo.png")
@@ -311,6 +400,9 @@ def main():
     failures += not check("fixture detection survives the abstention gate",
                           bool(rf) and not rf.get("abstained"),
                           (rf or {}).get("abstain_reason", ""))
+
+    print("the detection instrument")
+    failures += trace_checks(photo_path, load_truth())
 
     print()
     if failures:

@@ -504,8 +504,24 @@ def contains(quad, point) -> bool:
                                 (float(point[0]), float(point[1])), False) >= 0
 
 
+def _tag_json(tag):
+    """Whatever a detector used to label a candidate: a tone band, a threshold."""
+    if isinstance(tag, (tuple, list)):
+        return [int(t) for t in tag]
+    return int(tag) if isinstance(tag, (int, float, np.integer, np.floating)) else tag
+
+
+def _trace_row(method, score, quad, tag, verdict, why=""):
+    return {"method": method,
+            "score": round(float(score), 5),
+            "tag": _tag_json(tag),
+            "quad": [[round(float(x), 1), round(float(y), 1)] for x, y in quad],
+            "verdict": verdict,
+            "why": why}
+
+
 def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
-              click=None):
+              click=None, trace=None, method=None):
     """Best candidate that survives refinement AND validation.
 
     Walks candidates best-score-first rather than trusting the top one: a
@@ -521,6 +537,7 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
     78px off an otherwise correct quad . The polygon approximation of a
     Canny boundary is already on the edge, so there is nothing to recover.
     """
+    generated = candidates
     if click is not None:
         # Before ranking, not after: the point of the click is to shrink the
         # field to the things the user actually pointed at, and let the existing
@@ -528,6 +545,18 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
         # re-confirm whichever candidate already won.
         candidates = [c for c in candidates if contains(c[1], click)]
     rejected = []
+    # The instrument. Every diagnosis this project has made about
+    # detection began by printing this list by hand, and TWICE it changed what
+    # the fix was: the 7 Sep rescoring that was the obvious answer and was
+    # wrong, because the true screen was never generated at all (693px away);
+    # and the click feature, where the correct quad turned out to be the top-scoring
+    # candidate containing the click, which deleted most of the planned work.
+    #
+    # What it exists to separate is RECALL from RANKING -- was the screen never
+    # proposed, or proposed and beaten? Those have opposite fixes and this
+    # project has never had the number. Off unless asked for, and it must not
+    # change the answer: it observes the same lists the walk below uses.
+    walked = {}
     for cand in sorted(candidates, key=lambda c: c[0], reverse=True):
         score, quad, contour, tag = pick_innermost(candidates, cand)
         if refine:
@@ -536,7 +565,16 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
             refined, did_refine = quad, False
         corners = order_quad(refined)
         ok, why = validate_quad(corners, contour, img_area, img_shape)
+        if trace is not None:
+            # "accepted" by its own CHANNEL, which is not the same as winning:
+            # each of tone, edge and saturation accepts one, and detect() then
+            # arbitrates between them. The file's top-level `chosen` says which
+            # channel actually won, so a trace with three accepted rows and one
+            # chosen method is right, not a contradiction.
+            walked[id(cand)] = ("accepted", "") if ok else ("rejected", why)
         if ok:
+            if trace is not None:
+                trace.extend(_walk_rows(generated, candidates, walked, method, click))
             return {
                 "corners": [[round(float(x), 1), round(float(y), 1)] for x, y in corners],
                 "score": round(float(score), 5),
@@ -547,10 +585,37 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
                 "rejected": rejected,
             }
         rejected.append({"score": round(float(score), 5), "tag": tag, "why": why})
+    if trace is not None:
+        trace.extend(_walk_rows(generated, candidates, walked, method, click))
     return None
 
 
-def detect_tone(gray: np.ndarray, tone=None, click=None):
+def _walk_rows(generated, survived, walked, method, click):
+    """One row per candidate the detector GENERATED, with what became of it.
+
+    Four verdicts, and the distinction between the last two is the whole point:
+    `filtered_by_click` and `unreached` both mean "never judged", but one is the
+    user narrowing the field and the other is a higher-scoring candidate winning
+    first. A recall analysis needs to see quads in all four states, so nothing
+    is dropped from this list -- it is written to a file, not to a page.
+    """
+    kept = {id(c) for c in survived}
+    rows = []
+    for cand in generated:
+        score, quad, _contour, tag = cand
+        if id(cand) not in kept:
+            verdict, why = "filtered_by_click", "the click was not inside this quad"
+        else:
+            verdict, why = walked.get(id(cand), ("unreached",
+                                                 "a higher-scoring candidate was accepted first"))
+        rows.append(_trace_row(method, score, quad, tag, verdict, why))
+    if click is not None:
+        for r in rows:
+            r["contains_click"] = r["verdict"] != "filtered_by_click"
+    return rows
+
+
+def detect_tone(gray: np.ndarray, tone=None, click=None, trace=None):
     """Tone-band segmentation. Assumes the screen sits in a narrow tone band."""
     h, w = gray.shape[:2]
     img_area = float(h * w)
@@ -581,7 +646,8 @@ def detect_tone(gray: np.ndarray, tone=None, click=None):
             score *= (16.0 / (hi - lo + 1)) ** 0.25
             candidates.append((score, order_quad(quad), contour, (lo, hi)))
 
-    res = _finalize(candidates, img_area, img_shape=gray.shape[:2], click=click)
+    res = _finalize(candidates, img_area, img_shape=gray.shape[:2], click=click,
+                    trace=trace, method="tone")
     if res is None:
         return None
     band = res.pop("_tag")
@@ -590,7 +656,7 @@ def detect_tone(gray: np.ndarray, tone=None, click=None):
     return res
 
 
-def detect_edges(gray: np.ndarray, click=None):
+def detect_edges(gray: np.ndarray, click=None, trace=None):
     """Canny-and-quad detection — the document-scanner path.
 
     Tone banding assumes a near-uniform screen, which breaks the moment the
@@ -629,7 +695,8 @@ def detect_edges(gray: np.ndarray, click=None):
             if score > 0 and quad is not None:
                 candidates.append((score, order_quad(quad), c, (lo, hi)))
 
-    res = _finalize(candidates, img_area, refine=False, img_shape=gray.shape[:2], click=click)
+    res = _finalize(candidates, img_area, refine=False, img_shape=gray.shape[:2],
+                    click=click, trace=trace, method="edge")
     if res is None:
         return None
     thr = res.pop("_tag")
@@ -638,7 +705,7 @@ def detect_edges(gray: np.ndarray, click=None):
     return res
 
 
-def detect_saturation(bgr: np.ndarray, click=None):
+def detect_saturation(bgr: np.ndarray, click=None, trace=None):
     """Neutral-region segmentation — the third detector, and the only one that
     looks at colour.
 
@@ -675,7 +742,8 @@ def detect_saturation(bgr: np.ndarray, click=None):
                 candidates.append((score * (32.0 / max(thr, 1)) ** 0.25,
                                    order_quad(quad), contour, thr))
 
-    res = _finalize(candidates, img_area, img_shape=sat.shape[:2], click=click)
+    res = _finalize(candidates, img_area, img_shape=sat.shape[:2], click=click,
+                    trace=trace, method="saturation")
     if res is None:
         return None
     res.pop("_tag")
@@ -702,7 +770,8 @@ def has_rounded_corners(result) -> bool:
     return spread <= MAX_RADIUS_SPREAD
 
 
-def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None):
+def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
+           trace=None):
     """Run both detectors; arbitrate on how the two quads nest.
 
     The two fail on opposite things. Tone banding needs a tonally uniform
@@ -726,17 +795,21 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None):
     Disagreement is reported, never silently resolved — the human confirms
     the corners either way.
     """
+    # `trace`, when given, is a list this fills with one row per candidate every
+    # channel generated. It is an OBSERVER: nothing downstream reads it,
+    # and the answer is identical with and without -- which is asserted, because
+    # an instrument that perturbs what it measures is worse than none.
     results = []
     if method in ("auto", "tone"):
-        r = detect_tone(gray, tone, click=click)
+        r = detect_tone(gray, tone, click=click, trace=trace)
         if r:
             results.append(r)
     if method in ("auto", "edge") and tone is None:
-        r = detect_edges(gray, click=click)
+        r = detect_edges(gray, click=click, trace=trace)
         if r:
             results.append(r)
     if method in ("auto", "saturation") and tone is None and color is not None:
-        r = detect_saturation(color, click=click)
+        r = detect_saturation(color, click=click, trace=trace)
         if r:
             results.append(r)
 
@@ -892,6 +965,34 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None):
     return best
 
 
+def write_trace(path, photo_path, shape, click, result, rows):
+    """The candidate list as a file, which is the form a benchmark can read.
+
+    Deliberately not folded into the sidecar: `result.json` is the recipe for
+    reproducing a composite and is contract-tested against compose()'s
+    signature, so hanging diagnostics off it would couple two things that
+    change for different reasons. This is a separate artefact of a separate
+    run.
+    """
+    by_verdict = {}
+    for r in rows:
+        by_verdict[r["verdict"]] = by_verdict.get(r["verdict"], 0) + 1
+    with open(path, "w") as f:
+        json.dump({
+            "photo": photo_path,
+            "size": [int(shape[1]), int(shape[0])],
+            "click": list(click) if click else None,
+            "chosen": None if result is None else {
+                "method": result.get("method"),
+                "corners": result.get("corners"),
+                "abstained": bool(result.get("abstained")),
+            },
+            "counts": {"candidates": len(rows), **by_verdict},
+            "candidates": rows,
+        }, f, indent=1)
+    return by_verdict
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--photo", required=True)
@@ -899,6 +1000,9 @@ def main() -> None:
     ap.add_argument("--out-overlay", help="Optional PNG showing the detected quad on the photo")
     ap.add_argument("--out-zooms", help="Optional directory for 2x corner close-ups")
     ap.add_argument("--tone", help="Skip the sweep and force one band, e.g. --tone 20,40")
+    ap.add_argument("--click", help="A point inside the screen, X,Y in photo pixels")
+    ap.add_argument("--trace", help="Write every candidate quad, with its score and "
+                                    "what became of it, to this JSON file")
     args = ap.parse_args()
 
     photo = cv2.imread(args.photo, cv2.IMREAD_COLOR)
@@ -914,7 +1018,23 @@ def main() -> None:
         except ValueError:
             sys.exit("error: --tone must be LO,HI (e.g. 20,40)")
 
-    result = detect(gray, tone)
+    click = None
+    if args.click:
+        try:
+            click = tuple(float(v) for v in args.click.split(","))
+            if len(click) != 2:
+                raise ValueError
+        except ValueError:
+            sys.exit("error: --click must be X,Y (e.g. --click 850,637)")
+
+    trace = [] if args.trace else None
+    result = detect(gray, tone, color=photo, click=click, trace=trace)
+    if trace is not None:
+        # Written whether or not anything was found: a run that found NOTHING is
+        # the most interesting one to inspect, and it is exactly the run that
+        # would otherwise leave no trace at all.
+        write_trace(args.trace, args.photo, photo.shape, click, result, trace)
+        print(f"trace: {len(trace)} candidates -> {args.trace}", file=sys.stderr)
     if result is None:
         sys.exit(
             "error: no screen-like quad found. The screen's tone probably isn't "

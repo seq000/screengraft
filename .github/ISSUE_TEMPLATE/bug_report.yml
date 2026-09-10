@@ -53,6 +53,17 @@ body:
       render: json
 
   - type: textarea
+    id: candidates
+    attributes:
+      label: The detection trace (candidates.json), if this is about detection
+      description: >-
+        Only if the screen was found in the wrong place, or not found at all.
+        Re-run with the trace on and paste the file: it says whether the right
+        quad was ever proposed, which is the difference between two completely
+        different bugs. From the CLI, add --trace FILE to scripts/detect.py.
+      render: json
+
+  - type: textarea
     id: images
     attributes:
       label: The photo and the screenshot, or the output

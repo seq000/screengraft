@@ -218,13 +218,51 @@ def store_behaviour(td):
         FIT.MAX_FITS = keep
 
 
+def role_is_not_a_write_primitive(td):
+    print("\nthe role names a session key, so only the two real roles are accepted")
+    ui, _home, photo, _shot = build(td, "d")
+    try:
+        before = dict(ui.state())
+        for bad in ("output", "corners", "fit_frame"):
+            code, r = ui.post("/api/use", {"role": bad, "path": photo})
+            ok(f"role={bad!r} is refused", code == 400, f"status {code} {str(r)[:60]}")
+            ok("...and wrote no session state", ui.state().get(bad) == before.get(bad),
+               f"{bad} = {ui.state().get(bad)!r}")
+        # And the real thing still works, or the guard has just broken the tool.
+        code, _ = ui.post("/api/use", {"role": "photo", "path": photo})
+        ok("a real role still works", code == 200, f"status {code}")
+    finally:
+        ui.stop()
+
+
+def concurrent_remembers(td):
+    print("\nremembering is read-modify-write, so it holds a lock")
+    home = os.path.join(td, "e")
+    os.makedirs(home)
+    os.environ["HOME"] = home
+    # 40 writers against one file. Unlocked, load-modify-write loses entries:
+    # os.replace keeps the FILE intact and says nothing about lost updates.
+    import threading
+    ts = [threading.Thread(target=FIT.remember,
+                           args=(f"key{i}", CORNERS, 0.05, "phone"))
+          for i in range(40)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    got = json.load(open(FIT.store_path()))["fits"]
+    ok("every concurrent fit survived", len(got) == 40, f"{len(got)} of 40")
+
+
 def main():
     home = os.environ.get("HOME")
     try:
         with tempfile.TemporaryDirectory() as td:
             remembering(td)
             reproduces(td)
+            role_is_not_a_write_primitive(td)
             store_behaviour(td)
+            concurrent_remembers(td)
     finally:
         if home:
             os.environ["HOME"] = home

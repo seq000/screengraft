@@ -9,6 +9,63 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.27.0] - 2026-09-10
+
+### Added
+
+- **The candidate list is an output now, not something to print by hand (SG66).**
+  `detect()` generates candidate quads across three channels and returns one;
+  the rest were discarded. Every diagnosis this project has made about detection
+  began by instrumenting that list by hand, and **twice it changed what the fix
+  was**: the rescore that was the obvious answer on 7 Sep and was wrong, because
+  the true screen was never generated at all (693px away); and SG46, where the
+  correct quad turned out to be the top-scoring candidate containing the click,
+  which deleted most of the planned work.
+
+  What it exists to separate is **recall from ranking** — was the screen never
+  proposed, or proposed and beaten? Those have opposite fixes, and this project
+  has never had the number.
+
+  `detect(..., trace=[])` fills a list with one row per candidate: method,
+  score, the band or threshold that produced it, the quad, and what became of it
+  — `accepted` by its channel, `rejected` (with the validator's reason),
+  `unreached` because a higher-scoring candidate was accepted first, or
+  `filtered_by_click`. Those last two both mean "never judged", and telling them
+  apart is the point. Two ways in: `scripts/detect.py --trace FILE`, which also
+  takes `--click X,Y`, and `POST /api/detect {"trace": true}`, which writes
+  `<session>/candidates.json` and answers with the counts and the path rather
+  than several hundred quads the page would not render.
+
+  **It is an observer.** The answer is identical with and without it, asserted
+  rather than assumed — planting a trace that drops one candidate turns that
+  check red. Off unless asked for, no new dependency, and the file is a `.json`
+  beside the session, so the sweep leaves it alone. It is kept out of
+  `result.json` deliberately: the sidecar is the recipe for reproducing a
+  composite and is contract-tested against `compose()`'s signature, and hanging
+  diagnostics off it would couple two things that change for different reasons.
+
+  On the fixture the instrument already answers its own question: the closest of
+  36 candidates is **6.4px** from ground truth, and it is the one that won.
+
+### Fixed
+
+- **`/api/use` and `/api/upload` accepted any `role` (SG67).** The role names a
+  session-state key and the handler writes it, so an unchecked role was a write
+  primitive: `role="output"` sets the pointer `/api/import` reads, and the agent
+  is then asked to show whatever file that names — any readable file under
+  `$HOME`. Nothing on this port authenticates, so the caller is not necessarily
+  the page. Two roles exist; anything else is now a 400 that changes no state.
+  Pre-existing in both routes, surfaced by the refactor that merged them.
+- **The remembered-fits store holds a lock now (SG67).** `_load` → mutate → `_save`
+  is read-modify-write, and `os.replace` keeps the file from tearing while
+  saying nothing about lost updates. Measured with the lock removed: **40
+  concurrent writes leave 5 entries.**
+
+### Changed
+
+- The bug template asks for `candidates.json` when the report is about
+  detection, next to where it asks for the sidecar.
+
 ## [0.26.0] - 2026-09-10
 
 ### Added

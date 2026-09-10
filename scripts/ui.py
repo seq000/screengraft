@@ -532,6 +532,9 @@ def _blend_args(b):
     return "emissive", float(max(0.0, min(1.0, float(r))))
 
 
+ROLES = ("photo", "screenshot")
+
+
 def _adopt(role, path):
     """Make a chosen source the session's, and answer what the page needs.
 
@@ -542,6 +545,13 @@ def _adopt(role, path):
     the fit lookup would have made it three, and a set of writers that
     disagree is a defect this project has already shipped once.
     """
+    # The role names a session-state key, and the line below writes it, so an
+    # unchecked role is a write primitive: role="output" sets the pointer
+    # /api/import reads, and the agent is then asked to show whatever file that
+    # names. Nothing on this port authenticates, so the caller is not
+    # necessarily the page. Two roles exist; anything else is a 400.
+    if role not in ROLES:
+        raise ValueError(f"role must be one of {', '.join(ROLES)}")
     if role == "screenshot":
         SESSION.update(fit_frame=0)
         im, real, meta = _read_source(path)
@@ -744,9 +754,23 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("the click is outside the photograph")
                 # `color` gives detect() the saturation detector — devices are
                 # neutral, furniture is not, and grayscale throws that away.
-                res = D.detect(gray, None, color=photo, click=click)
+                # The instrument, off unless asked for: the full
+                # candidate list, with each quad's score and what became of it,
+                # written beside the session. The page never shows it -- it is
+                # for the next person diagnosing a detection failure, and for a
+                # benchmark that needs to tell "never proposed" from "proposed
+                # and beaten". The response carries the counts and the path, not
+                # several hundred quads nobody asked the page to render.
+                trace = [] if (isinstance(b, dict) and b.get("trace")) else None
+                res = D.detect(gray, None, color=photo, click=click, trace=trace)
+                if trace is not None:
+                    tpath = os.path.join(SESSION.dir, "candidates.json")
+                    counts = D.write_trace(tpath, SESSION.state["photo"], photo.shape,
+                                           click, res, trace)
+                    trace_info = {"path": tpath, "candidates": len(trace), **counts}
                 if res is None:
                     return self._json({"found": False, "clicked": click is not None,
+                                       **({"trace": trace_info} if trace is not None else {}),
                                        "message": ("Nothing screen-shaped was found around that "
                                                    "point — try clicking nearer the middle of the "
                                                    "screen." if click is not None else
@@ -762,6 +786,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"found": False,
                                        "message": res["abstain_reason"],
                                        "abstained": True,
+                                       **({"trace": trace_info} if trace is not None else {}),
                                        "inspect": res["corners"]})
                 res.pop("_corners_np", None)
                 res["found"] = True
@@ -771,6 +796,8 @@ class Handler(BaseHTTPRequestHandler):
                 res["confidence"] = ("corroborated" if res.get("agreement", {}).get("agree")
                                      else "unconfirmed")
                 res["type_guess"] = _guess_type(res["corners"])
+                if trace is not None:
+                    res["trace"] = trace_info
                 return self._json(res)
 
             if u.path == "/api/frame":

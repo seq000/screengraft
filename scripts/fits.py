@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 
 # Enough that nobody working normally reaches it — an entry is ~200 bytes, so
@@ -36,6 +37,13 @@ import time
 # limit on a machine that fits mockups all day.
 MAX_FITS = 500
 VERSION = 1
+
+# The server is threaded, and remembering is read-modify-write: load the store,
+# add one entry, write it back. os.replace stops the FILE from tearing and does
+# nothing about a lost update -- a render worker finishing while a save runs
+# would drop whichever entry was written first. The whole sequence is short and
+# uncontended, so one lock around it costs nothing worth measuring.
+_LOCK = threading.Lock()
 
 
 def store_path():
@@ -95,6 +103,11 @@ def remember(key, corners, radius_frac, device, photo_path=None, size=None):
     """
     if not key or not corners:
         return None
+    with _LOCK:
+        return _remember_locked(key, corners, radius_frac, device, photo_path, size)
+
+
+def _remember_locked(key, corners, radius_frac, device, photo_path, size):
     fits = _load()
     entry = {"corners": [[float(x), float(y)] for x, y in corners],
              "radius_frac": float(radius_frac or 0.0),

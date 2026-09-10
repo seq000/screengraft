@@ -159,6 +159,13 @@ What survives either way is the `result.json` sidecar: a few hundred bytes
 recording the corners, radius, grade and blend of that fit. It reproduces a
 composite exactly, and it is the first thing a bug report should include.
 
+**A detection trace**, when you ask for one, is written to
+`<session>/candidates.json`: every candidate quad the detectors generated, with
+its score and whether it was accepted, rejected, never reached, or filtered out
+by your click. Ask for it with `POST /api/detect {"trace": true}`, or from the
+CLI with `scripts/detect.py --trace FILE`. Nothing produces it unless asked, and
+it is the right thing to attach to a bug report about detection.
+
 **Remembered fits** live in `~/.screengraft/fits.json`, outside any session so a
 sweep cannot take them. Each entry is the four corners, the radius fraction and
 the device, keyed by a hash of the photograph's decoded pixels — no image data,
