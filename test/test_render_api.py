@@ -16,6 +16,7 @@ Run: ~/.screengraft/venv/bin/python test/test_render_api.py
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -326,38 +327,52 @@ def version_badge(td):
            st.get("build", "").startswith("dev"), f"build={st.get('build')!r}")
 
         # The discrimination this badge exists for, tested the only way that
-        # means anything: run the server from an UNPACKED .plugin, which is what
-        # an installed copy is, and require it NOT to claim to be a dev build.
+        # means anything: run the server from a tree with no .git -- which is
+        # exactly the shape of an installed copy -- and require it NOT to claim
+        # to be a dev build.
+        #
+        # Built from a COPY rather than from dist/*.plugin on purpose. Depending
+        # on a build artefact would make this test pass or fail on the order the
+        # steps happen to run in: CI never builds the .plugin at all, so the
+        # artefact version of this check was red there and green locally, which
+        # is the worst of both. The .plugin is still checked below, when one
+        # happens to exist.
+        installed = os.path.join(td, "installed")
+        shutil.copytree(ROOT, installed,
+                        ignore=shutil.ignore_patterns(".git", "__pycache__", "dist",
+                                                      "test-output", "node_modules"))
+        home2 = os.path.join(td, "vhome"); os.makedirs(home2, exist_ok=True)
+        proc = subprocess.Popen(
+            [sys.executable, os.path.join(installed, "scripts", "ui.py"),
+             "--port", "0", "--no-open", "--session", os.path.join(td, "vsess"),
+             "--out-dir", os.path.join(td, "vout")],
+            env={**os.environ, "HOME": home2},
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        try:
+            info = json.loads(proc.stdout.readline())
+            with urllib.request.urlopen(info["url"].rstrip("/") + "/api/state",
+                                        timeout=30) as r:
+                st2 = json.load(r)
+            ok("a copy with no .git is NOT labelled dev", st2.get("build") == "",
+               f"build={st2.get('build')!r}")
+            ok("...and still reports its version", st2.get("version") == manifest["version"],
+               str(st2.get("version")))
+        finally:
+            proc.terminate()
+            try: proc.wait(timeout=10)
+            except subprocess.TimeoutExpired: proc.kill()
+
+        # And when a build does exist, it must not be carrying .git either --
+        # that is what makes the copy above a fair stand-in for it.
         import zipfile
         plug = os.path.join(ROOT, "dist", f"screengraft-{manifest['version']}.plugin")
         if os.path.exists(plug):
-            unpacked = os.path.join(td, "unpacked")
             with zipfile.ZipFile(plug) as z:
-                z.extractall(unpacked)
+                names = z.namelist()
             ok("the packaged plugin carries no .git (the discriminator)",
-               not os.path.isdir(os.path.join(unpacked, ".git")))
-            home2 = os.path.join(td, "vhome"); os.makedirs(home2, exist_ok=True)
-            proc = subprocess.Popen(
-                [sys.executable, os.path.join(unpacked, "scripts", "ui.py"),
-                 "--port", "0", "--no-open", "--session", os.path.join(td, "vsess"),
-                 "--out-dir", os.path.join(td, "vout")],
-                env={**os.environ, "HOME": home2},
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-            try:
-                info = json.loads(proc.stdout.readline())
-                with urllib.request.urlopen(info["url"].rstrip("/") + "/api/state",
-                                            timeout=30) as r:
-                    st2 = json.load(r)
-                ok("an installed copy is NOT labelled dev", st2.get("build") == "",
-                   f"build={st2.get('build')!r}")
-                ok("...and still reports its version", st2.get("version") == manifest["version"],
-                   str(st2.get("version")))
-            finally:
-                proc.terminate()
-                try: proc.wait(timeout=10)
-                except subprocess.TimeoutExpired: proc.kill()
+               not any(n.startswith(".git/") or "/.git/" in n for n in names))
         else:
-            ok("dist/*.plugin present to test the installed case", False, plug)
+            print("  ..    no dist/*.plugin to cross-check (not built yet)")
 
         page = open(os.path.join(ROOT, "ui", "index.html"), encoding="utf-8").read()
         hardcoded = manifest["version"] in page

@@ -164,6 +164,44 @@ good request after three bad ones answers 409.
   **ok** and its whole suite passes, while the new test fails with
   `mean |diff| to frame 11 = 37.24, to frame 0 = 0.00`.
 
+## [0.23.1] - 2026-09-10
+
+### Added
+
+- **The workbench shows its version, bottom right — and where that code came
+  from.** `v0.23.1` from an installed plugin; `v0.23.1 · dev a1b2c3d+` from a
+  working tree.
+
+  The version is read from `plugin.json` and served through `/api/state`, never
+  written into the page: a second place to write a version is a second place for
+  it to go stale, which is why `check_package.py` exists at all. If the manifest
+  cannot be read the badge stays empty, because no version beats a wrong one
+  once it is in a bug report.
+
+  The provenance half matters more than the number. A session materialises its
+  own private copy of every installed plugin when it starts and keeps that
+  snapshot for its whole life, so an installed copy and the tree being edited
+  drift apart within minutes. The symptom is a feature that is simply "not
+  there" — which reads exactly like a bug in the feature, and has cost two
+  debugging sessions: once testing the installed plugin while editing the tree,
+  and once the reverse. `.git` is the discriminator, since the packager excludes
+  it. The commit is shown because on a day with four releases "dev" does not say
+  *which* dev, and the `+` because a sha with uncommitted work behind it would
+  be a confident lie — the failure the badge exists to prevent.
+
+  Bottom-right, `pointer-events:none` so it can never take a click, and never
+  the accent: that means "the next action", and this is a fact about what you
+  are running rather than something to do. It sits in the dock's own padding
+  band, not over the rectified strip — the work surface keeps zero decoration.
+
+### Note on the number
+
+This release exists to *be* 0.23.1. The badge was built at Darek's instruction
+not to bump the version, which left an unreleased build claiming to be the
+published `v0.23.0` — the release-consistency problem raised in the 9 Sep review,
+in a new instance. Re-cutting 0.23.0 would have entrenched it. A metadata-only
+commit still changes the package, so it still needs a version.
+
 ## [Unreleased]
 
 ### Added
