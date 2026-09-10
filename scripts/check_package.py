@@ -78,7 +78,7 @@ for f in files:
         errors.append(f'{f} would be published')
 
 # The engine and the page have to be in there, or the package is a stub.
-for needed in ('scripts/warp.py', 'scripts/ui.py', 'ui/index.html', 'bin/screengraft.js'):
+for needed in ('scripts/warp.py', 'scripts/ui.py', 'ui/index.html', 'cli/screengraft.js'):
     if needed not in files:
         errors.append(f'{needed} is missing from the tarball')
 

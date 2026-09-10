@@ -1,6 +1,6 @@
 {
   "name": "screengraft",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Put a UI screenshot or screen recording onto a photographed device screen with the perspective exactly right \u2014 a homography you confirm by hand, not a generative guess.",
   "keywords": [
     "mockup",
@@ -33,10 +33,10 @@
   },
   "type": "commonjs",
   "bin": {
-    "screengraft": "bin/screengraft.js"
+    "screengraft": "cli/screengraft.js"
   },
   "files": [
-    "bin/",
+    "cli/",
     "scripts/",
     "ui/",
     "mcp/",
@@ -61,6 +61,6 @@
     "linux"
   ],
   "scripts": {
-    "start": "node bin/screengraft.js"
+    "start": "node cli/screengraft.js"
   }
 }

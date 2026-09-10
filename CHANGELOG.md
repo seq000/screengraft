@@ -9,6 +9,44 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.25.1] - 2026-09-10
+
+### Fixed
+
+- **The marketplace could not sync, and the message said to check the URL.**
+  Adding `seq000/screengraft` as a marketplace failed with *"Marketplace sync
+  failed. Check the repository URL and try again."* The URL was fine. So was
+  everything else on the GitHub side: the repo is public, `main` was current,
+  `.claude-plugin/marketplace.json` fetched anonymously and validated against
+  the published marketplace schema, and an anonymous clone produced the
+  manifest. The sync reached the repository, read it, and rejected its
+  **contents** — which the dialog does not say. The real error existed only in
+  the desktop app's log:
+
+  ```
+  marketplace_sync_bin_directory_not_allowed
+  Plugin contains a top-level bin/ directory ('bin/screengraft.js').
+  ```
+
+  The catalog declares `"source": "./"`, so the repository root *is* the
+  plugin — and the root also held `bin/screengraft.js`, the launcher that makes
+  `npx screengraft` work. One directory serving two distribution channels with
+  contradictory rules: npm wants a `bin`, the hosted marketplace forbids one,
+  because a `bin/` is added to PATH by the CLI but never shown on the admin
+  approval surface.
+
+  The launcher now lives in `cli/`. npm does not care where the file sits — only
+  the directory *name* trips the rule — so `npx screengraft` is unchanged, and
+  the packaged `.plugin` is unaffected because it never included the launcher in
+  the first place.
+
+  `check_marketplace.py` now fails on a top-level `bin/` under any relative
+  source, verified by putting the directory back and watching it go red. Worth
+  noting why nothing local caught this: the built `.plugin` never contained
+  `bin/`, so unpacking the artefact — this project's standing answer to "never
+  trust the config that produces it" — could not have found it. **The
+  marketplace validates the repository tree, not the package.**
+
 ## [0.25.0] - 2026-09-10
 
 ### Fixed

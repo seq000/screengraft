@@ -11,10 +11,28 @@ install and that are cheap to get wrong:
     fail, rather than erroring)
   - every relative source resolves inside the repo and holds a plugin.json
   - the entry's name matches that plugin.json's name
+  - no source directory has a top-level bin/, which the hosted marketplace
+    rejects outright
 
-The last one is the reason this file exists: the marketplace entry and the
-plugin manifest are two places saying the same thing, and nothing else notices
-when they drift.
+The name/manifest agreement is the reason this file exists: the marketplace
+entry and the plugin manifest are two places saying the same thing, and nothing
+else notices when they drift.
+
+The bin/ rule was added after a sync failure that took a log dive to explain.
+The dialog said "Marketplace sync failed. Check the repository URL and try
+again", which is wrong in a costly way — the repo was public, current, and its
+catalog validated against the published schema. The real error was only in the
+desktop app's log:
+
+    marketplace_sync_bin_directory_not_allowed
+    Plugin contains a top-level bin/ directory ('bin/screengraft.js').
+
+Our source is "./", so the repo root IS the plugin, and the repo root also held
+the npm launcher. One directory serving two channels, with contradictory rules:
+npm wants a bin, the hosted marketplace forbids one. Renaming it to cli/
+satisfies both, because the rule is about the directory NAME. Nothing local
+caught this — the built .plugin never contained bin/, so unpacking the artefact,
+which is this project's usual answer, could not have found it either.
 """
 import json
 import pathlib
@@ -77,6 +95,13 @@ for i, entry in enumerate(plugins or []):
     target = (ROOT / src).resolve()
     check(target == ROOT or ROOT in target.parents,
           f'{where} source {src!r} escapes the marketplace root')
+    # Rejected by the hosted marketplace, not by anything local: a bin/ is put
+    # on PATH by the CLI but never shown on the admin approval surface.
+    check(not (target / 'bin').is_dir(),
+          f'{where} source {src!r} has a top-level bin/ — the hosted marketplace '
+          f'refuses it (marketplace_sync_bin_directory_not_allowed). Executables '
+          f'belong in hooks, commands or mcpServers; an npm launcher can live in '
+          f'any directory not called bin/.')
     manifest = target / '.claude-plugin' / 'plugin.json'
     if not check(manifest.exists(), f'{where} source {src!r} has no .claude-plugin/plugin.json'):
         continue

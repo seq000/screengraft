@@ -76,7 +76,7 @@ npx screengraft --out-dir ./mockups
 ```
 
 npm is a delivery mechanism here, not a claim about the language: the tool is
-Python and OpenCV, and `bin/screengraft.js` is a launcher. It installs nothing
+Python and OpenCV, and `cli/screengraft.js` is a launcher. It installs nothing
 behind your back — if the engine is missing it prints the one command that
 builds it (`npx screengraft --install`) and exits.
 
