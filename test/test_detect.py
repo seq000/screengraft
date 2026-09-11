@@ -99,6 +99,19 @@ def tier_checks():
     out3 = D.arbitrate([tone_round, edge_round], shape)
     failures += not check("at equal tiers the tone channel still wins the non-nested case",
                           out3["method"] == "tone", f"chose {out3['method']}")
+
+    # The other branch that used to hand the win over unconditionally: tone
+    # absent, saturation present. Saturation won regardless of what edge had.
+    # Code review of v0.38.0 found that branch had the new rule but no test, so
+    # a plant there would have passed. Same shape: confident edge beats a
+    # merely rounded saturation quad, and loses at equal tiers.
+    sat_round = result("saturation", table, [30, 70, 20, 60], 45)
+    out4 = D.arbitrate([sat_round, edge_conf], shape)
+    failures += not check("with tone absent, a confident edge quad beats a rounded saturation quad",
+                          out4["method"] == "edge", f"chose {out4['method']}")
+    out5 = D.arbitrate([sat_round, edge_round], shape)
+    failures += not check("...and at equal tiers saturation still wins that branch",
+                          out5["method"] == "saturation", f"chose {out5['method']}")
     return failures
 
 
