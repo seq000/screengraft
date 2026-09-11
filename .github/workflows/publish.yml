@@ -70,13 +70,17 @@ jobs:
       - name: Read it back from the registry — this is the verdict
         if: env.already != 'true'
         run: |
+          # npm answers "your package is being processed and may take a few
+          # minutes" and means it: 0.38.0 became visible 2m37s after publish
+          # returned. The first version of this step gave up at 60s and marked
+          # a successful publish as failed. Ten minutes, polled every 20s.
           v="$(node -p "require('./package.json').version")"
-          for i in 1 2 3 4 5 6; do
-            if [ "$(npm view screengraft version 2>/dev/null)" = "$v" ]; then
+          for i in $(seq 1 30); do
+            if [ "$(npm view screengraft@"$v" version 2>/dev/null)" = "$v" ]; then
               echo "screengraft@$v is on the registry"
               exit 0
             fi
-            sleep 10
+            sleep 20
           done
           echo "registry still does not show screengraft@$v" >&2
           exit 1
