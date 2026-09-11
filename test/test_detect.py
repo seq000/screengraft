@@ -112,6 +112,46 @@ def tier_checks():
     out5 = D.arbitrate([sat_round, edge_round], shape)
     failures += not check("...and at equal tiers saturation still wins that branch",
                           out5["method"] == "saturation", f"chose {out5['method']}")
+
+    # --- nested: tiers first, the area ratio only to break a tie -------------
+    # Measured on the corpus (11 Sep 2026): a UI content region at 96% of the
+    # screen's area with loose corners sat inside a confident edge quad on two
+    # photographs, and the ratio rule read it as "screen inside body" -- 15%
+    # off, twice. And the hand-built table above showed the reverse hole: a
+    # confident screen at 34% of a loosely rounded table read as "content".
+    inset = [[c[0] + 12, c[1] + 16] for c in screen]                  # ~96% of the screen
+    inset[1][0] -= 24; inset[2][0] -= 24; inset[2][1] -= 32; inset[3][1] -= 32
+    tone_content = result("tone", inset, [30, 70, 20, 60], 45)         # tier 1, inside
+    out6 = D.arbitrate([tone_content, edge_conf], shape)
+    failures += not check("content at 96% inside a confident screen: the outer wins on tier",
+                          out6["method"] == "edge", f"chose {out6['method']}: {out6['agreement']['chosen_because'][:70]}")
+
+    big = [[100, 200], [1100, 220], [1090, 1500], [90, 1480]]           # screen is ~34% of it
+    tone_table = result("tone", big, [30, 70, 20, 60], 45)             # tier 1, outside
+    out7 = D.arbitrate([tone_table, edge_conf], shape)
+    failures += not check("a confident screen at 34% of a rounded table: the inner wins on tier",
+                          out7["method"] == "edge", f"chose {out7['method']}: {out7['agreement']['chosen_because'][:70]}")
+
+    # Equal tiers: the ratio still decides, exactly as before.
+    tone_content_c = result("tone", inset, [44, 46, 45, 45], 45)       # tier 2, inside at 96%
+    out8 = D.arbitrate([tone_content_c, edge_conf], shape)
+    failures += not check("equal tiers at 96%: still a screen inside a body, the inner wins",
+                          out8["method"] == "tone", f"chose {out8['method']}")
+    small = [[450, 600], [750, 610], [745, 1000], [445, 990]]          # ~25% of the screen
+    tone_slab_c = result("tone", small, [44, 46, 45, 45], 45)          # tier 2, inside at 25%
+    out9 = D.arbitrate([tone_slab_c, edge_conf], shape)
+    failures += not check("equal tiers at 25%: still content on the screen, the outer wins",
+                          out9["method"] == "edge", f"chose {out9['method']}")
+
+    # Symmetric: the nesting is read whichever channel is inside. iPhone-4 had
+    # an edge quad 3% off INSIDE a saturation quad 18% off at 94%, equal tiers,
+    # and the old code -- which only looked for the region inside the edge --
+    # called that "not nested" and let saturation win.
+    sat_body = result("saturation", [[280, 380], [920, 400], [910, 1320], [270, 1300]],
+                      [30, 70, 20, 60], 45)                             # tier 1, around the screen
+    out10 = D.arbitrate([sat_body, edge_round], shape)
+    failures += not check("an edge quad inside a saturation quad at a body ratio: the inner wins",
+                          out10["method"] == "edge", f"chose {out10['method']}: {out10['agreement']['chosen_because'][:70]}")
     return failures
 
 

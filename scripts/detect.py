@@ -996,22 +996,63 @@ def arbitrate(results, shape, click=None):
     sat = next((r for r in results if r["method"] == "saturation"), None)
     why = "it was the only detector left after the rounded-corner filter" \
         if len(results) == 1 else "its tone band assumption held, which is itself evidence"
-    if t and e:
-        tq, eq = t["_corners_np"], e["_corners_np"]
-        ta = float(cv2.contourArea(tq.astype(np.float32)))
+    # ONE region-vs-edge arbitration, for whichever region channel survived the
+    # rounded-corner filter above. Until 11 Sep 2026 only tone got the nesting
+    # rules; saturation-vs-edge fell through to "saturation wins". On iPhone-4
+    # that returned a saturation quad 18% off, nested around an edge quad 3%
+    # off at 94% of its area -- exactly the "screen inside a body" shape the
+    # tone branch already knew how to read.
+    region = t if t is not None else sat
+    rname = "tone" if t is not None else "saturation"
+    if region is not None and e is not None:
+        rq, eq = region["_corners_np"], e["_corners_np"]
+        ra = float(cv2.contourArea(rq.astype(np.float32)))
         ea = float(cv2.contourArea(eq.astype(np.float32)))
-        nested = overlap_frac(tq, eq) >= 0.90 and ta < ea
-        ratio = ta / ea if ea > 0 else 0.0
-        if nested and ratio < NEST_FLOOR:
-            best, why = e, ("the tone quad is only %.0f%% of the edge quad it sits "
-                            "inside — that's content drawn on the screen, not the "
-                            "screen" % (ratio * 100))
+        # Nesting is read on whichever quad is inside the other. It used to be
+        # read only with the region quad inside the edge quad, so an edge quad
+        # sitting inside a region quad (iPhone-4: edge 3% off inside a
+        # saturation quad 18% off at 94%) was "not nested" and fell through to
+        # the region winning by default.
+        inner, outer = (region, e) if ra < ea else (e, region)
+        iname, oname = (rname, "edge") if ra < ea else ("edge", rname)
+        nested = overlap_frac(inner["_corners_np"], outer["_corners_np"]) >= 0.90
+        ratio = min(ra, ea) / max(ra, ea) if max(ra, ea) > 0 else 0.0
+        ti, to = shape_tier(inner), shape_tier(outer)
+        tr, te = shape_tier(region), shape_tier(e)
+        # Nested: shape evidence first, the area ratio only to break a tie.
+        #
+        # The ratio alone reads "small inside big" as content-inside-screen and
+        # "large inside big" as screen-inside-body, and it is right on the
+        # gradient-screen fixture (41%: a slab on the screen) and on most
+        # photographs. It is wrong exactly when the quads' own corners say the
+        # opposite: a UI content region at 96% of the screen with loose corners
+        # (two of ten labelled photographs, 15% off) is not a screen inside a
+        # body, and a confident phone screen at 34% of a loosely-rounded table
+        # (the hand-built case in test_detect) is not content on it. Tiers
+        # decide those; at equal tiers the ratio still does, unchanged.
+        if nested and to > ti:
+            best, why = outer, ("the %s quad sits inside the %s quad at %.0f%% of its "
+                                "area, but the outer quad's corners agree on a radius "
+                                "(tier %d) and the inner's do not (tier %d) — content "
+                                "inside a screen, not a screen inside a body"
+                                % (iname, oname, ratio * 100, to, ti))
+        elif nested and ti > to:
+            best, why = inner, ("the %s quad sits inside the %s quad at %.0f%% of its "
+                                "area, and the inner quad's corners agree on a radius "
+                                "(tier %d) where the outer's do not (tier %d) — a "
+                                "screen on something larger"
+                                % (iname, oname, ratio * 100, ti, to))
+        elif nested and ratio < NEST_FLOOR:
+            best, why = outer, ("the %s quad is only %.0f%% of the %s quad it sits "
+                                "inside — that's content drawn on the screen, not the "
+                                "screen" % (iname, ratio * 100, oname))
         elif nested:
-            best, why = t, ("the tone quad sits inside the edge quad at %.0f%% of "
-                            "its area — a screen inside a device body" % (ratio * 100))
-        elif shape_tier(e) > shape_tier(t):
+            best, why = inner, ("the %s quad sits inside the %s quad at %.0f%% of "
+                                "its area — a screen inside a device body"
+                                % (iname, oname, ratio * 100))
+        elif te > tr:
             # Not nested, and the edge quad's own shape says "screen" more
-            # strongly than tone's does. Before 11 Sep 2026 tone won here
+            # strongly than the region's does. Before 11 Sep 2026 tone won here
             # unconditionally, on the argument that its band assumption holding
             # was itself evidence -- and on two of ten labelled photographs that
             # handed the answer to a tone quad 159% and 249% off, with corner
@@ -1019,22 +1060,12 @@ def arbitrate(results, shape, click=None):
             # radius. A band assumption is weaker evidence than four agreeing
             # corners; the tiers say so and this reads them.
             best, why = e, ("the two quads aren't nested and the edge quad's "
-                            "corners agree on a radius (tier %d) where tone's do "
-                            "not (tier %d)" % (shape_tier(e), shape_tier(t)))
+                            "corners agree on a radius (tier %d) where %s's do "
+                            "not (tier %d)" % (te, rname, tr))
         else:
-            best, why = t, ("the two quads aren't nested; tone's band assumption "
-                            "holding is itself evidence that it found a screen")
-    elif t is None and sat is not None:
-        # tone was dropped for having sharp corners, or never fired. The
-        # surviving region detector measured a real corner radius; edge usually
-        # cannot -- but when it did, and more confidently, it wins the same way.
-        if e is not None and shape_tier(e) > shape_tier(sat):
-            best, why = e, ("the edge quad's corners agree on a radius (tier %d) "
-                            "where saturation's do not (tier %d)"
-                            % (shape_tier(e), shape_tier(sat)))
-        else:
-            best, why = sat, ("the saturation detector found a region with rounded "
-                              "corners where tone did not")
+            best, why = region, ("the two quads aren't nested; %s's assumption "
+                                 "holding is itself evidence that it found a screen"
+                                 % rname)
     else:
         best = t or e or sat
     if best is None:

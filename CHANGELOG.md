@@ -9,6 +9,36 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.39.0] - 2026-09-11
+
+### Changed
+
+- **One region-vs-edge arbitration, read both ways, tiers before ratio. Good
+  unaided is 7/9 on the labelled bench (from 4/9); every answered photograph
+  is within 5% of its label; confidently-wrong stayed 0/9.**
+
+  Three things were wrong with how the surviving region channel (tone or
+  saturation) was weighed against the edge channel, each found by reading the
+  candidate list against the labels rather than guessing:
+
+  - **Saturation never got the nesting rules.** Only tone did; saturation vs
+    edge fell through to "saturation wins". On iPhone-4 that returned a
+    saturation quad 18% off wrapped around an edge quad 3% off at 94% of its
+    area — the exact screen-in-body shape the tone branch already read.
+  - **Nesting was only read with the region quad inside the edge quad.** An
+    edge quad inside a region quad was "not nested". Read on whichever is
+    inside now.
+  - **The area ratio cannot tell content-in-screen from screen-in-body on its
+    own.** A UI content region at 96% of the screen with loose corners sat
+    inside a confident edge quad on two photographs and was called "a screen
+    inside a body" — 15% off, twice. And the reverse: a confident screen at 34%
+    of a loosely rounded table would have been called content on it. Evidence
+    tiers decide those; at equal tiers the ratio still does, unchanged, which
+    is what keeps the gradient-screen fixture (41%, both tier 2) resolving to
+    the edge quad as before.
+
+  Six new hand-built arbitration cases in `test_detect.py`, two fault plants.
+
 ## [0.38.0] - 2026-09-11
 
 ### Changed
