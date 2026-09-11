@@ -243,6 +243,12 @@
   .stepper button.sel{background:var(--raise-hi);border-color:var(--edge-hi);color:var(--ink)}
   .stepper button.sel:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .stepper button{border-radius:0}
+  /* In the clip bar every control was 24px, so the stepper matched by default.
+     In the top bar its neighbours are 28px, and a 24px control beside a 28px
+     one reads as a misalignment rather than as hierarchy — the row has one
+     height. Scoped to #fmt so the component itself is unchanged wherever else
+     it is used. */
+  #fmt button{height:28px}
   .stepper button:first-child{border-top-left-radius:var(--r-sm);border-bottom-left-radius:var(--r-sm)}
   .stepper button:last-child{border-top-right-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
   /* One border between neighbours rather than two stacked. */
@@ -367,6 +373,12 @@
          -webkit-backdrop-filter:blur(5px);
          border-radius:var(--r-lg);box-shadow:var(--shadow)}
   .cvbar-actions{display:flex;align-items:center;gap:var(--s2);flex-wrap:nowrap}
+  /* The scrubber needs a floor, or the bar "fits" by crushing it. Moving the
+     format control out stopped the bar overflowing at 742px — and the space it
+     freed went to the other controls while the slider collapsed to FOUR pixels,
+     measured. The bar may scroll (it has overflow-x:auto by design); the one
+     control that is useless when small must not be the one that gives way. */
+  #vframe{min-width:140px;flex:1 1 180px}
   .cvbar{white-space:nowrap}
   /* `hidden` is a UA display:none, which any explicit display beats — and
      .cvbar sets display:flex. Without this the bar stays visible while the
@@ -780,9 +792,21 @@
       </div>
     </div>
     <span class="spacer"></span>
+    <!-- Order is the order of the work: choose the format, render, then send it.
+         The format was in the Result pane's clip bar, which is where you judge a
+         fit rather than where you decide what gets written — and it was the
+         fifth control in a bar that overflows at 742px, squeezing the frame
+         scrubber to nothing. It is a render setting, so it sits with Render.
+
+         The segmented control stays segmented: two mutually exclusive options of
+         equal weight, both readable without a click. It carries no accent, so
+         the one-accent-on-screen rule is untouched. -->
     <div class="tb-actions">
-      <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
+      <span class="stepper" id="fmt" role="radiogroup" aria-label="Output format" hidden>
+        <button class="sm sel" data-preset="web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button class="sm" data-preset="prores" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
+      </span>
       <button id="save" class="accent" disabled>Preview first</button>
+      <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
     </div>
   </header>
 
@@ -845,12 +869,12 @@
            unchanged — you match the edges on one frame and every frame gets the
            same geometry, because the photo does not move. -->
       <div class="cvbar" id="vidbar" hidden>
-        <!-- Play comes BEFORE the frame scrubber deliberately: both answer
-             "which moment of the clip am I looking at", and watching the whole
-             thing is the broader question. It is also the only way to judge the
-             two settings that change over time — the light match is bound once
-             from the fitted frame, and the emissive blend moves with the
-             content's own brightness. Neither is visible in a still. -->
+        <!-- What is left in this bar is only what the RESULT pane is for:
+             which moment of the clip you are looking at, and the two ways of
+             looking at it. The output format left for the top bar, beside
+             Render, because deciding how a file is written is not judging a
+             fit — and as the fifth control here it was squeezing the scrubber
+             to nothing at 742px. -->
         <span class="sm" style="color:var(--mute)">Fit on frame</span>
         <span class="cvbar-actions">
           <input type="range" id="vframe" min="0" max="0" value="0" step="1"
@@ -866,9 +890,6 @@
           </button>
           <button class="sm" id="playclip"
                   title="Composite a few seconds from the fitted frame through the real pipeline and play that. Slower — it is a render — but it is the only view with the grade, the grain and the true emissive blend.">Preview</button>
-          <span class="stepper" role="radiogroup" aria-label="Output format">
-            <button class="sm sel" data-preset="web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button class="sm" data-preset="prores" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
-          </span>
         </span>
       </div>
     </section>
@@ -2551,6 +2572,10 @@ function syncPlayable(){
 function syncVideoUI(){
   const v = st.video;
   $('#vidbar').hidden = !v;
+  // A still has no format to choose, so the control is not there at all — the
+  // same rule the clip bar already follows. It lives in the top bar now, so it
+  // has to be told; it used to be inside the bar being hidden.
+  $('#fmt').hidden = !v;
   syncPlayable();
   const b = $('#save');
   if (v && v.ffmpeg === false){

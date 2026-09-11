@@ -9,6 +9,39 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.32.0] - 2026-09-11
+
+### Changed
+
+- **The output format moved out of the Result pane and up beside Render.** It
+  was the fifth control in the clip bar — after the label, the scrubber, the
+  frame count, Play and Preview — and it is not a thing you judge a fit with. It
+  is a render setting, so it sits with Render.
+
+  The top bar now reads **Format · Render · Send to Claude**, which is the order
+  of the work: choose how it will be written, render it, then send it. *Send to
+  Claude* moved to the end for that reason; it was first.
+
+  It stays a **segmented control**. Two mutually exclusive options of equal
+  weight is what one is for, both stay readable without a click, and it carries
+  no accent — so the one-accent-on-screen rule is untouched. It is absent
+  entirely for a still, the same rule the clip bar already follows. Explored
+  against four alternatives first (split button, rail section, cycling chip,
+  settings menu) in `wireframe/1109-render-format-control/`; the three that
+  saved more space all did it by hiding which format is selected.
+
+### Fixed
+
+- **The frame scrubber has a floor.** Removing the format control stopped the
+  clip bar overflowing at 742px — and the space it freed went to the other
+  controls while the slider collapsed to **four pixels**, measured. The bar is
+  allowed to scroll; the one control that is useless when small is not allowed
+  to be the one that gives way. `min-width: 140px`, verified at 742px and
+  1600px.
+- The top-bar segmented control is 28px, matching its neighbours. In the clip
+  bar everything was 24px so it matched by default; beside a 28px button that
+  reads as a misalignment rather than as hierarchy.
+
 ## [0.31.1] - 2026-09-11
 
 ### Changed
