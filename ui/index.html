@@ -470,6 +470,15 @@
      reason a true-black UI stops reading as a hole. It is NOT the same maths as
      compose()'s emissive, and the page says so. */
   #liveVid.emissive{mix-blend-mode:screen}
+  /* An icon button is square and centres its glyph; everything else about it —
+     height, border, the raise ladder — stays whatever .sm already is, so the bar
+     keeps one button shape. */
+  /* `flex:none` and a min-width, not just a width: the bar is a nowrap flex row
+     that overflows at narrow widths, and a flex item with a width will happily
+     shrink to its content. Measured at 742px before this: the button was 13px
+     wide — the glyph and its border — which is a target nobody can hit. */
+  .sm.icon{display:inline-flex;align-items:center;justify-content:center;
+           flex:none;width:28px;min-width:28px;padding:0}
   /* An ID selector beats the UA's [hidden]{display:none}, so the rule above was
      switching `hidden` OFF for both of these. Invisible on the <img> (no src,
      no height) and glaring on the <video>, which renders a black box with a
@@ -842,13 +851,21 @@
              two settings that change over time — the light match is bound once
              from the fitted frame, and the emissive blend moves with the
              content's own brightness. Neither is visible in a still. -->
-        <button class="sm" id="playlive" title="Play the clip on the photo, right now. The browser applies the same four corners and corner radius, and approximates emissive with screen blending; the colour grade and grain are not in this view.">Play</button>
-        <button class="sm" id="playclip" title="Composite a few seconds from the fitted frame through the real pipeline and play that. Slower — it is a render — but it is the only view with the grade, the grain and the true emissive blend.">Render preview</button>
         <span class="sm" style="color:var(--mute)">Fit on frame</span>
         <span class="cvbar-actions">
           <input type="range" id="vframe" min="0" max="0" value="0" step="1"
                  aria-label="Which frame of the clip to match the edges on">
           <span class="sm" id="vframeLbl" style="color:var(--mute);min-width:9ch">0</span>
+          <!-- Viewing controls sit with the scrubber, which is the other viewing
+               control; the format stepper is about the OUTPUT and stays at the
+               end. Icon-only, so each carries an aria-label — a title alone
+               names it for a mouse and not for a screen reader. -->
+          <button class="sm icon" id="playlive" aria-label="Play the clip on the photo"
+                  title="Play the clip on the photo, right now. The browser applies the same four corners and corner radius, and approximates emissive with screen blending; the colour grade and grain are not in this view.">
+            <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" focusable="false"><path d="M3 1.5 10 6 3 10.5Z" fill="currentColor"/></svg>
+          </button>
+          <button class="sm" id="playclip"
+                  title="Composite a few seconds from the fitted frame through the real pipeline and play that. Slower — it is a render — but it is the only view with the grade, the grain and the true emissive blend.">Preview</button>
           <span class="stepper" role="radiogroup" aria-label="Output format">
             <button class="sm sel" data-preset="web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button class="sm" data-preset="prores" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
           </span>
@@ -2335,8 +2352,39 @@ function placeLiveVideo(){
   wrap.style.width = bg.style.width;
 }
 
+/* Play and Stop are the same control, because they are the same question asked
+   twice: is it running. Two buttons would leave one of them meaningless at all
+   times. */
+const PLAY_ICON = '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" focusable="false"><path d="M3 1.5 10 6 3 10.5Z" fill="currentColor"/></svg>';
+const STOP_ICON = '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" focusable="false"><rect x="2.5" y="2.5" width="7" height="7" rx="1" fill="currentColor"/></svg>';
+function setPlayIcon(playing){
+  const b = $('#playlive');
+  b.innerHTML = playing ? STOP_ICON : PLAY_ICON;
+  // The icon is the only label this button has, so the accessible name has to
+  // carry the state as well — a screen reader on a square that still says
+  // "Play" is being told the opposite of what is happening.
+  b.setAttribute('aria-label', playing ? 'Stop and return to the fitted frame'
+                                       : 'Play the clip on the photo');
+}
+
+/* Stopping returns to the FITTED frame, not to wherever playback happened to
+   be. That frame is the one the edges were matched against and the one the
+   light match is bound from, so it is the only frame the fit is actually a
+   statement about — leaving a random one on screen would invite judging the
+   quad against something the render never uses. */
+function stopLive(){
+  const v = $('#liveVid');
+  try { v.pause(); } catch(e){}
+  const fps = st.video && st.video.fps;
+  if (fps) v.currentTime = (+$('#vframe').value || 0) / fps;
+  setPlayIcon(false);
+  const s = $('#outSt');
+  s.textContent = `Stopped on frame ${+$('#vframe').value || 0} — the frame the edges are matched against`;
+}
+
 async function playLive(){
   if (!(st.photo && st.shot && st.corners && st.video)) return;
+  if (!$('#liveWrap').hidden && !$('#liveVid').paused) return stopLive();
   const v = $('#liveVid'), s = $('#outSt');
   $('#liveBg').src = fileURL(st.photo);
   if (!v.src || v.dataset.src !== st.shot){
@@ -2352,6 +2400,12 @@ async function playLive(){
   placeLiveVideo();
   v.currentTime = st.video && st.video.fps ? (+$('#vframe').value / st.video.fps) : 0;
   v.play().catch(() => {});              // a blocked autoplay is not an error
+  setPlayIcon(true);
+  // The video can also end, pause or be stopped by its own controls, and the
+  // icon has to follow that rather than only the button press. One writer for
+  // the icon, driven by the element's real state.
+  v.onpause = () => setPlayIcon(false);
+  v.onplay  = () => setPlayIcon(true);
   // Never claim more than it is. The honesty contract applies to a preview as
   // much as to a detection: this is geometry plus a blend mode, and a person
   // judging colour from it would be judging the wrong thing.
@@ -2527,6 +2581,13 @@ $('#vframe').onchange = async () => {
   // uses, so what you match the edges against is the frame you chose.
   try{
     await api('/api/frame', {index: +$('#vframe').value});
+    // If the clip is on screen and paused, the scrubber is choosing what you
+    // are looking at — so move it there too, or the number and the picture
+    // disagree.
+    const lv = $('#liveVid');
+    if (!$('#liveWrap').hidden && lv.paused && st.video && st.video.fps){
+      lv.currentTime = (+$('#vframe').value || 0) / st.video.fps;
+    }
     // Only the composite changes. The chip keeps frame 0 on purpose — at that
     // size one frame looks like any other, so updating it would be movement
     // without meaning.

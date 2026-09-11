@@ -633,13 +633,54 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _file(self, path, ctype=None):
+        """Serve a local file, answering a Range request when one is made.
+
+        A browser cannot SEEK in a video the server will only hand over whole:
+        it plays from the start and every jump snaps back to zero. That is not a
+        detail here -- the live view exists to be parked on the frame the edges
+        were matched against, and the frame scrubber is supposed to move it.
+        Measured before fixing: setting currentTime to 9.0s read back as 0.0.
+
+        So: advertise `Accept-Ranges`, and answer a single `bytes=a-b` with a
+        206. Multi-range is not implemented and is not needed -- media players
+        ask for one range at a time -- and anything unparseable falls through to
+        the whole file, which is what the spec asks for.
+        """
         try:
-            with open(path, "rb") as f:
-                data = f.read()
+            size = os.path.getsize(path)
+            f = open(path, "rb")
         except OSError:
             return self._json({"error": "not found"}, 404)
-        self.send_response(200)
-        self.send_header("Content-Type", ctype or mimetypes.guess_type(path)[0] or "application/octet-stream")
+        ctype = ctype or mimetypes.guess_type(path)[0] or "application/octet-stream"
+        start, end = 0, size - 1
+        partial = False
+        rng = self.headers.get("Range") or ""
+        if rng.startswith("bytes=") and "," not in rng:
+            a, _, b = rng[6:].partition("-")
+            try:
+                if a:
+                    start = int(a)
+                    end = int(b) if b else size - 1
+                elif b:                       # bytes=-N: the LAST n bytes
+                    start = max(0, size - int(b))
+                if 0 <= start <= end < size:
+                    partial = True
+                else:
+                    start, end = 0, size - 1
+            except ValueError:
+                start, end = 0, size - 1
+        try:
+            with f:
+                if partial:
+                    f.seek(start)
+                data = f.read(end - start + 1) if partial else f.read()
+        except OSError:
+            return self._json({"error": "not readable"}, 404)
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

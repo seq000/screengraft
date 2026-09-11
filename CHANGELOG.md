@@ -9,6 +9,40 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.31.1] - 2026-09-11
+
+### Changed
+
+- **The clip bar reads as a player.** Play is an icon that becomes a **stop**
+  icon while the clip runs — one control, because "is it running" is one
+  question and two buttons would leave one of them meaningless at all times. The
+  icon follows the video's own `play`/`pause` events, not the button press, so
+  it stays honest if playback stops by itself. Icon-only, so the accessible name
+  changes with the state too: a screen reader on a square still saying "Play"
+  is being told the opposite of what is happening.
+- **Stopping returns to the fitted frame** rather than leaving playback wherever
+  it landed. That frame is the one the edges were matched against and the one
+  the light match is bound from, so it is the only frame the fit is a statement
+  about. The frame scrubber also moves the paused clip now — the number and the
+  picture were able to disagree.
+- **"Render preview" is "Preview"**, and both controls moved after the frame
+  scrubber, Play first. Viewing controls sit with the other viewing control; the
+  format stepper is about the output and stays at the end.
+
+### Fixed
+
+- **`/file` answers Range requests.** A browser cannot seek in a video the
+  server will only hand over whole: it plays from the start and every jump snaps
+  back to zero. Measured in the live page before the fix — setting `currentTime`
+  to 9.0s read back as **0.0** — which made "stop returns to the fitted frame"
+  quietly impossible and broke the video element's own scrubber with it. Single
+  ranges answer 206 with `Content-Range`; `Accept-Ranges` is what tells the
+  player it may seek at all; anything unparseable falls back to the whole file,
+  as the spec asks.
+- **The icon button was 13px wide at 742px.** A `width` on a flex item in a
+  nowrap row that overflows shrinks to its content — the glyph and its border.
+  `flex:none` and a `min-width`; measured back at 28px.
+
 ## [0.31.0] - 2026-09-11
 
 ### Added

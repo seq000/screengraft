@@ -22,6 +22,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import cv2
@@ -636,6 +637,52 @@ def preview_refuses_a_still(td):
         ui.stop()
 
 
+def file_route_supports_ranges(td):
+    """A browser cannot seek in a video the server hands over whole (SG73).
+
+    It plays from the start and every jump snaps back to zero. Measured in the
+    live page before this existed: setting currentTime to 9.0s read back as 0.0,
+    which made "stop returns to the fitted frame" quietly impossible and broke
+    the video element's own scrubber with it.
+    """
+    print("\n/file answers a Range request, or video cannot seek")
+    ui = build(td, "r")
+    if ui is None:
+        return ok("could build the range fixture", False)
+    try:
+        clip = ui.state()["screenshot"]
+        url = ui.url + "/file?path=" + urllib.parse.quote(clip)
+        whole = urllib.request.urlopen(url, timeout=30).read()
+
+        req = urllib.request.Request(url, headers={"Range": "bytes=100-199"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            part, status, hdrs = r.read(), r.status, dict(r.headers)
+        ok("a range request is answered 206", status == 206, str(status))
+        ok("...with the bytes asked for", part == whole[100:200], f"{len(part)} bytes")
+        ok("...and a Content-Range naming the whole size",
+           hdrs.get("Content-Range") == f"bytes 100-199/{len(whole)}",
+           str(hdrs.get("Content-Range")))
+        ok("...and Accept-Ranges, which is how the player knows it may seek",
+           hdrs.get("Accept-Ranges") == "bytes", str(hdrs.get("Accept-Ranges")))
+
+        # bytes=-N is the tail, and an open end runs to EOF. Both are ordinary
+        # for a media element deciding where the moov atom is.
+        for header, want in [("bytes=-50", whole[-50:]), (f"bytes={len(whole)-10}-", whole[-10:])]:
+            req = urllib.request.Request(url, headers={"Range": header})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                ok(f"{header} is served", r.status == 206 and r.read() == want, str(r.status))
+
+        # Nonsense must not 500 or truncate: the spec says ignore it.
+        for bad in ["bytes=abc-", "bytes=999999999-1000000000", "chunks=0-1"]:
+            req = urllib.request.Request(url, headers={"Range": bad})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                body, status = r.read(), r.status
+            ok(f"{bad!r} falls back to the whole file",
+               status == 200 and body == whole, f"{status}, {len(body)} of {len(whole)}")
+    finally:
+        ui.stop()
+
+
 def main():
     if not W.ffmpeg_exe():
         msg = "ffmpeg unavailable - the render route cannot be exercised"
@@ -656,6 +703,7 @@ def main():
         version_badge(td)
         preview_is_not_a_render(td)
         preview_refuses_a_still(td)
+        file_route_supports_ranges(td)
     print()
     if FAILED:
         print(f"FAILED ({len(FAILED)}): " + "; ".join(FAILED))
