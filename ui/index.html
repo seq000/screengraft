@@ -32,6 +32,9 @@
     /* A four-step raised ladder, added in the design file to fix two collapsed chip states: hover used to
        step DOWN to --float and selected-hover had collapsed onto --edge. */
     --raise:#2b2b30; --raise-mid:#333337; --raise-hi:#3a3a40; --raise-highest:#46464e;
+    /* surface/raise-low — the recessed step, under --raise rather than over it.
+       It is what a pressed control sits on, and what a disabled one sits on. */
+    --raise-low:#1c1c20;
     --panel:#161618;
     /* surface/float is a real token (#26262b, the chip hover surface). The
        canvas overlay is a separate thing and gets its own name. */
@@ -39,6 +42,8 @@
     --overlay:rgba(17,17,18,.98);
     --ink:#e9ecf1; --mute:#8f939a; --faint:#8f939ab2;
     --line:#1d1e20; --edge:#3a3b41; --edge-mid:#494a50; --edge-hi:#6d6f79;
+    /* border/edge-low — the dimmest bound, for a control that cannot be used. */
+    --edge-low:#2b2c31;
 
     /* Accent, per the Button variant matrix (4:14). Primary at REST is the
        accent at 85%, not solid — solid is the hover state. */
@@ -47,9 +52,12 @@
     --acc:#f23b0d; --acc-btn-rest:rgba(242,59,13,.85); --acc-press:#bb2b00;
     --acc-stroke:#ff6833; --acc-ink:#fbf9f9; --acc-soft:rgba(242,59,13,.14);
     /* Neutral button hover/pressed are explicit surfaces in Figma, not a
-       brightness filter on the rest state. */
-    --btn-hover:#333337; --btn-hover-edge:#3f4045;
-    --btn-press:#1c1c20; --btn-press-edge:#2b2c31;
+       brightness filter on the rest state. Re-picked 11 Sep 2026 against the
+       polished Button matrix (4:14): hover's border is border/edge-mid, and
+       pressed keeps border/edge rather than dimming to edge-low — pressing a
+       control must not make it look unavailable. Both had drifted. */
+    --btn-hover:#333337; --btn-hover-edge:#494a50;
+    --btn-press:#1c1c20; --btn-press-edge:#3a3b41;
     /* Accent disabled keeps the label READABLE rather than fading the whole
        button — the Button component in Figma says so explicitly. */
     --acc-dis:#bb2b00b2; --acc-dis-edge:#ff6833b2; --acc-dis-ink:#fbf9f966;
@@ -162,41 +170,57 @@
      filter over the rest state — a filter shifts hue and cannot be measured
      against a token.
      ------------------------------------------------------------------ */
+  /* Md is radius/md, Sm is radius/sm — one rule, both variants. Md had been
+     6px here while Primary/Md was 8px, so the neutral and accent buttons beside
+     each other in the top bar were not the same shape. Settled in Figma
+     11 Sep 2026: Md = 8, Sm = 6. */
   button{font:inherit;color:var(--ink);background:var(--raise);
-         border:1px solid var(--edge);border-radius:var(--r-sm);
+         border:1px solid var(--edge);border-radius:var(--r-md);
          padding:0 var(--s3);height:28px;font-size:13px;cursor:pointer;box-shadow:var(--hi);
          transition:var(--t-all), transform var(--t)}
   button:hover{background:var(--btn-hover);border-color:var(--btn-hover-edge)}
   button:active{background:var(--btn-press);border-color:var(--btn-press-edge);
                 box-shadow:none;transform:translateY(.5px)}
   button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-  /* Default disabled keeps the raised surface and dims only the LABEL — the
-     component description is explicit that opacity is not the mechanism. */
-  button[disabled]{background:var(--raise);border-color:var(--edge);
+  /* Default/Disabled RECESSES: surface/raise-low with border/edge-low, label at
+     text/faint x 50%. It used to keep the raised surface and dim only the label.
+     The change is deliberate — a control you cannot press should not be sitting
+     at the same elevation as one you can — and it means the surface, the border
+     and the label all say the same thing rather than only the label.
+     The 50% the label layer carries in Figma is deliberately NOT applied, and
+     this is a disagreement inside the design file rather than a liberty: the
+     Button component's own description says "Disabled keeps its label readable
+     rather than using opacity", and the layer does the opposite. Measured, the
+     description is also the better outcome — text/faint on the recessed surface
+     is **3.37:1**, where the same label with the 50% on top is **1.80:1** and
+     what ships today (faint on --raise) is 3.01:1. So the new surface makes the
+     label MORE readable than before, and the multiplier would have made it the
+     dimmest text in the tool. The description wins until that is
+     settled in the file. */
+  button[disabled]{background:var(--raise-low);border-color:var(--edge-low);
                    color:var(--faint);cursor:default;font-weight:400;
                    box-shadow:none;transform:none}
-  button[disabled]:hover{background:var(--raise);border-color:var(--edge)}
+  button[disabled]:hover{background:var(--raise-low);border-color:var(--edge-low)}
   button.sm{height:24px;padding:0 9px;font-size:12px;border-radius:var(--r-sm)}
-  button.sm[disabled]{color:var(--mute)}
 
   /* Primary. The accent means exactly one thing: the next action, so only one
      of these is lit at a time (see the accent hand-off in the JS). */
   button.primary{background:var(--acc-btn-rest);color:var(--acc-ink);
-                 border-color:var(--acc-stroke);font-weight:600;
-                 border-radius:var(--r-md);box-shadow:none}
+                 border-color:var(--acc-stroke);font-weight:600;box-shadow:none}
   button.primary:hover{background:var(--acc);border-color:var(--acc-stroke)}
   button.primary:active{background:var(--acc-press);border-color:var(--acc-dis-edge);
                         transform:translateY(.5px)}
-  button.primary.sm{border-radius:var(--r-sm)}
   /* An accent-family button that is enabled but is NOT the next action reads
      as an ordinary neutral control. */
   button.accent:not(:disabled):not(.primary){
     background:var(--raise); color:var(--ink); border-color:var(--edge);
-    font-weight:400; box-shadow:var(--hi); border-radius:var(--r-md)}
+    font-weight:400; box-shadow:var(--hi)}
+  /* Radius is deliberately NOT restated in these three rules any more. It is the
+     base button's, so .sm keeps winning on size — an accent .sm button used to
+     be handed --r-md by specificity alone. */
   button.accent:disabled,button.primary:disabled{
     background:var(--acc-dis); border-color:var(--acc-dis-edge);
-    color:var(--acc-dis-ink); font-weight:600;
-    border-radius:var(--r-md); box-shadow:none; opacity:1}
+    color:var(--acc-dis-ink); font-weight:600; box-shadow:none; opacity:1}
 
   /* ------------------------------------------------------------------
      Render, while it is rendering: the button IS the progress bar.
@@ -285,19 +309,7 @@
   [hidden]{display:none !important}
 
   .stepper{display:inline-flex;align-items:center}
-  /* A segmented control has to show which segment is on. `.sel` was only ever
-     styled for the thumbnail picker (.th.sel), so the web/ProRes pair rendered
-     with no selected state at all — reported 9 Sep 2026. Same step as the
-     device chips: selected sits on --raise-hi with the brighter border. */
-  .stepper button.sel{background:var(--raise-hi);border-color:var(--edge-hi);color:var(--ink)}
-  .stepper button.sel:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .stepper button{border-radius:0}
-  /* In the clip bar every control was 24px, so the stepper matched by default.
-     In the top bar its neighbours are 28px, and a 24px control beside a 28px
-     one reads as a misalignment rather than as hierarchy — the row has one
-     height. Scoped to #fmt so the component itself is unchanged wherever else
-     it is used. */
-  #fmt button{height:28px}
   .stepper button:first-child{border-top-left-radius:var(--r-sm);border-bottom-left-radius:var(--r-sm)}
   .stepper button:last-child{border-top-right-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
   /* One border between neighbours rather than two stacked. */
@@ -305,6 +317,41 @@
   .stepper button:hover,.stepper button:focus-visible{position:relative;z-index:1}
   /* The dock's stepper is Sm height but keeps 12px padding (Figma 8:31/8:33). */
   .dock-step button{padding:0 var(--s3)}
+
+  /* ------------------------------------------------------------------
+     Segmented control (Figma 84:177). NOT a stepper: a stepper is ordinary
+     buttons butted together, which is right for -/+ but wrong for a choice —
+     two adjacent buttons read as two actions, and the web/ProRes pair had been
+     borrowing the chip's selected step to say which one was on.
+     This is the component the design file actually specifies: a RECESSED track
+     with ONE raised thumb inside it. The selected option is the only thing at
+     button elevation, so the control reads as a single switch with a position
+     rather than as a pair.
+
+     Heights: the drawn thumb is 24px, which with 2px of track padding and a 1px
+     border makes the control 30px. Its neighbours in the top bar are 28px, and
+     a 2px mismatch in that row has already shipped once as a bug (v0.32.0, when
+     the stepper was 24px against 28px neighbours), so the thumb is 22px here so the track lands on 28px exactly. Everything else
+     — padding, gap, border, both radii — is as drawn.
+     ------------------------------------------------------------------ */
+  .seg{display:inline-flex;align-items:center;gap:2px;padding:2px;
+       background:var(--sunk);border:1px solid var(--edge);
+       border-radius:var(--r-md);transition:var(--t-all)}
+  .seg:hover{border-color:var(--edge-mid)}
+  .seg:active{border-color:var(--edge-mid)}
+  /* The track carries the border and the elevation, so a segment is a label
+     until it is selected: no border, no shadow, no lift on press. */
+  .seg button{height:22px;padding:0 11px;font-size:12px;border-radius:var(--r-sm);
+              background:transparent;border:0;box-shadow:none;color:var(--mute);
+              font-weight:400}
+  .seg button:hover{background:transparent;color:var(--ink)}
+  .seg button:active{background:transparent;transform:none}
+  /* The thumb. Its three surfaces are the Default button's own, which is the
+     point of the component: one raised thing, behaving like every other raised
+     thing on the page. */
+  .seg button.sel{background:var(--raise);color:var(--ink);font-weight:600}
+  .seg button.sel:hover{background:var(--raise-mid)}
+  .seg button.sel:active{background:var(--raise-low);transform:none}
   /* Input chip (Figma 5:14 / 5:20). Surface and shadow are declared here rather
    than inherited from the base button rule, so the filled state is explicit and
    the .is-empty override below has something definite to override.
@@ -843,8 +890,8 @@
          equal weight, both readable without a click. It carries no accent, so
          the one-accent-on-screen rule is untouched. -->
     <div class="tb-actions">
-      <span class="stepper" id="fmt" role="radiogroup" aria-label="Output format" hidden>
-        <button class="sm sel" data-preset="web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button class="sm" data-preset="prores" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
+      <span class="seg" id="fmt" role="radiogroup" aria-label="Output format" hidden>
+        <button class="sel" data-preset="web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button data-preset="prores" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
       </span>
       <button id="save" class="accent" disabled>Preview first</button>
       <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>

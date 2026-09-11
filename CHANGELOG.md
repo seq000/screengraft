@@ -9,6 +9,59 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.35.0] - 2026-09-11
+
+### Added
+
+- **A real segmented control (Figma 84:177), and the output format now uses it.**
+  Web/ProRes had been a *stepper* — ordinary buttons butted together, which is
+  right for `-`/`+` and wrong for a choice: two adjacent buttons read as two
+  actions, and the pair had been borrowing the device chip's selected step to
+  say which one was on. The component the design file specifies is a **recessed
+  track with one raised thumb**, so the selected option is the only thing at
+  button elevation and the control reads as a switch with a position.
+
+  The drawn thumb is 24px, which with 2px of track padding and a 1px border
+  makes the control 30px against 28px neighbours in the top bar — a 2px mismatch
+  in that row has already shipped once as a bug (v0.32.0). The thumb is **22px**
+  here so the track lands on 28px exactly; padding, gap, border and both radii
+  are as drawn.
+
+  The contrast audit gained two checks for it. The thumb against its track is
+  **1.31:1** and accepted: the label is the channel, not the surface — selected
+  reads 11.89:1 on the thumb against 5.97:1 for unselected on the track, a
+  2.60:1 step between the two labels, plus 400 → 600 weight.
+
+### Changed
+
+- **Button tokens re-picked against the polished Figma matrix (4:14).**
+  - **Md is radius 8, Sm is radius 6** — one rule, both variants. Md had been
+    6px here while Primary/Md was 8px, so the neutral and accent buttons sitting
+    beside each other in the top bar were not the same shape.
+  - **Hover's border is `border/edge-mid`** (`#494a50`, was `#3f4045`).
+  - **Pressed keeps `border/edge`** (`#3a3b41`, was `#2b2c31`) — pressing a
+    control must not make it look unavailable.
+  - **Default/Disabled recesses**: `surface/raise-low` with a `border/edge-low`
+    border, where it used to keep the raised surface and dim only the label. A
+    control you cannot press should not sit at the same elevation as one you
+    can.
+
+  New base tokens `--raise-low` and `--edge-low`; `button.primary.sm`'s radius
+  override and three restatements of `--r-md` are gone, so `.sm` now wins on
+  size by the cascade instead of by luck.
+
+### Not applied, deliberately
+
+- The Figma layer for Default/Disabled puts the **label at 50% on top of
+  `text/faint`**, while the Button component's own description says *"Disabled
+  keeps its label readable rather than using opacity."* The two disagree.
+  Measured, the description is also the better outcome: `text/faint` on the
+  recessed surface is **3.37:1**, the same label with the multiplier is
+  **1.80:1**, and what shipped before was 3.01:1 — so the new surface makes the
+  label *more* readable than it was, and the multiplier would have made it the
+  dimmest text in the tool. The description wins pending a ruling; the contrast
+  audit now measures this label every run.
+
 ## [0.34.0] - 2026-09-11
 
 ### Changed

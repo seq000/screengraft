@@ -94,6 +94,14 @@ ACCEPTED = {
     'control fill vs card':      'the border carries identification, not the fill.',
     'control edge vs its fill':  'a third framing of the same accepted finding, not a separate one.',
     'seg track edge vs card':    'same call as border/edge, which it now uses.',
+    'seg thumb vs its track':    ('the LABEL is the channel here, not the surface. Selected reads '
+                                  '11.89:1 on the thumb against 5.97:1 for unselected on the track, '
+                                  'a 2.60:1 step between the two labels, plus 400 -> 600 weight. '
+                                  'The raised surface is the third, redundant cue — the same call '
+                                  'the status pill makes, and the reason the component is a track '
+                                  'with a thumb rather than two lit buttons. Raising it means '
+                                  'either lifting the thumb off the Default button surface every '
+                                  'other control uses, or sinking the track below --sunk.'),
 }
 
 # CVD pairs whose collapse has been reasoned about and accepted. A pair NOT in
@@ -134,6 +142,11 @@ for label, tok, bgtok, need in [
     ('--mute on --card',       'mute',  'card', 4.5),
     ('--mute on --bg',         'mute',  'bg',   4.5),
     ('--faint captions',       'faint', 'card', 3.0),
+    # The Default/Disabled label, which is text/faint with the label layer at
+    # 50% — the two alphas multiplied, over the recessed surface it now sits on.
+    # Measured rather than assumed: "disabled" is not a licence to be invisible,
+    # and this token is the one that decides it.
+    ('disabled label on raise-low', 'faint', 'raise-low', 3.0),
 ]:
     r = check(label, solid(tok, bgtok), T[bgtok][0], need)
     print(f'   {label:34s} {r:6.2f}:1   need {need}   {"ok" if r >= need else "FAIL"}')
@@ -160,6 +173,9 @@ for label, a, b in [
     ('control fill vs card',   'raise',   'card'),
     ('control edge vs its fill','edge',   'raise'),
     ('seg track edge vs card', 'edge',    'card'),
+    # The segmented thumb against the track it sits in. If these converge the
+    # control stops saying which option is selected, which is its whole job.
+    ('seg thumb vs its track', 'raise',   'sunk'),
     ('focus ring --acc vs card','acc',    'card'),
     ('--edge-hi (hover) vs card','edge-hi','card'),
 ]:
