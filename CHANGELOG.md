@@ -9,6 +9,38 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.33.3] - 2026-09-11
+
+### Fixed
+
+- **The detection trace reported a quad the detector never returned.** Every
+  row carried the polygon approximation its candidate was built from, but the
+  walk refines corners before it validates, so the row and the answer differed
+  by the whole rounded-corner inset — 6.4px on the synthetic fixture, 9% of the
+  screen's own width on real photographs. `test/bench_detect.py` reads those
+  rows, so its "best candidate" column understated every candidate by that
+  amount: a corner-accuracy change that took the nearest proposal from 10.7% to
+  0.4% read as having bought nothing. Rows now hold the refined quad, and a new
+  check asserts the winning row equals the answer it supplied (fault-planted:
+  restoring the old behaviour fails it at 6.4px).
+
+### Investigated and not changed
+
+- **Why candidates sit ~9% of the screen's width inside the true screen.** The
+  mask is not the cause: the tone contour straddles the label, median 8px
+  *outside* it. `approxPolyDP` is — it puts its vertices on the rounded corner
+  arcs, and `refine_corners()` exists to undo exactly that, but the Canny path
+  refuses refinement by construction. Refining it recovers most of the loss on
+  the nearest candidate (11.5% -> 4.7%, 10.7% -> 0.4%, 9.5% -> 6.7%).
+
+  **It still ships unrefined.** The pipeline returns the highest-*scoring*
+  candidate, not the nearest one, and refining moves the ranking and the
+  abstention evidence with it: end to end the change cost one answer
+  (18% -> abstained at 57%) and one click-assisted answer, and a variant that
+  gated refinement on the per-edge fit residual produced a **confidently wrong**
+  answer at 129% — the one failure this tool refuses to have. Reverted whole.
+  Corner accuracy is downstream of ranking; ranking is the next piece of work.
+
 ## [0.33.2] - 2026-09-11
 
 ### Added

@@ -626,7 +626,8 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
                                       "pick_innermost stepped inward to it")
         if ok:
             if trace is not None:
-                trace.extend(_walk_rows(generated, candidates, walked, method, click))
+                trace.extend(_walk_rows(generated, candidates, walked, method, click,
+                                        refine))
             return {
                 "corners": [[round(float(x), 1), round(float(y), 1)] for x, y in corners],
                 "score": round(float(score), 5),
@@ -638,11 +639,11 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
             }
         rejected.append({"score": round(float(score), 5), "tag": tag, "why": why})
     if trace is not None:
-        trace.extend(_walk_rows(generated, candidates, walked, method, click))
+        trace.extend(_walk_rows(generated, candidates, walked, method, click, refine))
     return None
 
 
-def _walk_rows(generated, survived, walked, method, click):
+def _walk_rows(generated, survived, walked, method, click, refine=True):
     """One row per candidate the detector GENERATED, with what became of it.
 
     Four verdicts, and the distinction between the last two is the whole point:
@@ -650,6 +651,17 @@ def _walk_rows(generated, survived, walked, method, click):
     user narrowing the field and the other is a higher-scoring candidate winning
     first. A recall analysis needs to see quads in all four states, so nothing
     is dropped from this list -- it is written to a file, not to a page.
+
+    Each row carries the REFINED quad, not the polygon approximation the
+    candidate was built from. The walk refines before it validates, so a row
+    holding the raw quad describes a proposal the detector never actually
+    considered -- and the two differ by the whole rounded-corner inset, which on
+    real photographs is 9-11% of the screen's own width. That defect cost a day
+    on 11 Sep 2026: the recall column said the best proposal was 9% off
+    when refining it put it at 0.4%, so a corner-accuracy change looked like it
+    had bought nothing. An instrument that understates what a candidate is worth
+    is as wrong as one that misattributes the win, which this function already
+    goes to some trouble to avoid.
     """
     # Identity, not equality: two candidates can hold equal numbers and be
     # different proposals. `survived` is a filtered view of `generated`, so the
@@ -660,7 +672,9 @@ def _walk_rows(generated, survived, walked, method, click):
     kept = {id(c) for c in survived}
     rows = []
     for cand in generated:
-        score, quad, _contour, tag = cand
+        score, quad, contour, tag = cand
+        if refine:
+            quad = order_quad(refine_corners(contour, quad)[0])
         if click is not None and id(cand) not in kept:
             verdict, why = "filtered_by_click", "the click was not inside this quad"
         else:

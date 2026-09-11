@@ -95,6 +95,25 @@ def trace_checks(photo_path, truth):
                           best["verdict"] == "accepted",
                           f"closest candidate was {best['verdict']}")
 
+    # The winning row must hold the quad that was actually RETURNED. It did not
+    # until 11 Sep 2026: every row carried the polygon approximation the
+    # candidate was built from, while the walk refines corners before validating,
+    # so the row and the answer differed by the whole rounded-corner inset. On
+    # real photographs that is 9-11% of the screen's own width, and it made a
+    # corner-accuracy change read as worth nothing. The instrument has to
+    # report what shipped or it cannot be used to judge a change to what ships.
+    won = [r for r in rows if r["method"] == traced["method"]
+           and r["verdict"] in ("accepted", "supplied_the_answer")]
+    winner = next((r for r in won if r["verdict"] == "supplied_the_answer"),
+                  won[0] if won else None)
+    gap = (None if winner is None else
+           float(np.max(np.linalg.norm(np.array(winner["quad"], float)
+                                       - np.array(traced["corners"], float), axis=1))))
+    failures += not check("the winning row holds the quad that was returned",
+                          gap is not None and gap <= 0.2,
+                          "no winning row" if gap is None
+                          else f"the row is {gap:.1f}px from the answer it supplied")
+
     # A click filters before ranking, and the trace has to show what it removed
     # — "never judged because the user pointed elsewhere" and "never judged
     # because something better was accepted first" are different facts.
