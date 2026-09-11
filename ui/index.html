@@ -244,17 +244,41 @@
      hidden pane it does not animate at all — where a percentage that
      stops moving is a stall you can see.
      ------------------------------------------------------------------ */
-  @property --p { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+     ------------------------------------------------------------------
+     The name is `--fill`, NOT `--p`, and that is the whole of a regression
+     this shipped with in v0.33.0.
+
+     `@property` registers a custom property GLOBALLY, for every element on the
+     page — it is not scoped to the selector near it. `--p` was already in use:
+     the range sliders had been setting it to a unitless fraction (0.35) since
+     long before this button existed, and reading it back as
+     `calc(var(--p,0) * 100%)`.
+
+     Registering it as a `<percentage>` changed that everywhere at once. A
+     unitless 0.35 is invalid against that syntax, so it fell back to the
+     registered initial value `0%` — and the `0` fallback in `var(--p,0)` never
+     fired either, because a registered property ALWAYS has a value. The track
+     gradient computed to `calc(0% * 100%)`, which is invalid, so the whole
+     gradient was dropped and the Realism and Corner radius sliders simply
+     stopped being orange.
+
+     The rule: a name passed to @property is a page-wide type declaration.
+     Before registering one, check who else already uses that name — this is the
+     second time a page-wide fix here has caught unrelated components, after the
+     `[hidden]` rule. `ui-audit.js` now asserts the sliders are actually filled
+     with the accent, because nothing else in the project could see this.
+     ------------------------------------------------------------------ */
+  @property --fill { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
   button.primary.progress,
   button.primary.progress:hover,
   button.primary.progress:active{
     background-image:
-      linear-gradient(to right, var(--acc-btn-rest) var(--p, 0%), transparent 0),
+      linear-gradient(to right, var(--acc-btn-rest) var(--fill, 0%), transparent 0),
       linear-gradient(var(--acc-dis), var(--acc-dis));
     background-clip:padding-box,border-box;
     border-color:var(--acc-dis-edge); color:var(--acc-ink);
     font-weight:600; box-shadow:none; opacity:1;
-    transform:none; transition:--p .45s linear}
+    transform:none; transition:--fill .45s linear}
 
   /* ------------------------------------------------------------------
      Chip (Figma 5:6). Selection is a raised neutral surface plus a lighter
@@ -2714,14 +2738,14 @@ function setRenderProgress(pct){
   const b = $('#save');
   if (pct === null){
     b.classList.remove('progress');
-    b.style.removeProperty('--p');
+    b.style.removeProperty('--fill');
     b.removeAttribute('aria-busy');
     b.removeAttribute('role'); b.removeAttribute('aria-valuenow');
     return;
   }
   const p = Math.max(0, Math.min(100, pct));
   b.classList.add('progress');
-  b.style.setProperty('--p', p.toFixed(1) + '%');
+  b.style.setProperty('--fill', p.toFixed(1) + '%');
   // The bar is a colour change, which a screen reader cannot see. The label
   // carries the number and the element says it is a progress bar while it is
   // one — otherwise this is an animation that only sighted users can read.

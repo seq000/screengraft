@@ -9,6 +9,37 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.35.1] - 2026-09-11
+
+### Fixed
+
+- **The Realism and Corner radius sliders lost their orange fill in v0.33.0.**
+  Reported by eye; nothing in the project could have caught it.
+
+  `@property` is a **page-wide type declaration**, not a scoped one. The render
+  progress bar registered `--p` as a `<percentage>`, and the range sliders had
+  been setting `--p` to a unitless fraction for months and reading it back as
+  `calc(var(--p, 0) * 100%)`. Registering the name typed it everywhere at once:
+  the unitless `0.35` became invalid, fell back to the registered initial value
+  `0%` — and the `0` fallback in `var(--p, 0)` never fired either, because a
+  registered property always has a value. `calc(0% * 100%)` is invalid, so the
+  whole gradient was dropped and the track rendered empty.
+
+  The progress bar's property is `--fill` now. Confirmed by planting the
+  collision back at runtime: every slider loses its accent the instant `--p` is
+  registered.
+
+  **The rule: before registering a name with `@property`, check who else already
+  writes it.** Second time a page-wide fix in this file has caught unrelated
+  components, after `[hidden]{display:none !important}`.
+
+- `test/ui-audit.js` gained the check that would have caught it: no name
+  declared with `@property` may also be set as a plain custom property. It reads
+  the stylesheet **text**, because WebKit does not expose `@property` through
+  `cssRules` and a scan of those finds nothing — a check that cannot fail is
+  worse than no check. Fault-planted: restoring the collision names `--p` and
+  turns it red. 22/22 otherwise.
+
 ## [0.35.0] - 2026-09-11
 
 ### Added

@@ -128,6 +128,45 @@
   ok('the page script ran to completion', NEEDED.every(defined),
      NEEDED.filter(n => !defined(n)).join(', '));
 
+  // --- 7b. no @property name is also used as a plain custom property --------
+  // `@property` is a PAGE-WIDE type declaration, not a scoped one: it applies to
+  // every element, and a registered property always has a value, so `var(--x, 0)`
+  // silently stops using its fallback. Registering a name somebody else already
+  // writes with a different type breaks them at a distance.
+  //
+  // That shipped in v0.33.0. The render progress bar registered `--p` as a
+  // <percentage>; the range sliders had been setting `--p` to a unitless
+  // fraction for months and reading it as `calc(var(--p,0) * 100%)`. The unitless
+  // value became invalid, fell back to the registered initial `0%`, and
+  // `calc(0% * 100%)` is invalid — so every slider lost its accent fill. Nothing
+  // could see it: the Python suites never open a browser, the contrast audit
+  // reads tokens rather than computed styles, and a dropped gradient leaves a
+  // track that still looks like a track.
+  //
+  // Reading the track's computed style is not the check — `::-webkit-slider-
+  // runnable-track` is not reliably queryable through getComputedStyle, and a
+  // check that cannot fail honestly is worse than none. The COLLISION is what is
+  // checkable, and it is the actual defect.
+  // From the stylesheet TEXT, not from cssRules: WebKit does not expose
+  // @property as a CSSRule, so a cssRules scan finds nothing and the check can
+  // never fail — which is the failure mode this whole section exists to reject.
+  // Verified by planting the collision: the scan must report --p.
+  const cssText = [...document.querySelectorAll('style')]
+                    .map(el => el.textContent).join('\n');
+  const registered = new Set(
+    [...cssText.matchAll(/@property\s+(--[\w-]+)/g)].map(m => m[1]));
+  const inlineNames = new Set();
+  for (const el of $$('*')) {
+    const st = el.getAttribute('style');
+    if (!st) continue;
+    for (const m of st.matchAll(/(--[\w-]+)\s*:/g)) inlineNames.add(m[1]);
+  }
+  const collided = [...registered].filter(n => inlineNames.has(n));
+  ok('no @property name is also set as a plain custom property',
+     collided.length === 0,
+     collided.length ? collided.join(', ') + ' — registering a name types it for the WHOLE page'
+       : `${registered.size} registered, ${inlineNames.size} set inline`);
+
   // --- 8. motion ------------------------------------------------------------
   const noTrans = $$('.rail button, .chip, .switch').filter(vis)
     .filter(el => getComputedStyle(el).transitionDuration === '0s');
