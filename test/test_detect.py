@@ -40,6 +40,65 @@ def check(name, cond, detail=""):
     return cond
 
 
+def dark_anchor_checks():
+    """The Canny sweep must not go blind on a dark photograph.
+
+    detect_edges() anchored its thresholds on the image median. A black phone
+    on a black backdrop has a median of 0..4, every sweep point lands at
+    hi <= 7, and Canny fires on every pixel of noise -- the edge map is a solid
+    sheet and no closed quad survives. Both photographs in the labelled corpus
+    on which nothing near the screen was ever proposed were exactly this
+    (11 Sep 2026). An Otsu-anchored sweep sits alongside the median one now.
+
+    Built rather than photographed: a bright rounded screen on a near-black
+    frame on a near-black ground, with sensor-like noise so the median anchor
+    genuinely saturates. The median-only sweep is reproduced here as the fault
+    plant, so the check cannot pass by the fixture being too easy.
+    """
+    failures = 0
+    rng = np.random.default_rng(11)
+    H, W = 1000, 1400
+    img = np.full((H, W), 2, np.uint8)
+    body = np.zeros((H, W), np.uint8)
+    cv2.rectangle(body, (420, 200), (980, 820), 255, -1)
+    img[body > 0] = 6
+    screen = np.zeros((H, W), np.uint8)
+    cv2.rectangle(screen, (460, 240), (940, 780), 255, -1)
+    screen = cv2.morphologyEx(screen, cv2.MORPH_OPEN,
+                              cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (81, 81)))
+    img[screen > 0] = 200
+    img = np.clip(img.astype(np.int16) + rng.normal(0, 2.5, img.shape), 0, 255).astype(np.uint8)
+    truth = np.array([[460, 240], [940, 240], [940, 780], [460, 780]], dtype=np.float64)
+    failures += not check("the fixture is dark enough to blind a median anchor",
+                          float(np.median(img)) < 8, f"median {float(np.median(img)):.0f}")
+
+    rows = []
+    D.detect_edges(img, trace=rows)
+    near = min((float(np.max(np.linalg.norm(np.array(r["quad"], float) - truth, axis=1)))
+                for r in rows), default=None)
+    failures += not check("the edge channel proposes the screen on a dark photograph",
+                          near is not None and near < 60.0,
+                          "no candidates" if near is None else f"{len(rows)} candidates, nearest {near:.1f}px")
+
+    # The fault plant IS the old code: a median-only sweep on the same image.
+    blur = cv2.GaussianBlur(img, (5, 5), 0)
+    med = float(np.median(blur))
+    short = min(H, W)
+    old = 0
+    for sigma in (0.20, 0.33, 0.50, 0.66):
+        lo, hi = int(max(0, (1 - sigma) * med)), int(min(255, (1 + sigma) * med))
+        if hi <= lo:
+            continue
+        e = cv2.Canny(blur, lo, hi, L2gradient=True)
+        k = D._odd(0.004 * short)
+        e = cv2.morphologyEx(e, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+        cs, _ = cv2.findContours(e, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+        old += sum(1 for c in cs if D.score_edge_contour(c, float(H * W))[1] is not None)
+    failures += not check("...where the median-only sweep proposes nothing at all",
+                          old == 0, f"median-only sweep produced {old} candidates")
+    return failures
+
+
 def tier_checks():
     """Evidence tiers in arbitration and in the abstention veto.
 
@@ -697,6 +756,8 @@ def main():
     failures += perspective_checks()
 
     print("the detection instrument")
+    print("the Canny sweep on a dark photograph")
+    failures += dark_anchor_checks()
     print("evidence tiers — arbitration and the abstention veto")
     failures += tier_checks()
     print("corner recovery on a Canny ring")

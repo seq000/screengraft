@@ -797,12 +797,31 @@ def detect_edges(gray: np.ndarray, click=None, trace=None):
     # Sweep the Canny thresholds off the image's own median rather than fixed
     # numbers, then a few sigmas around it — one exposure doesn't suit both a
     # bright render and a dim photo.
+    #
+    # ... and ALSO off Otsu's threshold, because the median anchor has a hole
+    # the median cannot see: a dark photograph. A black phone on a black
+    # backdrop has a median of 0..4, so every sweep point lands at hi <= 7 and
+    # Canny fires on every pixel of noise -- the edge map is a solid sheet and
+    # no closed quad survives it. Both photographs in the labelled corpus on
+    # which nothing near the screen was EVER proposed (11 Sep 2026) are exactly
+    # this, and edge returned zero candidates on them. Otsu splits the two
+    # modes that are actually there -- 97 and 127 on those two -- and the same
+    # sweep then proposes the screen at 9% and 12% unrefined, which is where
+    # every other photograph's nearest candidate sits. On the other seven the
+    # nearest candidate is unchanged. The saturation channel already anchors
+    # on Otsu for the same reason (one percentile fails when the thing sought
+    # is smaller than the percentile).
     med = float(np.median(blur))
-    for sigma in (0.20, 0.33, 0.50, 0.66):
-        lo = int(max(0, (1.0 - sigma) * med))
-        hi = int(min(255, (1.0 + sigma) * med))
-        if hi <= lo:
+    otsu, _ = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    sweep = [((1.0 - s) * med, (1.0 + s) * med) for s in (0.20, 0.33, 0.50, 0.66)]
+    sweep += [(otsu * f / 2.0, otsu * f) for f in (0.5, 1.0, 1.5)]
+    seen = set()
+    for lo_f, hi_f in sweep:
+        lo = int(max(0, lo_f))
+        hi = int(min(255, hi_f))
+        if hi <= lo or (lo, hi) in seen:
             continue
+        seen.add((lo, hi))
         edges = cv2.Canny(blur, lo, hi, L2gradient=True)
         # Close small gaps so a bezel outline broken by a notch or a glare
         # spot still forms one closed contour.

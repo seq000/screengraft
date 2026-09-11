@@ -9,6 +9,46 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.40.0] - 2026-09-11
+
+### Changed
+
+- **The Canny sweep no longer goes blind on a dark photograph. Never-proposed
+  went from 2/9 to 0/9 on the labelled bench; good unaided is 8/9;
+  confidently-wrong stayed 0/9.**
+
+  `detect_edges()` anchored its thresholds on the image median — the standard
+  "auto Canny". A black phone on a black backdrop has a median of 0..4, so
+  every sweep point landed at `hi ≤ 7` and Canny fired on every pixel of
+  noise: the edge map was a solid sheet and no closed quad survived it. Both
+  photographs on which nothing near the screen had *ever* been proposed were
+  exactly this — grayscale renders, surround median 1 and 4 — and the edge
+  channel returned **zero** candidates on them at every scale and in every
+  colour view tried.
+
+  An Otsu-anchored sweep now runs alongside the median one (the saturation
+  channel already anchors on Otsu for the same reason). On the two dark
+  photographs the screen is proposed at 9% and 12% unrefined — the same range
+  every other photograph's nearest candidate sits in — and on the other seven
+  the nearest candidate is unchanged. One resolves at 5%; the other still
+  abstains (see below).
+
+  Pinned by a built fixture: a bright rounded screen on a near-black frame on
+  a near-black ground with sensor-like noise, median 3. The fault plant is the
+  old code itself — the median-only sweep, reproduced in the test, produces
+  zero candidates on it.
+
+### Investigated and not changed
+
+- **Ordering the within-channel walk by shape tier before score.** It fixed
+  the one remaining abstention (a 59%-off body outscoring a 0.6%-off screen
+  ranked fifth) and took *good with one click* to 9/9 — and it dropped three
+  other photographs to honest abstentions, because a **tier-2 wrong
+  candidate exists deeper in the list** on each of them. The 6× margin behind
+  the tiers was measured on channel-*accepted* results, and it does not hold
+  for every candidate a channel generates. Reverted. The remaining case is a
+  within-channel ranking problem and is recorded as such.
+
 ## [0.39.0] - 2026-09-11
 
 ### Changed
