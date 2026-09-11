@@ -812,7 +812,7 @@
          display:flex;align-items:flex-start;gap:8px;padding:10px 12px;
          border-radius:var(--r-md);background:var(--float);
          border:1px solid var(--edge);box-shadow:var(--shadow), var(--hi);
-         font-size:12px;line-height:1.45;color:var(--ink);
+         font-size:13px;line-height:1.45;color:var(--ink);
          pointer-events:auto;touch-action:none;transform-origin:50% 0;
          will-change:transform,opacity;
          overflow:hidden;
@@ -826,21 +826,35 @@
   @media (prefers-reduced-motion:reduce){ .toast{transition:opacity 120ms} }
 
   /* Same three-channel encoding as .status — glyph, weight, luminance — so a
-     toast and a status pill never disagree, and meaning survives without hue. */
-  .toast .g{flex:none;font-weight:600;line-height:1.45}
-  .toast.ok  .g{color:var(--ok)}    .toast.ok  .g::before{content:"\2713"}
-  .toast.warn .g{color:var(--warn)} .toast.warn .g::before{content:"!"}
-  .toast.err .g{color:var(--err)}   .toast.err .g::before{content:"\00d7"}
-  .toast.info .g{color:var(--mute)} .toast.info .g::before{content:"\2022"}
+     toast and a status pill never disagree, and meaning survives without hue.
+     The glyphs are SHAPES now, not characters: the error glyph used to be the
+     × character, which is the same character as the Dismiss button beside it
+     (reported 11 Sep 2026). Each kind has a silhouette nothing else on the
+     page uses — circle-tick, triangle-bang, octagon-bang, circle-i — and the
+     one × left in a toast is the control that closes it. */
+  .toast .g{flex:none;width:16px;height:16px;margin-top:1px;line-height:0}
+  .toast .g svg{width:16px;height:16px;display:block}
+  .toast.ok  .g{color:var(--ok)}
+  .toast.warn .g{color:var(--warn)}
+  .toast.err .g{color:var(--err)}
+  .toast.info .g{color:var(--mute)}
+  /* A path is part of the message, in the message's face — it was <code> at
+     the browser's monospace default, a second typeface for no reason. It gets
+     its own line, so the sentence ends and the path begins where the eye
+     expects, and it wraps on its own separators rather than mid-word. */
+  .toast code{font:inherit}
+  .toast .path{display:block;margin-top:6px;font:inherit;color:var(--ink);
+               overflow-wrap:anywhere}
+  .toast.err .path{color:var(--warn)}
   /* Error toast: the CONTAINER stays quiet — stroke close to its fill, the same
      relationship a standard button has — and the message carries the colour,
      rather than a tinted stroke and glyph shouting around neutral text. */
   .toast.err{border-color:var(--edge)}
   .toast.err .g, .toast.err .msg{color:var(--warn)}
   .toast .msg{min-width:0;word-break:break-word}
-  .toast .x{flex:none;margin:-4px -4px 0 4px;width:22px;height:22px;padding:0;
+  .toast .x{flex:none;margin:-3px -4px 0 4px;width:22px;height:22px;padding:0;
             background:none;border:none;box-shadow:none;color:var(--mute);
-            font-size:14px;line-height:22px;border-radius:var(--r-sm);opacity:0;
+            font-size:15px;line-height:22px;border-radius:var(--r-sm);opacity:0;
             transition:opacity var(--t), background-color var(--t), color var(--t)}
   /* Close is stack-level furniture: it shows when the stack is open, so a
      resting stack stays clean. Always available to keyboard users. */
@@ -1244,6 +1258,25 @@ function layoutToasts(expanded) {
   });
 }
 
+/* One silhouette per kind, none of them an ×. 16px, currentColor, drawn on a
+   16-unit grid so the stroke stays 1.5px at 1×. */
+const TOAST_GLYPH = {
+  ok:   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M5 8.2l2 2 4-4.4"/></svg>',
+  warn: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2 14.3 13.2H1.7z"/><path d="M8 6.4v3.2"/><circle cx="8" cy="11.4" r=".55" fill="currentColor" stroke="none"/></svg>',
+  err:  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.4 1.8h5.2l3.6 3.6v5.2l-3.6 3.6H5.4L1.8 10.6V5.4z"/><path d="M8 4.9v3.8"/><circle cx="8" cy="11.1" r=".55" fill="currentColor" stroke="none"/></svg>',
+  info: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r=".55" fill="currentColor" stroke="none"/></svg>',
+};
+
+/* A file path for a toast: its own line, full and unshortened, in the message's
+   own face. Escaped, because a path is user data. */
+function toastPath(p){
+  const esc = String(p || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  // Break opportunities after every separator, so a long path wraps at a
+  // slash rather than in the middle of a filename. overflow-wrap:anywhere in
+  // the CSS is the fallback for a single segment wider than the toast.
+  return `<span class="path">${esc.replace(/\//g, '/<wbr>')}</span>`;
+}
+
 function toast(kind, html, opts = {}) {
   const wrap = $('#toasts');
   if (!wrap) return null;
@@ -1251,7 +1284,7 @@ function toast(kind, html, opts = {}) {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   if (kind === 'err') el.setAttribute('role', 'alert');
-  el.innerHTML = `<span class="g" aria-hidden="true"></span><div class="msg"></div>`;
+  el.innerHTML = `<span class="g" aria-hidden="true">${TOAST_GLYPH[kind] || TOAST_GLYPH.info}</span><div class="msg"></div>`;
   el.querySelector('.msg').innerHTML = html;
 
   const life = opts.ms !== undefined ? opts.ms : TOASTS[kind];
@@ -2724,13 +2757,17 @@ async function renderPreview(){
     }
   }catch(e){ say(e.message); }
 }
-function prettyDir(p){
-  // ~ for home, and show the last two segments of a long path: the interesting
-  // part of a long output path is the end, not the volume.
+function homePath(p){
+  // ~ for home, nothing else touched. Now that a path has its own line and
+  // wraps, it can afford to be complete — an elided "…/mockups/file.png" told
+  // you the file and not where it was, which is the half people go looking for.
   const home = st.home || '';
-  let d = (home && p.startsWith(home)) ? '~' + p.slice(home.length) : p;
-  const seg = d.split('/');
-  return seg.length > 4 ? '…/' + seg.slice(-2).join('/') : d;
+  return (home && p.startsWith(home)) ? '~' + p.slice(home.length) : p;
+}
+function prettyDir(p){
+  // The short form, for places that cannot wrap: the last two segments.
+  const seg = homePath(p).split('/');
+  return seg.length > 4 ? '…/' + seg.slice(-2).join('/') : homePath(p);
 }
 
 let preset = 'web';
@@ -2868,7 +2905,7 @@ async function renderVideo(){
       setRenderProgress(null);
       b.textContent = saveLabel(); b.disabled = false; b.classList.remove('primary');
       $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`;
-      toast('ok', `Rendered <code>${(d.output||'').split('/').pop()}</code> · ${d.done} frames to <code>${prettyDir(st.outDir||'')}</code>`);
+      toast('ok', `Rendered ${d.done} frames` + toastPath(homePath(d.output || '')));
       const imp = $('#imp'); imp.disabled = false; imp.textContent = 'Send to Claude'; imp.classList.add('primary');
     } else if (d.state === 'error'){
       clearInterval(tick);
@@ -2892,8 +2929,8 @@ $('#save').onclick = async () => {
     // Naming the fit file here is the whole reason it is discoverable: it is
     // written silently beside the mockup, and a file nobody knows about is a
     // file nobody drags back in.
-    toast('ok', `Saved <code>${r.output.split('/').pop()}</code> to <code>${prettyDir(st.outDir || '')}</code>`
-      + (r.fit_file ? ` · the fit is beside it as <code>${r.fit_file.split('/').pop()}</code> — drop that back on this page to reuse these corners` : ''),
+    toast('ok', 'Saved' + toastPath(homePath(r.output))
+      + (r.fit_file ? `<span class="path" style="margin-top:8px;color:var(--mute)">The fit is beside it as ${r.fit_file.split('/').pop()} — drop that back on this page to reuse these corners.</span>` : ''),
       { ms: 9000, dismissible: true });
     const imp = $('#imp');
     imp.disabled = false; imp.textContent = 'Send to Claude';
@@ -2952,7 +2989,7 @@ $('#imp').onclick = async () => {
   }
   // Say up front where Save will put things. With --out-dir this is usually the
   // project folder, and a designer should not have to press Save to find out.
-  toast('info', `Fit the four edges, then Preview. Saves go to <code>${prettyDir(s.out_dir||'')}</code>.`,
+  toast('info', 'Fit the four edges, then Preview. Saves go to' + toastPath(homePath(s.out_dir || '')),
         { ms: 9000, dismissible: true });
   const types = $('#types');
   for (const t of ['phone','tablet','laptop','desktop']){

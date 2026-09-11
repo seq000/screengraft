@@ -9,9 +9,22 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
-## [Unreleased]
+## [0.42.0] - 2026-09-11
 
 ### Changed
+
+- **Notifications are readable.** Four things, all reported from use:
+  - **13px, not 12** — the same size as the rest of the page.
+  - **A path is in the message's own typeface.** It was `<code>` at the
+    browser's monospace default: a second face for no reason.
+  - **A path has its own line.** The sentence ends, then the path — complete,
+    with `~` for home, no longer elided to its last two segments — wrapping at
+    its slashes rather than mid-filename.
+  - **The error glyph is not the Close glyph any more.** It was the `×`
+    character, the same character as the Dismiss button beside it. Each kind
+    has a silhouette nothing else on the page uses: circle-tick, triangle-bang,
+    octagon-bang, circle-i. The one × left in a toast is the control that
+    closes it.
 
 - **`scripts/build-plugin.sh` refuses to build a version whose release tag
   already exists when the tree has moved since it.** A version is a promise
