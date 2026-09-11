@@ -9,6 +9,65 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.37.0] - 2026-09-11
+
+### Added
+
+- **Apple's corners are squircles, and now so are ours.** A rounded corner used
+  to be a circular arc, where curvature jumps from zero to 1/r at the tangent
+  point and leaves a seam you can see. Apple's displays use a continuous curve
+  instead; Figma exposes the same control as **corner smoothing**, 0-100%, and
+  labels 60% "iOS".
+
+  `compose()` and `compose_video()` take `corner_smoothing` (0-1). The
+  construction is Figma's own — cubic, circular arc, cubic per corner, from
+  their write-up and MartinRGB's derivation — not a superellipse approximation.
+
+  **It is automatic, from the device preset.** Every Apple preset carries 0.6;
+  Android and the square entries carry nothing. A photograph of an iPhone does
+  not have a smoothing preference, it has a shape — which is why this is not a
+  control. It follows the selected preset even when the radius was *measured*
+  from the photograph, because a measured radius is still a radius on that
+  device.
+
+  Verified rather than asserted: at smoothing 0 the construction collapses to a
+  circular arc to **1.4e-14px** over r=80, and the whole mask comes out
+  **byte-identical** to the analytic path. At 60% the curve meets both edges
+  parallel to within 0.001°, spans exactly (0,p) to (p,0), and p is exactly
+  (1 + smoothing) x r.
+
+### Changed
+
+- **Old saves keep their shape.** `corner_smoothing` defaults to 0 everywhere,
+  and a sidecar written before this release has no such field — so it
+  re-composes to the pixels it always did. That is the sidecar's contract and it
+  outranks making old saves consistent with new ones.
+
+### Fixed
+
+- **`test_sidecar.py`'s contract check could not fail, and had not been able to
+  for three releases.** It found the sidecar dicts with
+  `re.search(r'result = \{(.*?)\n\s*_write_json_atomic', src, re.S)`, which was
+  wrong twice over: `re.search` takes the FIRST match and the video dict comes
+  first in `ui.py`, so the **still** contract was being checked against the
+  **video** sidecar; and `.*?` still spans everything between, so the key set it
+  compared against included route response keys (`started`, `running`, `saved`)
+  that are not sidecar keys at all. Both faults made the check pass by looking
+  at a superset.
+
+  Planting the removal of `corner_smoothing` from the still sidecar changed
+  nothing at all — which is how this was found. The dicts are located by
+  **parsing `ui.py` with `ast`** now. Three faults planted, three caught: key
+  missing from the still sidecar, key missing from the video sidecar, and the
+  route recording the value but not applying it (a new round-trip case, because
+  recording and applying are different contracts).
+
+- **~20 lines of prose were sitting in the stylesheet as invalid CSS.** A
+  comment added in v0.35.1 was appended *after* its block had already closed,
+  leaving a stray `*/`. Browsers dropped it silently. Found by `deadcode.py`
+  reporting a phantom `.js` class — it was reading the text "ui-audit.js" out of
+  what it correctly believed was a selector.
+
 ## [0.36.0] - 2026-09-11
 
 ### Changed

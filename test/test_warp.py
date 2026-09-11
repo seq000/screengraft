@@ -221,6 +221,51 @@ def main():
                           np.array_equal(W.compose(lit, ui, quad, 0.0, blend="banana"), rep))
     failures += not check("emissive is OFF by default", np.array_equal(W.compose(lit, ui, quad, 0.0), rep))
 
+    print("corner smoothing — Apple's squircle (Figma 0-100%, iOS = 60%)")
+    # The degenerate case is the strongest available check: at smoothing 0 the
+    # two cubics vanish and Figma's construction must BE a circular arc. If the
+    # port of the formula is wrong anywhere, this stops being a circle.
+    curve, p0 = W.squircle_corner(80.0, 0.0, 200.0)
+    dev = np.hypot(curve[:, 0] - 80.0, curve[:, 1] - 80.0) - 80.0
+    failures += not check("at smoothing 0 the curve IS a circular arc",
+                          float(np.abs(dev).max()) < 1e-6 and abs(p0 - 80.0) < 1e-9,
+                          f"worst deviation {float(np.abs(dev).max()):.2e}px from r=80")
+    # ... and the whole mask must be byte-identical to the analytic path, which
+    # is what lets every save made before smoothing existed reproduce exactly.
+    same = all(np.array_equal(W.rounded_mask(w, h, r), W.rounded_mask(w, h, r, 0.0))
+               for (w, h, r) in ((400, 300, 40), (900, 1600, 126), (200, 200, 100)))
+    failures += not check("smoothing 0 leaves the mask byte-identical", same)
+
+    # The point of a squircle: the curve leaves each edge PARALLEL to it, so
+    # there is no corner where the curvature jumps. A circular arc does this too
+    # at its tangent points; what a squircle adds is getting there smoothly, and
+    # the endpoints are where that is checkable without differentiating twice.
+    c6, p6 = W.squircle_corner(80.0, W.IOS_SMOOTHING, 200.0)
+    t_in = c6[3] - c6[0]
+    t_out = c6[-1] - c6[-4]
+    t_in = t_in / np.linalg.norm(t_in)
+    t_out = t_out / np.linalg.norm(t_out)
+    # 1e-3, not 0: these are finite differences between sampled points, so they
+    # carry the curve's own curvature over that step. The construction is exactly
+    # parallel (the first control point is directly below P0), and 1.6e-5 is the
+    # sampling error, which is still 0.001 degrees off the edge.
+    failures += not check("at iOS smoothing the curve meets both edges parallel",
+                          abs(t_in[0]) < 1e-3 and abs(t_out[1]) < 1e-3,
+                          f"in {t_in[0]:.2e} off vertical, out {t_out[1]:.2e} off horizontal")
+    failures += not check("...and it spans (0,p) to (p,0) exactly",
+                          abs(c6[0][0]) < 1e-9 and abs(c6[-1][1]) < 1e-9
+                          and abs(c6[0][1] - p6) < 1e-9 and abs(c6[-1][0] - p6) < 1e-9,
+                          f"p={p6:.3f} for r=80 at smoothing {W.IOS_SMOOTHING}")
+    # p = (1 + smoothing) * r is the one number the whole construction hangs on.
+    failures += not check("...with p = (1 + smoothing) * r",
+                          abs(p6 - (1.0 + W.IOS_SMOOTHING) * 80.0) < 1e-9, f"p={p6}")
+
+    # Smoothing reaches further along the edge, so it takes MORE of the corner.
+    areas = [W.rounded_mask(400, 400, 80, s).sum() for s in (0.0, 0.3, 0.6, 1.0)]
+    failures += not check("more smoothing removes more of the corner",
+                          all(a > b for a, b in zip(areas[:-1], areas[1:], strict=True)),
+                          " > ".join(str(a) for a in areas))
+
     print()
     if failures:
         print(f"{failures} check(s) failed")

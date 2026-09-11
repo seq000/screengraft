@@ -28,6 +28,7 @@ screen as it appears in the photo — order matters, it defines the mapping).
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -47,7 +48,114 @@ MASK_SS = 4   # destination-space supersampling for the screen's edge
 DEFAULT_REFLECTION = 0.35
 
 
-def rounded_mask(w: int, h: int, radius: float) -> np.ndarray:
+# Apple's display corners are not circular arcs. They are a "squircle": the
+# curvature ramps in continuously instead of jumping from zero to 1/r at the
+# tangent point, so there is no visible seam where the straight edge ends. Figma
+# exposes the same thing as "corner smoothing", 0-100%, and marks 60% as iOS.
+#
+# The construction below is Figma's, from their own write-up and MartinRGB's
+# derivation of it: each corner is cubic - circular arc - cubic, and `smoothing`
+# decides how much of the corner the two cubics take from the arc. At 0 the
+# cubics collapse (a = b = c = d = 0, p = r) and it IS a circular arc again,
+# which the tests assert rather than assume.
+#
+#   https://www.figma.com/blog/desperately-seeking-squircles/
+#   https://github.com/MartinRGB/Figma_Squircles_Approximation
+SMOOTH_SS = 8         # corner-only supersampling for the squircle rasteriser
+SMOOTH_SS_BIG = 4     # ... dropped for a very large corner, to bound the buffer
+IOS_SMOOTHING = 0.6   # what Figma labels "iOS" on its smoothing slider
+
+
+def _corner_params(r: float, smoothing: float, budget: float):
+    """Figma's per-corner geometry. Returns (a, b, c, d, p, arc_section)."""
+    p = (1.0 + smoothing) * r
+    # Figma's own behaviour when the corner runs out of room: cap the smoothing
+    # rather than distort the curve. (figma-squircle calls the other choice
+    # `preserveSmoothing`; matching Figma matters more here than preserving it.)
+    smoothing = min(smoothing, budget / r - 1.0)
+    p = min(p, budget)
+    arc_measure = 90.0 * (1.0 - smoothing)
+    arc_section = math.sin(math.radians(arc_measure / 2.0)) * r * math.sqrt(2.0)
+    alpha = (90.0 - arc_measure) / 2.0
+    beta = 45.0 * smoothing
+    c = r * math.tan(math.radians(alpha / 2.0)) * math.cos(math.radians(beta))
+    d = c * math.tan(math.radians(beta))
+    b = (p - arc_section - c - d) / 3.0
+    return 2.0 * b, b, c, d, p, arc_section
+
+
+def _bezier(p0, p1, p2, p3, n):
+    t = np.linspace(0.0, 1.0, n)[:, None]
+    return (((1 - t) ** 3) * p0 + 3 * ((1 - t) ** 2) * t * p1
+            + 3 * (1 - t) * (t ** 2) * p2 + (t ** 3) * p3)
+
+
+def squircle_corner(r: float, smoothing: float, budget: float, n: int = 192):
+    """The top-left corner curve, from (0, p) to (p, 0), corner of the rect at 0,0.
+
+    All four corners are this one mirrored, which is also why only one is ever
+    rasterised.
+    """
+    a, b, c, d, p, arc = _corner_params(r, smoothing, budget)
+    p0 = np.array([0.0, p])
+    p3 = np.array([d, p - a - b - c])
+    p4 = np.array([d + arc, p - a - b - c - arc])
+    p5 = np.array([p, 0.0])
+    parts = [_bezier(p0, np.array([0.0, p - a]), np.array([0.0, p - a - b]), p3, n)]
+    if arc > 1e-9:
+        mid = (p3 + p4) / 2.0
+        half = float(np.linalg.norm(p4 - p3)) / 2.0
+        off = math.sqrt(max(r * r - half * half, 0.0))
+        nrm = np.array([-(p4 - p3)[1], (p4 - p3)[0]])
+        nrm = nrm / (float(np.linalg.norm(nrm)) or 1.0)
+        # Two centres solve the chord; the arc bulges INTO the corner, so the
+        # centre is the one further from it. Choosing by distance rather than by
+        # unpicking SVG's sweep flag is the same answer with less to get wrong.
+        centre = max([mid + nrm * off, mid - nrm * off],
+                     key=lambda q: float(np.hypot(*q)))
+        a0 = math.atan2(*(p3 - centre)[::-1])
+        a1 = math.atan2(*(p4 - centre)[::-1])
+        while a1 - a0 > math.pi:
+            a1 -= 2 * math.pi
+        while a1 - a0 < -math.pi:
+            a1 += 2 * math.pi
+        th = np.linspace(a0, a1, n)
+        parts.append(np.stack([centre[0] + r * np.cos(th),
+                               centre[1] + r * np.sin(th)], 1))
+    parts.append(_bezier(p4, p4 + np.array([c, -d]), p4 + np.array([b + c, -d]), p5, n))
+    return np.concatenate(parts), p
+
+
+def _squircle_mask(w: int, h: int, r: float, smoothing: float) -> np.ndarray:
+    """Coverage mask for a rounded rectangle with Figma corner smoothing.
+
+    Rasterised rather than solved: a squircle has no closed-form distance field
+    to take a coverage ramp from, the way the circular case does. One corner is
+    filled at SMOOTH_SS x and INTER_AREA'd down -- which is measuring coverage,
+    the same thing the analytic path computes and the same thing the destination
+    warp already does -- then mirrored into the other three.
+    """
+    budget = min(w, h) / 2.0
+    curve, p = squircle_corner(r, smoothing, budget)
+    box = int(math.ceil(p))
+    ss = SMOOTH_SS if box <= 1024 else SMOOTH_SS_BIG
+    # Edge coords -> supersampled pixel centres: subpixel i covers [i/ss,(i+1)/ss)
+    # and fillPoly fills by centre, so the polygon shifts by half a subpixel.
+    poly = np.concatenate([curve, np.array([[box, 0.0], [box, box], [0.0, box]])])
+    big = np.zeros((box * ss, box * ss), dtype=np.uint8)
+    cv2.fillPoly(big, [np.rint(poly * ss - 0.5).astype(np.int32)], 255, cv2.LINE_8)
+    corner = cv2.resize(big, (box, box), interpolation=cv2.INTER_AREA)
+    m = np.full((h, w), 255, dtype=np.uint8)
+    bw, bh = min(box, w), min(box, h)
+    tl = corner[:bh, :bw]
+    m[:bh, :bw] = np.minimum(m[:bh, :bw], tl)
+    m[:bh, w - bw:] = np.minimum(m[:bh, w - bw:], tl[:, ::-1])
+    m[h - bh:, :bw] = np.minimum(m[h - bh:, :bw], tl[::-1, :])
+    m[h - bh:, w - bw:] = np.minimum(m[h - bh:, w - bw:], tl[::-1, ::-1])
+    return m
+
+
+def rounded_mask(w: int, h: int, radius: float, smoothing: float = 0.0) -> np.ndarray:
     """White-on-black mask, full frame minus rounded corners cut to black.
 
     Computed analytically rather than drawn, for two reasons.
@@ -74,6 +182,11 @@ def rounded_mask(w: int, h: int, radius: float) -> np.ndarray:
     if radius <= 0:
         return np.full((h, w), 255, dtype=np.uint8)
     r = float(max(0.0, min(float(radius), w / 2.0, h / 2.0)))
+    # `smoothing` defaults to 0 so a sidecar written before smoothing existed
+    # re-composes to the same pixels it did then. That is the sidecar's whole
+    # contract and it outranks making old saves consistent with new ones.
+    if smoothing > 0.0:
+        return _squircle_mask(w, h, r, float(min(smoothing, 1.0)))
     xs = np.arange(w, dtype=np.float64) + 0.5      # pixel centres, edge coords
     ys = np.arange(h, dtype=np.float64) + 0.5
     # Per-axis distance past the arc-centre rail: zero everywhere except the
@@ -153,7 +266,8 @@ class Plan:
 
     def __init__(self, photo: np.ndarray, frame_shape, corners,
                  corner_radius: float = 0.0, grain: bool = False,
-                 blend: str = "replace", reflection: float = DEFAULT_REFLECTION):
+                 blend: str = "replace", reflection: float = DEFAULT_REFLECTION,
+                 corner_smoothing: float = 0.0):
         dst_quad = np.array(corners, dtype=np.float32)
         if shoelace_area(dst_quad) < 1.0:
             raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
@@ -161,6 +275,10 @@ class Plan:
         self.dst_quad = dst_quad
         self.grain = grain
         self.blend = blend if blend in ("replace", "emissive") else "replace"
+        # Unitless 0-1, Figma's corner smoothing. 0 is a circular arc and is the
+        # default everywhere, so anything that does not pass it gets the shape it
+        # got before smoothing existed.
+        self.corner_smoothing = float(np.clip(corner_smoothing, 0.0, 1.0))
         self.reflection = float(np.clip(reflection, 0.0, 1.0))
 
         top = float(np.linalg.norm(dst_quad[1] - dst_quad[0]))
@@ -185,7 +303,8 @@ class Plan:
         self.H = cv2.getPerspectiveTransform(src_rect, dst_quad)
         ph, pw = photo.shape[:2]
         self.size = (pw, ph)
-        src_mask = rounded_mask(self.new_w, self.new_h, float(self.radius))
+        src_mask = rounded_mask(self.new_w, self.new_h, float(self.radius),
+                                self.corner_smoothing)
         self.warped_mask = _warp_mask_antialiased(src_mask, self.H, pw, ph, dst_quad)
         self.mask3 = cv2.merge([self.warped_mask] * 3).astype(np.float32) / 255.0
         self.grain_sigma = (_grade.measure_grain(photo, _grade.surround_ring(self.warped_mask))
@@ -288,6 +407,7 @@ class Plan:
 
 
 def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: float = 0.0,
+            corner_smoothing: float = 0.0,
             grade: float = 0.0, grain: bool = False, screen_off: np.ndarray = None,
             specular: float = 0.75, blend: str = "replace",
             reflection: float = DEFAULT_REFLECTION) -> np.ndarray:
@@ -302,6 +422,7 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
     # code and cannot drift apart. See test_video.py: frame 0 of a render is
     # asserted byte-identical to this function's output.
     plan = Plan(photo, screenshot.shape, corners, corner_radius, grain=grain,
+                corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection)
     plan.bind_grade(screenshot, grade)
     return plan.render(screenshot, screen_off=screen_off, specular=specular)
@@ -384,7 +505,8 @@ def read_frame_at(path: str, index: int = 0):
 
 
 def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
-                  corner_radius: float = 0.0, grade: float = 0.0, grain: bool = False,
+                  corner_radius: float = 0.0, corner_smoothing: float = 0.0,
+                  grade: float = 0.0, grain: bool = False,
                   preset: str = "web", fit_frame: int = 0, audio: bool = True,
                   frames_dir: str = None, progress=None, blend: str = "replace",
                   reflection: float = DEFAULT_REFLECTION,
@@ -414,6 +536,7 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     n_hint, fps, vw, vh = probe_video(video_path)
     first = read_frame_at(video_path, fit_frame)
     plan = Plan(photo, first.shape, corners, corner_radius, grain=grain,
+                corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection)
     plan.bind_grade(first, grade)
 

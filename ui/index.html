@@ -243,7 +243,6 @@
      The spinner goes. It cannot be told apart from a stall — and in a
      hidden pane it does not animate at all — where a percentage that
      stops moving is a stall you can see.
-     ------------------------------------------------------------------ */
      ------------------------------------------------------------------
      The name is `--fill`, NOT `--p`, and that is the whole of a regression
      this shipped with in v0.33.0.
@@ -2341,6 +2340,16 @@ function setRadiusOn(on){
   setSwitch($('#radBtn'), on);
 }
 $('#radBtn').onclick = () => { setRadiusOn(!radiusOn); autoPreview(); };
+/* Corner smoothing follows the SELECTED PRESET, not the radius. A measured
+   radius is still a radius on that device, and the device is what has a shape:
+   an iPhone's corners are a continuous curve whether or not we measured how big
+   they are. So this reads the preset dropdown even when st.measured is in use.
+   Returns 0 for Android, the square entries, and anything with no preset at
+   all — 0 is a circular arc, which is what everything did before. */
+function smoothingValue(){
+  const p = st.presets.find(p => p.id === $('#preset').value);
+  return (p && p.smoothing) || 0;
+}
 function syncSlider(){ const r=$('#radius'); r.style.setProperty('--p', (r.value - r.min)/(r.max - r.min)); }
 
 /* ===== preview / compare / save ===== */
@@ -2577,7 +2586,7 @@ async function playClip(){
   // a preview the user did not ask for, and the wait goes silent again.
   building = true;
   try{
-    await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(),
+    await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(),
                                      device: st.type, grade: gradeValue(),
                                      reflection: emisValue(), fit_frame: +$('#vframe').value});
   }catch(e){
@@ -2636,7 +2645,7 @@ async function renderPreview(){
   const say = t => { if (!building && $('#liveWrap').hidden) s.textContent = t; };
   say('Rendering…');
   try{
-    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     const im = $('#outImg');
     im.onload = () => {
       outNat = im.naturalWidth;
@@ -2768,7 +2777,7 @@ async function renderVideo(){
   b.disabled = true;
   setRenderProgress(0);
   try{
-    await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), device: st.type,
+    await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), device: st.type,
                               grade: gradeValue(), reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
   }catch(e){
     setRenderProgress(null);
@@ -2814,7 +2823,7 @@ $('#save').onclick = async () => {
   if (st.video) return renderVideo();
   const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
   try{
-    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     b.textContent = saveLabel();
     // The real destination, not a hardcoded one: --out-dir means saves usually
     // land in the project folder now, and telling the user "~/Desktop" when

@@ -123,52 +123,59 @@ def _write_json_atomic(path, obj):
 # macOS select popup does not reliably render. The short label must never be
 # the only place the truth lives.
 #
+# `smoothing` is Figma's corner smoothing for that device: Apple's display
+# corners are a continuous curve, not a circular arc, so every Apple preset
+# carries 0.6 — the value Figma labels "iOS". Android and the square entries
+# carry nothing and stay circular. It is a property of the DEVICE, which is why
+# it lives here rather than in a control: a photograph of an iPhone does not
+# have a smoothing preference, it has a shape.
+#
 # iPads: 18pt on every rounded model, over 744pt (mini) / 834pt (11" / Air) /
 # 1024pt (12.9"). MacBook display corners ~12px on ~1500pt. Monitors square.
 PRESETS = [
     # Newest first — that is the order a photograph is likely to be of.
-    {"id": "phone-iphone-17pro", "type": "phone", "frac": 0.154,
+    {"id": "phone-iphone-17pro", "type": "phone", "smoothing": 0.6, "frac": 0.154,
      "label": "iPhone 17 Pro / 17 / 16 Pro",
      "full": "iPhone 17 Pro, iPhone 17, iPhone 16 Pro \u2014 62pt over 402pt"},
-    {"id": "phone-iphone-air", "type": "phone", "frac": 0.148,
+    {"id": "phone-iphone-air", "type": "phone", "smoothing": 0.6, "frac": 0.148,
      "label": "iPhone Air",
      "full": "iPhone Air \u2014 62pt over 420pt"},
-    {"id": "phone-iphone-17promax", "type": "phone", "frac": 0.141,
+    {"id": "phone-iphone-17promax", "type": "phone", "smoothing": 0.6, "frac": 0.141,
      "label": "iPhone 17 Pro Max / 16 Pro Max",
      "full": "iPhone 17 Pro Max, iPhone 16 Pro Max \u2014 62pt over 440pt"},
     # Keeps its original id: this group is what "iPhone 15 / 16 / Pro" meant.
-    {"id": "phone-iphone", "type": "phone", "frac": 0.140,
+    {"id": "phone-iphone", "type": "phone", "smoothing": 0.6, "frac": 0.140,
      "label": "iPhone 16 / 15 / 15 Pro / 14 Pro",
      "full": "iPhone 16, 15, 15 Pro, 14 Pro \u2014 55pt over 393pt"},
-    {"id": "phone-iphone-max", "type": "phone", "frac": 0.128,
+    {"id": "phone-iphone-max", "type": "phone", "smoothing": 0.6, "frac": 0.128,
      "label": "iPhone 15\u201316 Plus, 14\u201315 Pro Max",
      "full": "iPhone 16 Plus, 15 Plus, 15 Pro Max, 14 Pro Max \u2014 55pt over 430pt"},
-    {"id": "phone-iphone-14plus", "type": "phone", "frac": 0.125,
+    {"id": "phone-iphone-14plus", "type": "phone", "smoothing": 0.6, "frac": 0.125,
      "label": "iPhone 14 Plus / 12\u201313 Pro Max",
      "full": "iPhone 14 Plus, 13 Pro Max, 12 Pro Max \u2014 53.33pt over 428pt"},
-    {"id": "phone-iphone-12", "type": "phone", "frac": 0.121,
+    {"id": "phone-iphone-12", "type": "phone", "smoothing": 0.6, "frac": 0.121,
      "label": "iPhone 12\u201314 / 12\u201313 Pro / 16e",
      "full": "iPhone 14, 13, 13 Pro, 12, 12 Pro, 16e \u2014 47.33pt over 390pt. The plain 13 is inferred: it shares the 390pt display with the 13 Pro."},
-    {"id": "phone-iphone-mini", "type": "phone", "frac": 0.117,
+    {"id": "phone-iphone-mini", "type": "phone", "smoothing": 0.6, "frac": 0.117,
      "label": "iPhone 13 mini / 12 mini",
      "full": "iPhone 13 mini, 12 mini \u2014 44pt over 375pt"},
-    {"id": "phone-iphone-x", "type": "phone", "frac": 0.104,
+    {"id": "phone-iphone-x", "type": "phone", "smoothing": 0.6, "frac": 0.104,
      "label": "iPhone 11 Pro / XS / X",
      "full": "iPhone 11 Pro, XS, X \u2014 39pt over 375pt"},
-    {"id": "phone-iphone-xr", "type": "phone", "frac": 0.100,
+    {"id": "phone-iphone-xr", "type": "phone", "smoothing": 0.6, "frac": 0.100,
      "label": "iPhone 11 / XR",
      "full": "iPhone 11, XR \u2014 41.5pt over 414pt"},
-    {"id": "phone-iphone-xsmax", "type": "phone", "frac": 0.094,
+    {"id": "phone-iphone-xsmax", "type": "phone", "smoothing": 0.6, "frac": 0.094,
      "label": "iPhone 11 Pro Max / XS Max",
      "full": "iPhone 11 Pro Max, XS Max \u2014 39pt over 414pt"},
     {"id": "phone-iphone-se", "type": "phone", "frac": 0.0,
      "label": "iPhone SE / 8 / 7",
      "full": "iPhone SE (2nd/3rd gen), 8, 7 \u2014 square display corners, no radius"},
     {"id": "phone-android", "type": "phone", "label": "Android (typical)", "frac": 0.090},
-    {"id": "tablet-ipad-pro-11", "type": "tablet", "label": "iPad Pro 11 / Air", "frac": 0.022},
-    {"id": "tablet-ipad-pro-13", "type": "tablet", "label": "iPad Pro 13", "frac": 0.018},
-    {"id": "tablet-ipad-mini", "type": "tablet", "label": "iPad mini", "frac": 0.024},
-    {"id": "laptop-macbook", "type": "laptop", "label": "MacBook Air / Pro", "frac": 0.008},
+    {"id": "tablet-ipad-pro-11", "type": "tablet", "smoothing": 0.6, "label": "iPad Pro 11 / Air", "frac": 0.022},
+    {"id": "tablet-ipad-pro-13", "type": "tablet", "smoothing": 0.6, "label": "iPad Pro 13", "frac": 0.018},
+    {"id": "tablet-ipad-mini", "type": "tablet", "smoothing": 0.6, "label": "iPad mini", "frac": 0.024},
+    {"id": "laptop-macbook", "type": "laptop", "smoothing": 0.6, "label": "MacBook Air / Pro", "frac": 0.008},
     {"id": "laptop-other", "type": "laptop", "label": "Other laptop (square)", "frac": 0.0},
     {"id": "desktop", "type": "desktop", "label": "Desktop monitor (square)", "frac": 0.0},
 ]
@@ -570,7 +577,7 @@ PREVIEW_SECONDS = 6.0
 
 def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
                    blend="replace", reflection=None, result=None, kind="render",
-                   start_frame=0, max_frames=None):
+                   start_frame=0, max_frames=None, *, smoothing=0.0):
     """Encode the clip, and only if that SUCCEEDS publish what it produced.
 
     `result` is the sidecar this render would write. It is handed to the worker
@@ -589,7 +596,8 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
             RENDER["done"], RENDER["total"] = done, total
     try:
         info = W.compose_video(photo, video_path, corners, dest,
-                               corner_radius=radius_px, grade=gr, grain=grain,
+                               corner_radius=radius_px, corner_smoothing=smoothing,
+                               grade=gr, grain=grain,
                                preset=preset, fit_frame=fit_frame, progress=progress,
                                blend=blend,
                                reflection=(W.DEFAULT_REFLECTION if reflection is None
@@ -626,6 +634,19 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
     except Exception as e:                     # noqa: BLE001 - surfaced to the page
         with RENDER_LOCK:
             RENDER.update(state="error", message=str(e), kind=kind)
+
+
+def _smoothing(b) -> float:
+    """Figma corner smoothing for this request, 0-1.
+
+    Absent means 0, which is a circular arc — so a client that predates
+    smoothing, and a sidecar replayed through the CLI, both get the shape they
+    got before. That default is the compatibility guarantee, not a convenience.
+    """
+    try:
+        return float(min(max(float(b.get("smoothing") or 0.0), 0.0), 1.0))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _blend_args(b):
@@ -1063,7 +1084,8 @@ class Handler(BaseHTTPRequestHandler):
                                      args=(photo, spath, corners, dest, radius_px,
                                            gr, grain, "web", fit_frame,
                                            blend, reflection, None, "preview",
-                                           fit_frame, max_frames)).start()
+                                           fit_frame, max_frames),
+                                     kwargs={"smoothing": _smoothing(b)}).start()
                 except BaseException:
                     with RENDER_LOCK:
                         RENDER.update(state="error", message="could not start the preview")
@@ -1114,7 +1136,8 @@ class Handler(BaseHTTPRequestHandler):
                 # undercuts the determinism claim.
                 result = {"output": dest, "photo": ppath, "screenshot": spath,
                           "corners": corners, "radius_frac": frac, "radius_px": radius_px,
-                          "device": b.get("device"), "grade": gr, "grain": grain,
+                          "device": b.get("device"), "corner_smoothing": _smoothing(b),
+                          "grade": gr, "grain": grain,
                           "video": True, "preset": preset, "fit_frame": fit_frame,
                           "blend": blend, "reflection": reflection,
                           # A render is always the whole clip; only the preview
@@ -1142,7 +1165,8 @@ class Handler(BaseHTTPRequestHandler):
                     threading.Thread(target=_render_worker, daemon=True,
                                      args=(photo, spath, corners, dest, radius_px,
                                            gr, grain, preset, fit_frame,
-                                           blend, reflection, result)).start()
+                                           blend, reflection, result),
+                                     kwargs={"smoothing": _smoothing(b)}).start()
                 except BaseException:
                     # If the thread cannot even be created, the flag must not
                     # outlive the request.
@@ -1164,7 +1188,9 @@ class Handler(BaseHTTPRequestHandler):
                 # when the photograph is (a portfolio shot).
                 gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
                 blend, reflection = _blend_args(b)
+                smoothing = _smoothing(b)
                 out = W.compose(photo, shot, corners, radius_px,
+                                corner_smoothing=smoothing,
                                 grade=gr, grain=bool(b.get("grain", gr > 0)),
                                 blend=blend, reflection=reflection)
                 SESSION.update(corners=corners, radius_frac=frac, device=b.get("device"),
@@ -1199,6 +1225,7 @@ class Handler(BaseHTTPRequestHandler):
                 # cannot be forgotten the same way.
                 result = {"output": dest, "photo": ppath, "screenshot": spath, "corners": corners,
                           "radius_frac": frac, "radius_px": radius_px, "device": b.get("device"),
+                          "corner_smoothing": smoothing,
                           "grade": gr, "grain": bool(b.get("grain", gr > 0)),
                           "blend": blend, "reflection": reflection,
                           "saved": time.time()}
