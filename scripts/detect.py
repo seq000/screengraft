@@ -875,6 +875,26 @@ def detect_saturation(bgr: np.ndarray, click=None, trace=None):
     return res
 
 
+def shape_tier(result) -> int:
+    """How strongly a result's own SHAPE says "this is a screen": 0, 1 or 2.
+
+        2  confident radius -- four per-corner estimates agree within 50%
+        1  rounded          -- they agree within MAX_RADIUS_SPREAD (2x)
+        0  nothing          -- sharp, unmeasurable, or wildly inconsistent
+
+    Both thresholds already existed (measure_corner_radius's `confident`, and
+    has_rounded_corners); this only ranks them. Measured 11 Sep 2026 on ten
+    hand-labelled photographs, every channel result: **every tier-2 quad was on
+    the screen** (worst spread 0.24) and **every wrong quad was >= 1.43 or
+    unmeasurable** -- a 6x margin. Tier 1 alone does not separate them (a
+    correct tone quad at 1.42 against a wrong one at 1.43), which is exactly why
+    a tier-1 result must not outrank or veto a tier-2 one. It was doing both.
+    """
+    if (result.get("corner_radius") or {}).get("confident"):
+        return 2
+    return 1 if has_rounded_corners(result) else 0
+
+
 def has_rounded_corners(result) -> bool:
     """Did this quad's own outline actually curve at the corners?
 
@@ -939,7 +959,16 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
 
     if not results:
         return None
+    return arbitrate(results, gray.shape[:2], click)
 
+
+def arbitrate(results, shape, click=None):
+    """Choose among the channels' accepted results and decide whether to abstain.
+
+    Split out of detect() on 11 Sep 2026 so the rules here can be tested on
+    hand-built results, the way _finalize's nested pick already is. `shape` is
+    the photograph's (h, w); the only thing this needs it for is the diagonal.
+    """
     # tone and saturation are the same algorithm on different channels, so they
     # are compared to each other before anything else, on whether the region
     # each found actually has rounded corners. A patch of table cut out of a
@@ -980,14 +1009,32 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
         elif nested:
             best, why = t, ("the tone quad sits inside the edge quad at %.0f%% of "
                             "its area — a screen inside a device body" % (ratio * 100))
+        elif shape_tier(e) > shape_tier(t):
+            # Not nested, and the edge quad's own shape says "screen" more
+            # strongly than tone's does. Before 11 Sep 2026 tone won here
+            # unconditionally, on the argument that its band assumption holding
+            # was itself evidence -- and on two of ten labelled photographs that
+            # handed the answer to a tone quad 159% and 249% off, with corner
+            # spreads of 3.4 and 19.9, over an edge quad at 0% with a confident
+            # radius. A band assumption is weaker evidence than four agreeing
+            # corners; the tiers say so and this reads them.
+            best, why = e, ("the two quads aren't nested and the edge quad's "
+                            "corners agree on a radius (tier %d) where tone's do "
+                            "not (tier %d)" % (shape_tier(e), shape_tier(t)))
         else:
             best, why = t, ("the two quads aren't nested; tone's band assumption "
                             "holding is itself evidence that it found a screen")
     elif t is None and sat is not None:
         # tone was dropped for having sharp corners, or never fired. The
-        # surviving region detector measured a real corner radius; edge cannot.
-        best, why = sat, ("the saturation detector found a region with rounded "
-                          "corners where tone did not")
+        # surviving region detector measured a real corner radius; edge usually
+        # cannot -- but when it did, and more confidently, it wins the same way.
+        if e is not None and shape_tier(e) > shape_tier(sat):
+            best, why = e, ("the edge quad's corners agree on a radius (tier %d) "
+                            "where saturation's do not (tier %d)"
+                            % (shape_tier(e), shape_tier(sat)))
+        else:
+            best, why = sat, ("the saturation detector found a region with rounded "
+                              "corners where tone did not")
     else:
         best = t or e or sat
     if best is None:
@@ -999,7 +1046,7 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
         # somewhere else entirely should not erase the fact that two of them
         # landed together. Corroboration by any one independent method is the
         # evidence worth reporting.
-        diag = float(np.hypot(*gray.shape[:2]))
+        diag = float(np.hypot(*shape))
         others = [r for r in results if r is not best]
         gaps = [(float(np.max(np.linalg.norm(best["_corners_np"]
                                              - r["_corners_np"], axis=1))) / diag, r)
@@ -1047,9 +1094,15 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
     # not get a vote on whether the rounded thing is a screen. So the gap is
     # re-measured against peers that also found something screen-shaped; when
     # there are none, being alone is not evidence of being wrong.
-    peers = [r for r in results if r is not best and has_rounded_corners(r)]
+    # ... and a peer may only veto a result whose shape evidence it at least
+    # matches. On iPhone-2 (11 Sep 2026) a tone quad 143% off, "rounded" at a
+    # spread of 1.43, vetoed a confident edge quad 0.3% off -- the bench's one
+    # "good quad refused". A veto from weaker evidence is not a disagreement
+    # between peers; it is noise outvoting a measurement.
+    peers = [r for r in results if r is not best and has_rounded_corners(r)
+             and shape_tier(r) >= shape_tier(best)]
     if peers:
-        diag = float(np.hypot(*gray.shape[:2]))
+        diag = float(np.hypot(*shape))
         peer_gap = min(float(np.max(np.linalg.norm(best["_corners_np"]
                                                    - r["_corners_np"], axis=1))) / diag
                        for r in peers)

@@ -40,6 +40,68 @@ def check(name, cond, detail=""):
     return cond
 
 
+def tier_checks():
+    """Evidence tiers in arbitration and in the abstention veto.
+
+    Two rules, one measurement behind both (11 Sep 2026, ten labelled photos,
+    every channel result): every quad whose four corners agreed on a radius to
+    within 50% -- "confident", tier 2 -- was on the screen, worst spread 0.24;
+    every wrong quad measured >= 1.43 or nothing. Tier 1 ("rounded", <= 2.0)
+    does not separate them: a correct tone quad at 1.42 sat beside a wrong one
+    at 1.43. So a tier-1 result must neither OUTRANK nor VETO a tier-2 one.
+
+    Before the rules: tone beat edge whenever the two did not nest (two photos
+    answered 159% and 249% off over a confident edge at 0%), and a rounded tone
+    quad 143% off vetoed a confident edge at 0.3% into an abstention -- the
+    bench's one "good quad refused". Both are hand-built here so the rule is
+    pinned without a photograph.
+    """
+    failures = 0
+    shape = (1600, 1200)
+
+    def result(method, corners, per_corner, r):
+        q = np.array(corners, dtype=np.float64)
+        per = [float(v) for v in per_corner]
+        spread = (max(per) - min(per)) / max(r, 1e-6)
+        return {"method": method, "corners": [list(map(float, c)) for c in corners],
+                "_corners_np": q, "score": 1.0,
+                "corner_radius": {"photo_px": float(r), "frac_of_width": 0.1,
+                                  "per_corner_px": per, "confident": bool(r > 2 and spread < 0.5),
+                                  "note": ""}}
+
+    screen = [[300, 400], [900, 420], [890, 1300], [290, 1280]]
+    table = [[40, 60], [1150, 80], [1140, 1500], [30, 1480]]       # far away, does not nest
+    edge_conf = result("edge", screen, [60, 62, 58, 61], 60)          # spread 0.07 -> tier 2
+    tone_round = result("tone", table, [30, 70, 20, 60], 45)          # spread 1.1  -> tier 1
+
+    failures += not check("a confident radius is tier 2, a merely rounded one tier 1",
+                          D.shape_tier(edge_conf) == 2 and D.shape_tier(tone_round) == 1,
+                          f"{D.shape_tier(edge_conf)} / {D.shape_tier(tone_round)}")
+
+    # Arbitration: not nested, edge confident, tone merely rounded -> edge wins.
+    out = D.arbitrate([tone_round, edge_conf], shape)
+    failures += not check("edge with a confident radius beats a non-nested rounded tone quad",
+                          out["method"] == "edge", f"chose {out['method']}: {out['agreement']['chosen_because']}")
+    # ... and the tone quad, being weaker evidence, cannot veto it into abstaining.
+    failures += not check("...and the weaker peer cannot veto it into an abstention",
+                          not out["abstained"], out.get("abstain_reason", ""))
+
+    # Symmetry: when both are confident and far apart, that IS a gross
+    # disagreement and the gate must still refuse. Loosening must not have
+    # switched the veto off.
+    tone_conf = result("tone", table, [44, 46, 45, 45], 45)           # spread 0.04 -> tier 2
+    out2 = D.arbitrate([tone_conf, edge_conf], shape)
+    failures += not check("two confident quads far apart still abstain",
+                          out2["abstained"], out2.get("agreement", {}).get("note", "")[:80])
+
+    # Equal tiers, not nested: the old rule stands -- tone wins on its band.
+    edge_round = result("edge", screen, [30, 70, 20, 60], 45)
+    out3 = D.arbitrate([tone_round, edge_round], shape)
+    failures += not check("at equal tiers the tone channel still wins the non-nested case",
+                          out3["method"] == "tone", f"chose {out3['method']}")
+    return failures
+
+
 def rail_checks():
     """Corner recovery on a Canny RING, which is where 9-11% of the screen used
     to be lost on every photograph.
@@ -582,6 +644,8 @@ def main():
     failures += perspective_checks()
 
     print("the detection instrument")
+    print("evidence tiers — arbitration and the abstention veto")
+    failures += tier_checks()
     print("corner recovery on a Canny ring")
     failures += rail_checks()
     failures += trace_checks(photo_path, load_truth())

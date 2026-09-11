@@ -9,6 +9,44 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.38.0] - 2026-09-11
+
+### Changed
+
+- **Evidence tiers in detection: a weaker result can no longer outrank or
+  veto a stronger one. Good unaided went from 1/9 to 4/9 on the labelled
+  bench; confidently-wrong stayed 0/9.**
+
+  Every channel result already carried two shape signals — a *confident*
+  corner radius (four per-corner estimates agree within 50%) and a *rounded*
+  one (within 2×). Measured over ten labelled photographs, every channel
+  result: **every confident quad was on the screen** (worst spread 0.24) and
+  **every wrong quad was ≥ 1.43 or unmeasurable** — a 6× margin. The rounded
+  tier alone does not separate them (a correct 1.42 beside a wrong 1.43).
+
+  Two rules were letting tier 1 beat tier 2:
+  - **Arbitration.** When tone and edge did not nest, tone won unconditionally
+    on the argument that its band assumption holding was itself evidence. On
+    two photographs that handed the answer to a tone quad **159% and 249%**
+    off — with corner spreads of 3.4 and 19.9 — over an edge quad at **0%**
+    with a confident radius. Now the higher tier wins; at equal tiers the old
+    rule stands, and the nesting rules are untouched (the gradient-screen
+    fixture still resolves the same way).
+  - **The abstention veto.** A peer could force an abstention by disagreeing
+    grossly if it merely had rounded corners. On iPhone-2 a tone quad **143%**
+    off at spread 1.43 vetoed a confident edge quad at **0.3%** — the bench's
+    one "good quad refused". A peer must now match the result's tier to veto.
+    Two confident quads far apart still abstain; that veto is pinned.
+
+  No new thresholds. `shape_tier()` ranks the two that existed; the
+  arbitration and gate are now `arbitrate()`, testable on hand-built results.
+  Both rules fault-planted.
+
+  `validate_quad`, `MAX_RADIUS_SPREAD` and `NEST_FLOOR` were reviewed against
+  the same bench and **left alone**: nothing in it indicts them — no good quad
+  is refused and nothing is confidently wrong — and moving a threshold without
+  an indictment is tuning.
+
 ## [0.37.0] - 2026-09-11
 
 ### Added
