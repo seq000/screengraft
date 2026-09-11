@@ -9,6 +9,64 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.36.0] - 2026-09-11
+
+### Changed
+
+- **The iPhone corner-radius presets are now derived per model, not estimated,
+  and there are eleven of them instead of two.** Darek asked whether all iPhones
+  share a radius. They do not, and the spread is large enough to matter: 39pt on
+  an iPhone X against 62pt on a 17 Pro.
+
+  Radius in points comes from Apple's private `UIScreen._displayCornerRadius`
+  (collected by [kylebshr/ScreenCorners](https://github.com/kylebshr/ScreenCorners));
+  width in points from the logical screen size. Both are exact, so the fraction
+  is too.
+
+  | group | radius | width | frac |
+  |---|---|---|---|
+  | iPhone 17 Pro / 17 / 16 Pro | 62.0 | 402 | **15.4%** |
+  | iPhone Air | 62.0 | 420 | **14.8%** |
+  | iPhone 17 Pro Max / 16 Pro Max | 62.0 | 440 | **14.1%** |
+  | iPhone 16 / 15 / 15 Pro / 14 Pro | 55.0 | 393 | **14.0%** |
+  | iPhone 16 Plus / 15 Plus / 15 Pro Max / 14 Pro Max | 55.0 | 430 | **12.8%** |
+  | iPhone 14 Plus / 13 Pro Max / 12 Pro Max | 53.33 | 428 | **12.5%** |
+  | iPhone 16e / 14 / 13 / 13 Pro / 12 / 12 Pro | 47.33 | 390 | **12.1%** |
+  | iPhone 13 mini / 12 mini | 44.0 | 375 | **11.7%** |
+  | iPhone 11 Pro / XS / X | 39.0 | 375 | **10.4%** |
+  | iPhone 11 / XR | 41.5 | 414 | **10.0%** |
+  | iPhone 11 Pro Max / XS Max | 39.0 | 414 | **9.4%** |
+  | iPhone SE / 8 / 7 | — | — | **0%** (square) |
+
+  Note that **width changes too**, so two models with the same radius land on
+  different fractions: 55pt is 14.0% of a 393pt iPhone 16 and 12.8% of a 430pt
+  16 Plus. A single "iPhone" preset could never have covered this — the old two
+  entries were 14.0% and 12.8%, i.e. only the middle of the range.
+
+  Preset ids `phone-iphone` and `phone-iphone-max` keep their meaning, so an
+  existing choice still resolves.
+
+### Added
+
+- The radius caption now names the **full** model list and the numbers behind
+  it — "12.8% of screen width — preset: iPhone 16 Plus, 15 Plus, 15 Pro Max,
+  14 Pro Max — 55pt over 430pt". The dropdown label is cut to what a closed
+  `<select>` can show (measured: ~254px at 13px), and a `title` on an `<option>`
+  is not reliably rendered by a native macOS popup — so the caption is the only
+  place the exact membership can actually be read. A preset is a claim about a
+  device; it should show its working.
+
+### Known limits
+
+- **Apple's display corners are a continuous curve, not a circular arc**, and
+  `compose()` applies a circular radius. Matched by number they are not matched
+  by shape — a continuous corner reads slightly tighter at the diagonal. The
+  preset is a starting position; a measured radius beats it when the photograph
+  offers one.
+- The plain **iPhone 13** is not listed by ScreenCorners while the 13 Pro is.
+  It shares the 390×844 display, so 47.33pt is an inference here — the only
+  entry in the table that is not directly attested.
+
 ## [0.35.1] - 2026-09-11
 
 ### Fixed

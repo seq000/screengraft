@@ -2310,10 +2310,18 @@ function setType(t){
   st.type = t;
   document.querySelectorAll('#types .chip').forEach(c => c.classList.toggle('on', c.dataset.t===t));
   const sel = $('#preset'); sel.innerHTML='';
-  st.presets.filter(p=>p.type===t).forEach(p => { const o=document.createElement('option'); o.value=p.id; o.textContent=`${p.label} (${(p.frac*100).toFixed(1)}%)`; sel.appendChild(o); });
+  st.presets.filter(p=>p.type===t).forEach(p => { const o=document.createElement('option'); o.value=p.id;
+    o.textContent=`${p.label} (${(p.frac*100).toFixed(1)}%)`;
+    sel.appendChild(o); });
   st.preset = sel.value;
 }
-function applyPreset(){ const p = st.presets.find(p=>p.id===$('#preset').value); if (p) setFrac(p.frac, 'preset: '+p.label); }
+/* The caption gets the preset's FULL membership, not the short label the
+   dropdown shows. The label is cut to what a closed <select> can display, and a
+   `title` on an <option> is not reliably rendered in a native macOS popup — so
+   the caption is the only place the exact model list can actually be read.
+   It says where the number came from too (radius pt over width pt), because a
+   preset is a claim about a device and a claim should show its working. */
+function applyPreset(){ const p = st.presets.find(p=>p.id===$('#preset').value); if (p) setFrac(p.frac, 'preset: '+(p.full || p.label)); }
 function setFrac(f, why){ st.frac = f; $('#radius').value = f; syncSlider();
   $('#radSt').textContent = `${(f*100).toFixed(1)}% of screen width — ${why}`; markStale(); }
 $('#preset').onchange = () => { applyPreset(); autoPreview(); };

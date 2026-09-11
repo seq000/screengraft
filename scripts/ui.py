@@ -78,12 +78,92 @@ def _write_json_atomic(path, obj):
     os.replace(tmp, path)
 
 # Corner radius as a fraction of the SCREEN'S WIDTH, per device preset.
-# Approximations from public specs (pt): iPhone 15/16 393pt wide, ~55pt radius;
-# Pro Max 430pt; iPads ~18pt on 744-1024pt; MacBook display corners ~12px on
-# ~1500pt; monitors square. Good enough to start a drag from; measure beats these.
+#
+# The iPhone values are DERIVED, not estimated: radius in points from Apple's
+# private `UIScreen._displayCornerRadius`, as collected by kylebshr/ScreenCorners,
+# divided by the model's logical width in points. Both are exact, so the fraction
+# is too — the only approximation left is that a photographed screen is not
+# always exactly its logical aspect.
+#
+# There is no single "iPhone radius" and the spread is large: 39pt on an iPhone X
+# against 62pt on a 17 Pro, and because width also changes, two models with the
+# SAME radius land on different fractions (55pt is 14.0% of a 393pt iPhone 16 and
+# 12.8% of a 430pt 16 Plus). A single preset could not have covered these.
+#
+#   group                                        radius   width    frac
+#   iPhone 17 Pro / 17 / 16 Pro                   62.0     402     0.154
+#   iPhone Air                                    62.0     420     0.148
+#   iPhone 17 Pro Max / 16 Pro Max                62.0     440     0.141
+#   iPhone 16 / 15 Pro / 15 / 14 Pro              55.0     393     0.140
+#   iPhone 16 Plus / 15 Pro Max / 15 Plus /
+#     14 Pro Max                                  55.0     430     0.128
+#   iPhone 14 Plus / 13 Pro Max / 12 Pro Max      53.33    428     0.125
+#   iPhone 16e / 14 / 13 Pro / 13 / 12 Pro / 12   47.33    390     0.121
+#   iPhone 13 mini / 12 mini                      44.0     375     0.117
+#   iPhone 11 / XR                                41.5     414     0.100
+#   iPhone 11 Pro / XS / X                        39.0     375     0.104
+#   iPhone 11 Pro Max / XS Max                    39.0     414     0.094
+#   iPhone SE / 8 / 7                              0       -       0
+#
+# Two caveats worth knowing before trusting a preset over a measurement:
+#
+# 1. ScreenCorners lists the plain **iPhone 13** nowhere, while listing the 13
+#    Pro at 47.33. The 13 and 13 Pro share a 390x844 display, so 47.33 is the
+#    inference here rather than a reported value. It is the only entry below
+#    that is not directly attested.
+# 2. Apple's display corners are a **continuous curve**, not a circular arc, and
+#    compose() applies a circular radius. Matched by number they are not matched
+#    by shape — a continuous corner reads slightly tighter at the diagonal. The
+#    preset is a starting position; the measured radius, when the photograph
+#    gives one, beats it.
+#
+# `label` is what fits the closed dropdown at its real width. `full` is the
+# exact membership and the numbers it came from, and the page puts it in the
+# CAPTION under the slider — not in a tooltip on the <option>, which a native
+# macOS select popup does not reliably render. The short label must never be
+# the only place the truth lives.
+#
+# iPads: 18pt on every rounded model, over 744pt (mini) / 834pt (11" / Air) /
+# 1024pt (12.9"). MacBook display corners ~12px on ~1500pt. Monitors square.
 PRESETS = [
-    {"id": "phone-iphone", "type": "phone", "label": "iPhone 15 / 16 / Pro", "frac": 0.140},
-    {"id": "phone-iphone-max", "type": "phone", "label": "iPhone Plus / Pro Max", "frac": 0.128},
+    # Newest first — that is the order a photograph is likely to be of.
+    {"id": "phone-iphone-17pro", "type": "phone", "frac": 0.154,
+     "label": "iPhone 17 Pro / 17 / 16 Pro",
+     "full": "iPhone 17 Pro, iPhone 17, iPhone 16 Pro \u2014 62pt over 402pt"},
+    {"id": "phone-iphone-air", "type": "phone", "frac": 0.148,
+     "label": "iPhone Air",
+     "full": "iPhone Air \u2014 62pt over 420pt"},
+    {"id": "phone-iphone-17promax", "type": "phone", "frac": 0.141,
+     "label": "iPhone 17 Pro Max / 16 Pro Max",
+     "full": "iPhone 17 Pro Max, iPhone 16 Pro Max \u2014 62pt over 440pt"},
+    # Keeps its original id: this group is what "iPhone 15 / 16 / Pro" meant.
+    {"id": "phone-iphone", "type": "phone", "frac": 0.140,
+     "label": "iPhone 16 / 15 / 15 Pro / 14 Pro",
+     "full": "iPhone 16, 15, 15 Pro, 14 Pro \u2014 55pt over 393pt"},
+    {"id": "phone-iphone-max", "type": "phone", "frac": 0.128,
+     "label": "iPhone 15\u201316 Plus, 14\u201315 Pro Max",
+     "full": "iPhone 16 Plus, 15 Plus, 15 Pro Max, 14 Pro Max \u2014 55pt over 430pt"},
+    {"id": "phone-iphone-14plus", "type": "phone", "frac": 0.125,
+     "label": "iPhone 14 Plus / 12\u201313 Pro Max",
+     "full": "iPhone 14 Plus, 13 Pro Max, 12 Pro Max \u2014 53.33pt over 428pt"},
+    {"id": "phone-iphone-12", "type": "phone", "frac": 0.121,
+     "label": "iPhone 12\u201314 / 12\u201313 Pro / 16e",
+     "full": "iPhone 14, 13, 13 Pro, 12, 12 Pro, 16e \u2014 47.33pt over 390pt. The plain 13 is inferred: it shares the 390pt display with the 13 Pro."},
+    {"id": "phone-iphone-mini", "type": "phone", "frac": 0.117,
+     "label": "iPhone 13 mini / 12 mini",
+     "full": "iPhone 13 mini, 12 mini \u2014 44pt over 375pt"},
+    {"id": "phone-iphone-x", "type": "phone", "frac": 0.104,
+     "label": "iPhone 11 Pro / XS / X",
+     "full": "iPhone 11 Pro, XS, X \u2014 39pt over 375pt"},
+    {"id": "phone-iphone-xr", "type": "phone", "frac": 0.100,
+     "label": "iPhone 11 / XR",
+     "full": "iPhone 11, XR \u2014 41.5pt over 414pt"},
+    {"id": "phone-iphone-xsmax", "type": "phone", "frac": 0.094,
+     "label": "iPhone 11 Pro Max / XS Max",
+     "full": "iPhone 11 Pro Max, XS Max \u2014 39pt over 414pt"},
+    {"id": "phone-iphone-se", "type": "phone", "frac": 0.0,
+     "label": "iPhone SE / 8 / 7",
+     "full": "iPhone SE (2nd/3rd gen), 8, 7 \u2014 square display corners, no radius"},
     {"id": "phone-android", "type": "phone", "label": "Android (typical)", "frac": 0.090},
     {"id": "tablet-ipad-pro-11", "type": "tablet", "label": "iPad Pro 11 / Air", "frac": 0.022},
     {"id": "tablet-ipad-pro-13", "type": "tablet", "label": "iPad Pro 13", "frac": 0.018},
