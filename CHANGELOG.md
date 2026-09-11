@@ -9,6 +9,37 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.41.0] - 2026-09-11
+
+### Added
+
+- **A filled source chip has a clear control.** There was no way to start
+  over: picking a different file was the only exit, and a reload restores the
+  session's fit, so "start again" was not reachable from the page. A small
+  round × sits beside each chip once it is filled — beside, not inside: the
+  chip is one `<button>`, and a button inside a button is invalid HTML that
+  browsers repair unpredictably. It is its own keyboard stop, named *Remove
+  photo* / *Remove screenshot*, which is also what keeps it distinct from the
+  fit bar's **Reset** (that resets the quad; this un-chooses a source).
+
+  What goes with a source is decided by what the source *is*: the photo owns
+  the corners (a fit you saved comes back on re-pick — v0.26.0 — and the
+  status line says so); the screenshot owns the video state and the fitted
+  frame, and the corners stay because they are on the photo; either owns the
+  session output, which is dropped so **Send to Claude cannot hand over a
+  composite made from a source that is no longer loaded**.
+
+  `POST /api/clear {role}` is the mirror of `/api/use`, guarded by the same
+  role whitelist. Route-tested over HTTP: each thing kept or dropped is
+  asserted from the session file, not the response.
+
+### Fixed
+
+- **`test/ui-audit.js` was counting status toasts as info icons.** Its
+  selector was `.info`; a toast is `.toast.info`, so any audit run within a
+  few seconds of loading a source reported "5 tips / 6 icons". Reported twice
+  on 11 Sep and blamed on a debug probe the first time. `button.info` now.
+
 ## [0.40.0] - 2026-09-11
 
 ### Changed

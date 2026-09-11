@@ -83,7 +83,11 @@
   // --- 4. tooltips ----------------------------------------------------------
   // Tips are moved to <body> at boot, so they are found there, not under .info.
   const tips = $$('body > .tip');
-  const infos = $$('.info');
+  // `button.info`, not `.info`: a status toast is `.toast.info` and matches the
+  // bare class while it is on screen, which reported "5 tips / 6 icons" every
+  // time the audit ran within a few seconds of loading a source. Reported
+  // twice on 11 Sep 2026 and blamed on a debug probe the first time.
+  const infos = $$('button.info');
   ok('every info icon carries a tooltip with real text',
      tips.length === infos.length && tips.every(t => t.textContent.trim().length > 40),
      `${tips.length} tips / ${infos.length} icons`);

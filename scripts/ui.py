@@ -702,6 +702,30 @@ def _adopt(role, path):
     return {"path": real, "size": [im.shape[1], im.shape[0]], **meta}
 
 
+def _clear(role):
+    """Un-choose a source. The mirror of _adopt(), and the only way to start
+    over: picking a different file was the one exit, and a reload restores the
+    session's fit, so "start again" was not reachable from the page at all.
+
+    What goes with it is decided by what the thing IS, not by convenience:
+      photo      -> the corners. The quad is a property of the photograph. A
+                    fit that was SAVED comes back on re-pick (fits.py), so
+                    this is recoverable; an unsaved drag is not, and the page
+                    says which.
+      screenshot -> the fitted frame. The corners stay: they are on the photo.
+      either     -> the session output. A composite made from a source that
+                    is no longer loaded is a stale artefact, and Send to
+                    Claude must not be able to hand it over.
+    """
+    if role not in ROLES:
+        raise ValueError(f"role must be one of {', '.join(ROLES)}")
+    if role == "photo":
+        SESSION.update(photo=None, corners=None, output=None)
+    else:
+        SESSION.update(screenshot=None, fit_frame=0, output=None)
+    return {"cleared": role}
+
+
 def _guess_type(corners):
     c = np.array(corners, dtype=float)
     w = (np.linalg.norm(c[1] - c[0]) + np.linalg.norm(c[2] - c[3])) / 2
@@ -871,6 +895,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/use":
                 return self._json(_adopt(b["role"], b["path"]))
+
+            if u.path == "/api/clear":
+                return self._json(_clear(b.get("role")))
 
             if u.path == "/api/figma":
                 return self._json(SESSION.enqueue({

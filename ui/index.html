@@ -393,6 +393,17 @@
   .inputchip.is-empty{background:var(--card);border-style:dashed;
                    color:var(--mute);box-shadow:none}
   .inputchip.is-empty .sw{box-shadow:inset 0 0 0 1px var(--line)}
+  /* The clear control is a SIBLING of the chip, not a child: the chip is one
+     <button>, and a button inside a button is invalid HTML that browsers
+     repair unpredictably. Beside it, it is its own keyboard stop with its own
+     name ("Remove photo"), which is also what makes it distinct from the fit
+     bar's Reset -- that resets the QUAD; this un-chooses a SOURCE. A small
+     round Sm button, so it reads as belonging to the chip without competing
+     with it. Only present while the chip is filled. */
+  .chipclear{width:24px;height:24px;padding:0;border-radius:999px;flex:none;
+             margin-left:calc(-1 * var(--s1));font-size:15px;line-height:1;
+             color:var(--mute)}
+  .chipclear:hover{color:var(--ink)}
 
   /* Status carries meaning in THREE channels: glyph, weight, luminance —
      never hue alone. */
@@ -898,8 +909,10 @@
       <span class="brand">Screengraft</span><span id="sess" hidden></span>
       <div class="tb-chips">
         <button class="inputchip is-empty" id="chip1"><span class="sw" id="sw1"></span><span class="nm">Choose a photo…</span></button>
+        <button class="chipclear" id="clear1" data-role="photo" aria-label="Remove photo" title="Remove the photo and start over. A fit you saved for it comes back when you pick it again." hidden>&times;</button>
         <span class="tb-arrow">&rarr;</span>
         <button class="inputchip is-empty" id="chip2"><span class="sw" id="sw2"></span><span class="nm">Choose a screenshot…</span></button>
+        <button class="chipclear" id="clear2" data-role="screenshot" aria-label="Remove screenshot" title="Remove the screenshot. The fit on the photo is kept." hidden>&times;</button>
       </div>
     </div>
     <span class="spacer"></span>
@@ -1453,6 +1466,44 @@ async function loadRecent(){
     if (!items.length) g.innerHTML = '<span class="sm" style="color:var(--mute)">No recent images on Desktop/Downloads (last 14 days).</span>';
   }
 }
+/* Un-choose a source. The mirror of setChosen(): every visual the fill put up
+   comes down, and the state the source owned goes with it -- the photo owns
+   the corners, the screenshot owns the video state and the fitted frame,
+   either owns the result. The server does the same to the session
+   (/api/clear), so a reload agrees with what is on screen. */
+async function clearSource(role){
+  try { await api('/api/clear', {role}); }
+  catch(e){ alert(e.message); return; }
+  const n = role==='photo'?1:2;
+  const chip = $('#chip'+n);
+  chip.classList.add('is-empty');
+  chip.querySelector('.nm').textContent = role==='photo' ? 'Choose a photo…' : 'Choose a screenshot…';
+  $('#sw'+n).style.background = '';
+  $('#pv'+n).innerHTML = '<span class="empty">Select a recent image</span>';
+  $('#clear'+n).hidden = true;
+  document.querySelectorAll('#recent'+n+' .th').forEach(x=>x.classList.remove('sel'));
+  stopLive();
+  showResult('empty');
+  if (role==='photo'){
+    st.photo = null; st.corners = null; st.remembered = null; st.quadFrom = null;
+    st.measured = null;
+    // Nothing to draw on: the canvas goes back to its empty state rather
+    // than showing the last photograph with no way to act on it.
+    const c = $('#c'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    $('#cvbar').hidden = true;
+    $('#detSt').className = 'status';
+    $('#detSt').textContent = 'Photo removed. A fit you saved for it comes back when you pick it again.';
+  } else {
+    st.shot = null; st.video = null; syncVideoUI();
+    $('#detSt').className = 'status';
+    $('#detSt').textContent = st.photo
+      ? 'Screenshot removed — the fit on the photo is kept. Choose another screenshot.'
+      : 'Screenshot removed.';
+  }
+  markStale();
+}
+document.querySelectorAll('.chipclear').forEach(b => { b.onclick = () => clearSource(b.dataset.role); });
+
 async function choose(role, path, el){
   try{ const r = await api('/api/use', {role, path}); setChosen(role, r.path, r.size, el, r); }
   catch(e){ alert(e.message); }
@@ -1469,6 +1520,7 @@ function setChosen(role, path, size, el, meta){
   chip.querySelector('.nm').textContent = `${path.split('/').pop()} · ${size[0]}×${size[1]}`
     + (meta && meta.video ? ` · ${meta.frames} frames @ ${Math.round(meta.fps)}fps` : '');
   $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(thumb)}")`;
+  $('#clear'+n).hidden = false;
   // A fit the server recognised from this photograph's own pixels. Held
   // rather than applied here: the quad only means anything once there is a
   // screenshot to put inside it, which is what maybeStart() waits for.

@@ -637,6 +637,60 @@ def preview_refuses_a_still(td):
         ui.stop()
 
 
+def clear_a_source(td):
+    """Un-choosing a source, over HTTP, and what the session keeps.
+
+    The page had no way to start over: picking a different file was the only
+    exit, and a reload restores the session's fit. /api/clear is the mirror of
+    /api/use. What it takes with it is decided by what the source IS -- the
+    photo owns the corners, the screenshot owns the fitted frame, either owns
+    the output -- and each of those is asserted here from the session file,
+    not from the response.
+    """
+    print("\nclearing a source")
+    home = os.path.join(td, "clr", "home")
+    os.makedirs(home)
+    photo, shot = os.path.join(home, "photo.png"), os.path.join(home, "shot.png")
+    cv2.imwrite(photo, synth_photo())
+    cv2.imwrite(shot, synth_photo(w=300, h=300))
+    ui = UI(home, os.path.join(home, ".screengraft", "sessions", "clr"),
+            os.path.join(td, "clr", "out"))
+    try:
+        ui.post("/api/use", {"role": "photo", "path": photo})
+        ui.post("/api/use", {"role": "screenshot", "path": shot})
+        code, r = ui.post("/api/save", BODY)
+        ok("a save exists to be invalidated", code == 200 and ui.state().get("output"),
+           f"{code} output={ui.state().get('output')}")
+        ui.post("/api/frame", {"index": 0})
+
+        code, r = ui.post("/api/clear", {"role": "screenshot"})
+        st = ui.state()
+        ok("clearing the screenshot answers 200 and names what it cleared",
+           code == 200 and r.get("cleared") == "screenshot", f"{code} {r}")
+        ok("...the screenshot is gone from the session", not st.get("screenshot"))
+        # The session stores the resolved path (macOS: /private/tmp for /tmp).
+        ok("...the photo is still there",
+           os.path.realpath(st.get("photo") or "") == os.path.realpath(photo),
+           f"{st.get('photo')}")
+        ok("...the corners are KEPT — they belong to the photo", bool(st.get("corners")))
+        ok("...and the stale output is dropped, so Send to Claude cannot hand it over",
+           not st.get("output"), f"output={st.get('output')}")
+        code, r = ui.post("/api/save", BODY)
+        ok("...and a save now refuses, naming the missing source",
+           code == 400 and "screenshot" in r.get("error", ""), f"{code} {r}")
+
+        code, r = ui.post("/api/clear", {"role": "photo"})
+        st = ui.state()
+        ok("clearing the photo drops it AND the corners", code == 200
+           and not st.get("photo") and not st.get("corners"), f"{code} {st.get('corners')}")
+
+        code, r = ui.post("/api/clear", {"role": "output"})
+        ok("a role that is not a source is refused — the same write primitive _adopt guards",
+           code == 400, f"{code} {r}")
+    finally:
+        ui.stop()
+
+
 def file_route_supports_ranges(td):
     """A browser cannot seek in a video the server hands over whole (SG73).
 
@@ -703,6 +757,7 @@ def main():
         version_badge(td)
         preview_is_not_a_render(td)
         preview_refuses_a_still(td)
+        clear_a_source(td)
         file_route_supports_ranges(td)
     print()
     if FAILED:
