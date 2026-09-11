@@ -9,6 +9,32 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.33.0] - 2026-09-11
+
+### Changed
+
+- **The Render button is the progress bar (SG71).** Darek's design: the track is
+  the disabled accent the button already wears while it is busy, the fill is the
+  lighter rest accent — the same colour one step apart, so nothing new enters the
+  palette — and the fill is the height of the button minus its strokes. The label
+  carries the number: *Rendering 42%*.
+
+  Two background layers rather than a child element, because the label on this
+  button is written by several different code paths and a required child span
+  would mean every one of them had to maintain it. `background-clip: padding-box,
+  border-box` is what puts the fill inside the strokes and the track behind them.
+  `role="progressbar"` and `aria-valuenow` come with it: a colour change is not
+  information a screen reader can reach.
+
+- **The spinner is gone, and the reason it was there does not survive reading.**
+  v0.19.0 replaced a determinate percentage with a spinner because the number
+  "read as busier than the work felt". That judgement was made against a
+  percentage that never moved — the poll feeding it had been broken since
+  v0.18.0, found only yesterday. A number that never updates does read as noise;
+  so would any number. **A decision made against a broken measurement is not a
+  decision**, and the comment in the stylesheet now says so where the spinner
+  used to be.
+
 ## [0.32.0] - 2026-09-11
 
 ### Changed

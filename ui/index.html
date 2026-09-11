@@ -199,6 +199,40 @@
     border-radius:var(--r-md); box-shadow:none; opacity:1}
 
   /* ------------------------------------------------------------------
+     Render, while it is rendering: the button IS the progress bar.
+     The track is the disabled accent the button
+     already wears while it is busy; the fill is the lighter rest accent,
+     so the two are the same colour family one step apart and nothing new
+     enters the palette.
+
+     Two background layers rather than a child element: the label on this
+     button is written by several different code paths (Save / Render /
+     Saving… / a percentage), and a required child span would mean every
+     one of them has to maintain it — which is precisely the several-
+     writers-disagreeing defect this project has already shipped twice.
+     A custom property is one writer.
+
+     `background-clip: padding-box, border-box` is what makes the fill
+     "as high as the button minus the strokes": the fill layer is clipped
+     to the padding box, the track fills the border box behind it.
+
+     The spinner goes. It cannot be told apart from a stall — and in a
+     hidden pane it does not animate at all — where a percentage that
+     stops moving is a stall you can see.
+     ------------------------------------------------------------------ */
+  @property --p { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+  button.primary.progress,
+  button.primary.progress:hover,
+  button.primary.progress:active{
+    background-image:
+      linear-gradient(to right, var(--acc-btn-rest) var(--p, 0%), transparent 0),
+      linear-gradient(var(--acc-dis), var(--acc-dis));
+    background-clip:padding-box,border-box;
+    border-color:var(--acc-dis-edge); color:var(--acc-ink);
+    font-weight:600; box-shadow:none; opacity:1;
+    transform:none; transition:--p .45s linear}
+
+  /* ------------------------------------------------------------------
      Chip (Figma 5:6). Selection is a raised neutral surface plus a lighter
      border — deliberately NOT accent-filled, because the accent is reserved
      for the next action. The old accent ring is gone for that reason.
@@ -385,16 +419,16 @@
      photo is chosen but the screenshot is not, offering corners to fit
      nothing. */
   .cvbar[hidden]{display:none}
-  /* Render spinner. A determinate percentage was the first version and it read
-     as busier than the work felt; a single moving thing says "still going"
-     without asking to be read. prefers-reduced-motion gets a static ring —
-     the button's label already carries the meaning. */
-  .spin{display:inline-block;width:12px;height:12px;margin-left:8px;
-        vertical-align:-1px;border:2px solid currentColor;border-radius:50%;
-        border-right-color:transparent;opacity:.9;
-        animation:spin .7s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  @media (prefers-reduced-motion:reduce){ .spin{animation:none} }
+  /* The render spinner was HERE, and it is worth writing down why it is not.
+     v0.19.0 replaced a determinate percentage with it, reasoning that the
+     number "read as busier than the work felt". That judgement was made
+     against a percentage that never moved: the poll feeding it had been
+     broken since v0.18.0 (it POSTed to a GET-only route and swallowed the
+     error), which was only found on 11 Sep. A number that never updates does
+     read as noise — but so would any number, and the conclusion did not
+     belong to percentages.
+     The button is the progress bar now (see button.primary.progress above).
+     A DECISION MADE AGAINST A BROKEN MEASUREMENT IS NOT A DECISION. */
 
   /* Preview popover: the composite at whatever size fits, on the sunk surface
      so the image edge is unambiguous against the panel. */
@@ -2620,14 +2654,41 @@ $('#vframe').onchange = async () => {
   }catch(e){ toast('err', 'Could not read that frame: ' + e.message); }
 };
 
+/* One writer for the render button's progress state, so the class and the
+   custom property can never disagree about whether a render is running. */
+function setRenderProgress(pct){
+  const b = $('#save');
+  if (pct === null){
+    b.classList.remove('progress');
+    b.style.removeProperty('--p');
+    b.removeAttribute('aria-busy');
+    b.removeAttribute('role'); b.removeAttribute('aria-valuenow');
+    return;
+  }
+  const p = Math.max(0, Math.min(100, pct));
+  b.classList.add('progress');
+  b.style.setProperty('--p', p.toFixed(1) + '%');
+  // The bar is a colour change, which a screen reader cannot see. The label
+  // carries the number and the element says it is a progress bar while it is
+  // one — otherwise this is an animation that only sighted users can read.
+  b.setAttribute('aria-busy', 'true');
+  b.setAttribute('role', 'progressbar');
+  b.setAttribute('aria-valuenow', String(Math.round(p)));
+  b.textContent = `Rendering ${Math.round(p)}%`;
+}
+
 async function renderVideo(){
   const b = $('#save');
   b.disabled = true;
-  b.innerHTML = 'Rendering<span class="spin" aria-hidden="true"></span>';
+  setRenderProgress(0);
   try{
     await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), device: st.type,
                               grade: gradeValue(), reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
-  }catch(e){ toast('err','Could not start the render: '+e.message); b.disabled=false; b.textContent = saveLabel(); return; }
+  }catch(e){
+    setRenderProgress(null);
+    toast('err','Could not start the render: '+e.message);
+    b.disabled=false; b.textContent = saveLabel(); return;
+  }
   // Poll rather than hold a request open: a clip is hundreds of frames and a
   // browser would time the request out long before the render finished.
   const tick = setInterval(async () => {
@@ -2641,18 +2702,21 @@ async function renderVideo(){
     let d; try { d = await (await fetch('/api/render_status')).json(); }
     catch(e){ return; }
     if (d.state === 'running'){
-      // The button says what it is doing; the frame counter beside the
-      // scrubber carries the numbers, so the primary control stays calm.
-      b.innerHTML = 'Rendering<span class="spin" aria-hidden="true"></span>';
+      // The button IS the progress bar now. A spinner cannot be told apart
+      // from a stall; a percentage that stops moving can, and the fill gives
+      // the same information at a glance.
+      setRenderProgress(d.total ? (100 * d.done / d.total) : 0);
       if (d.total) $('#vframeLbl').textContent = `${d.done} / ${d.total} frames`;
     } else if (d.state === 'done'){
       clearInterval(tick);
+      setRenderProgress(null);
       b.textContent = saveLabel(); b.disabled = false; b.classList.remove('primary');
       $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`;
       toast('ok', `Rendered <code>${(d.output||'').split('/').pop()}</code> · ${d.done} frames to <code>${prettyDir(st.outDir||'')}</code>`);
       const imp = $('#imp'); imp.disabled = false; imp.textContent = 'Send to Claude'; imp.classList.add('primary');
     } else if (d.state === 'error'){
       clearInterval(tick);
+      setRenderProgress(null);
       b.textContent = saveLabel(); b.disabled = false;
       $('#vframeLbl').textContent = `${$('#vframe').value} / ${$('#vframe').max}`;
       toast('err', 'Render failed: ' + (d.message || 'unknown'));
