@@ -1,0 +1,68 @@
+# Publishes to npm when a GitHub release is published — no token, no sign-in.
+#
+# Auth is npm "trusted publishing": GitHub mints a short-lived OIDC token for
+# this exact workflow file in this exact repo, and npmjs.com is configured to
+# accept it (package settings -> Trusted Publisher -> GitHub Actions,
+# seq000/screengraft, publish.yml). Nothing to store, nothing to rotate, and
+# the published tarball carries a provenance attestation for free.
+#
+# Why this exists: every GitHub release before v0.37.0 left npm behind, because
+# `npm publish` from a laptop needs a browser sign-in. Twelve releases
+# accumulated between 0.25.2 and 0.37.0 that way, and `npx screengraft` users
+# were on a build with a broken render poll the whole time.
+#
+# Requirements this file meets (they are npm's, not ours):
+#   - `permissions: id-token: write`   so the runner can mint the OIDC token
+#   - a GitHub-hosted runner            self-hosted runners cannot
+#   - npm >= 11.5.1                     setup-node's bundled npm is older
+#   - the release tag must match package.json, or the publish is refused here
+#     before npm sees it -- check_package.py already pins plugin.json and
+#     SKILL.md to that same version on every push.
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:      # publish whatever version main currently declares
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: npm new enough for trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
+      - name: The tag and package.json must agree
+        if: github.event_name == 'release'
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          if [ "$v" != "${GITHUB_REF_NAME}" ]; then
+            echo "release tag ${GITHUB_REF_NAME} but package.json says $v" >&2
+            exit 1
+          fi
+      - name: Refuse to publish a version the registry already has
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if npm view "screengraft@$v" version >/dev/null 2>&1; then
+            echo "screengraft@$v is already on npm — nothing to do"
+            echo "already=true" >> "$GITHUB_ENV"
+          fi
+      - name: Publish
+        if: env.already != 'true'
+        run: npm publish --provenance --access public
+      - name: Read it back from the registry
+        if: env.already != 'true'
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          sleep 10
+          test "$(npm view screengraft version)" = "$v"
