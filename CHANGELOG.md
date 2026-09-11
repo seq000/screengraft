@@ -9,6 +9,31 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [Unreleased]
+
+### Changed
+
+- **`scripts/build-plugin.sh` refuses to build a version whose release tag
+  already exists when the tree has moved since it.** A version is a promise
+  about bytes; `check_package.py` catches the three version fields drifting
+  from each other but cannot see the same number being reused for different
+  contents, which is how v0.23.1 came to exist. Tags are fetched first (they
+  live on GitHub — `gh release` creates them there); offline means no tag and
+  no refusal. `SCREENGRAFT_REBUILD=1` rebuilds the tagged bytes on purpose.
+  Not packaged, so no release carries it; it applies from the next one.
+
+### Investigated and not changed
+
+- **The one remaining labelled photograph that abstains (iPhone-7).** The
+  edge channel accepts a badly skewed quad — raw corners `[724,290] [978,283]
+  [1060,1274] [460,944]` — that rail refinement straightens into a plausible
+  rectangle 59% off, and the true screen (0.6% off, ranked fourth) is only 43%
+  of its area, below `NEST_FLOOR`, so `pick_innermost` cannot step to it.
+  Contour fill was the candidate discriminator (0.70 against the screen's
+  0.99) and it does not hold across the corpus: wrong candidates reach 1.00 on
+  most photographs and correct ones dip to 0.02. No principled gate; it stays
+  an honest abstention, resolved by one click.
+
 ## [0.41.1] - 2026-09-11
 
 ### Fixed

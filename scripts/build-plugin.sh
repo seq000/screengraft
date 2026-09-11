@@ -8,8 +8,28 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 version="$(python3 -c "import json;print(json.load(open('$root/.claude-plugin/plugin.json'))['version'])")"
 outDir="$(cd "${1:-$root/dist}" 2>/dev/null && pwd || { mkdir -p "${1:-$root/dist}" && cd "${1:-$root/dist}" && pwd; })"
 out="$outDir/screengraft-$version.plugin"
-rm -f "$out"
 cd "$root"
+# A version is a promise about bytes. If a release tag for THIS version already
+# exists and the tree has moved since it, building would put different bytes
+# behind the same number -- the one drift check_package.py cannot see, because
+# plugin.json, package.json and SKILL.md all still agree with each other.
+# v0.23.1 exists because 0.23.0 was re-cut that way. Bump the version, or pass
+# SCREENGRAFT_REBUILD=1 to rebuild the tagged bytes on purpose (a rebuild of
+# the SAME commit is fine and is what the else-branch allows).
+# The tags live on GitHub -- `gh release create` makes them there, and nothing
+# on this machine fetches them unasked -- so look before checking. Offline is
+# tolerated: no tag means no refusal, which is the same as today.
+git fetch -q --tags origin >/dev/null 2>&1 || true
+if git rev-parse -q --verify "refs/tags/v$version" >/dev/null 2>&1; then
+  if ! git diff --quiet "v$version" -- . 2>/dev/null || [ -n "$(git status --porcelain)" ]; then
+    if [ -z "${SCREENGRAFT_REBUILD:-}" ]; then
+      echo "refusing to build screengraft-$version: tag v$version exists and the tree has moved since it." >&2
+      echo "bump the version in .claude-plugin/plugin.json and package.json (and SKILL.md), or set SCREENGRAFT_REBUILD=1." >&2
+      exit 3
+    fi
+  fi
+fi
+rm -f "$out"
 include=()
 # mcp/ MUST be here: plugin.json points mcpServers at ${CLAUDE_PLUGIN_ROOT}/mcp/server.py,
 # and a build that omits it installs a plugin whose declared tools silently fail
