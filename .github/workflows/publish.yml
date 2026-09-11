@@ -57,12 +57,26 @@ jobs:
             echo "screengraft@$v is already on npm — nothing to do"
             echo "already=true" >> "$GITHUB_ENV"
           fi
+      # The registry is the verdict, not the CLI's exit code. On this workflow's
+      # first run (0.37.0, 11 Sep 2026) the tarball landed at 19:26:08.2 and the
+      # CLI then reported `E403 cannot publish over 0.37.0` at 19:26:10 -- the
+      # signature of a slow PUT the client retried and the registry refused the
+      # second time. The run went red for a publish that had succeeded. So the
+      # publish step may fail; the read-back below decides.
       - name: Publish
         if: env.already != 'true'
+        continue-on-error: true
         run: npm publish --provenance --access public
-      - name: Read it back from the registry
+      - name: Read it back from the registry — this is the verdict
         if: env.already != 'true'
         run: |
           v="$(node -p "require('./package.json').version")"
-          sleep 10
-          test "$(npm view screengraft version)" = "$v"
+          for i in 1 2 3 4 5 6; do
+            if [ "$(npm view screengraft version 2>/dev/null)" = "$v" ]; then
+              echo "screengraft@$v is on the registry"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "registry still does not show screengraft@$v" >&2
+          exit 1
