@@ -9,6 +9,27 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.33.1] - 2026-09-11
+
+### Fixed
+
+- **The Web/ProRes control was on screen for a still**, where there is no format
+  to choose. It carries the `hidden` attribute and the attribute did nothing:
+  **any author rule that sets `display` beats the browser's own
+  `[hidden]{display:none}`**, whatever its specificity, because author styles win
+  over the UA stylesheet by cascade origin. `.stepper{display:inline-flex}` was
+  quietly switching the attribute off.
+
+  This is the **third** component to need it — the clip bar and the result
+  video were each patched one at a time, the video one after shipping as a black
+  panel under the composite (v0.30.1). One rule now covers every case and the
+  two hand-patched ones are gone: `[hidden]{display:none !important}`, with the
+  `!important` there deliberately, because it is the only thing that survives the
+  next component that styles `display` without thinking about it.
+
+  Found by the code review of v0.32.0/v0.33.0, one release after writing the
+  comment that explains the same mistake thirty lines further down.
+
 ## [0.33.0] - 2026-09-11
 
 ### Changed

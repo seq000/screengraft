@@ -269,6 +269,21 @@
      24px tall, which is exactly why +/- read as a different species from the
      buttons beside them. Only the corner radii and the shared middle border
      are special. */
+  /* ------------------------------------------------------------------
+     `hidden` must actually hide. THREE components have now needed this
+     patched one at a time — .cvbar, #outImg/#outVid, and the format
+     stepper — because ANY author rule that sets `display` beats the
+     browser's own [hidden]{display:none}, whatever its specificity.
+     Author styles win over the UA stylesheet by cascade origin, so
+     `display:inline-flex` on a class silently switches the attribute off.
+     Each instance shipped: the video one as a black panel under the
+     result (v0.30.1), this one as a Web/ProRes control sitting beside
+     Render for a still, where there is no format to choose.
+     `!important` is deliberate — it is the only thing that survives the
+     next component that styles `display` without thinking about it.
+     ------------------------------------------------------------------ */
+  [hidden]{display:none !important}
+
   .stepper{display:inline-flex;align-items:center}
   /* A segmented control has to show which segment is on. `.sel` was only ever
      styled for the thumbnail picker (.th.sel), so the web/ProRes pair rendered
@@ -418,7 +433,6 @@
      .cvbar sets display:flex. Without this the bar stays visible while the
      photo is chosen but the screenshot is not, offering corners to fit
      nothing. */
-  .cvbar[hidden]{display:none}
   /* The render spinner was HERE, and it is worth writing down why it is not.
      v0.19.0 replaced a determinate percentage with it, reasoning that the
      number "read as busier than the work felt". That judgement was made
@@ -525,13 +539,6 @@
      wide — the glyph and its border — which is a target nobody can hit. */
   .sm.icon{display:inline-flex;align-items:center;justify-content:center;
            flex:none;width:28px;min-width:28px;padding:0}
-  /* An ID selector beats the UA's [hidden]{display:none}, so the rule above was
-     switching `hidden` OFF for both of these. Invisible on the <img> (no src,
-     no height) and glaring on the <video>, which renders a black box with a
-     play button: a "video layer below the result" that was never meant to be
-     on screen at all. The clip is supposed to REPLACE the still in the same
-     box, not sit under it. */
-  #outImg[hidden],#outVid[hidden]{display:none}
   .empty{color:var(--mute);font-size:12px;padding:24px;text-align:center;align-self:center;justify-self:center;max-width:320px}
 
   .rail{min-width:0;overflow:auto;padding:0;display:grid;align-content:start;background:var(--card)}
