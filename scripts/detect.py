@@ -635,7 +635,30 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
     # project has never had the number. Off unless asked for, and it must not
     # change the answer: it observes the same lists the walk below uses.
     walked = {}
-    for cand in sorted(candidates, key=lambda c: c[0], reverse=True):
+    # Walk order: by score -- EXCEPT when the best-scoring candidate has no
+    # shape evidence at all (tier 0: sharp, unmeasurable, or inconsistent
+    # corners) while a tier-2 candidate exists in the same list. A tier-0
+    # winner cannot be corroborated and ends in an abstention or a refusal, so
+    # nothing is lost by looking past it; a tier-2 candidate has four corners
+    # agreeing on a radius, which on the labelled corpus has meant "on the
+    # screen" for every channel-accepted result. Deliberately NOT tier-first
+    # ordering of the whole list: that was tried on 11 Sep 2026 and broke three
+    # photographs, because a tier-2 WRONG candidate sits deeper in the list on
+    # each. This only moves when score alone would have handed the answer to a
+    # quad with nothing to say for itself.
+    def _tier_of(cand):
+        _score, quad, contour, _tag = cand
+        q = order_quad(refine_corners(contour, quad, rail_band)[0]) if refine else quad
+        return shape_tier({"corner_radius": measure_corner_radius(contour, q)})
+
+    order = sorted(candidates, key=lambda c: c[0], reverse=True)
+    if order and _tier_of(order[0]) == 0:
+        # Identity, not equality: candidates hold numpy arrays.
+        strong = [c for c in order if _tier_of(c) == 2]
+        if strong:
+            strong_ids = {id(c) for c in strong}
+            order = strong + [c for c in order if id(c) not in strong_ids]
+    for cand in order:
         # NOT necessarily `cand`: pick_innermost steps inward from it while a
         # comparably screen-like quad nests inside, so the quad that gets
         # validated -- and returned -- can belong to a different candidate.
@@ -927,6 +950,18 @@ def has_rounded_corners(result) -> bool:
     if float(cr["photo_px"]) <= MIN_ROUNDING_PX:
         return False
     per = [float(v) for v in cr["per_corner_px"]]
+    # ALL FOUR corners, not most of them. A per-corner estimate of exactly 0.0
+    # is the estimator saying "no arc here", and a rounded rectangle does not
+    # have corners with no arc. The spread test alone let [0, 0, 56, 56]
+    # through -- a quad rounded at two corners and square at the other two,
+    # a shape no screen has -- because its spread lands at exactly 2.00 and the
+    # comparison is <=. That quad shipped as a CONFIDENT answer 124% off
+    # (iPhone-8, 12 Sep 2026): the only confidently wrong result the labelled
+    # bench has ever produced. Categorical rather than a threshold: on the 14
+    # labelled photographs every on-screen quad this accepts has all four
+    # corners measured (smallest 1.6px); the wrong one had two at 0.0.
+    if min(per) <= 0.0:
+        return False
     r = float(cr["photo_px"])
     spread = (max(per) - min(per)) / max(r, 1e-6)
     return spread <= MAX_RADIUS_SPREAD

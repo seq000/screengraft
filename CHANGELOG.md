@@ -9,6 +9,49 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.43.0] - 2026-09-12
+
+### Fixed
+
+- **A corner with no arc at all no longer counts as rounded.** Five new
+  labelled photographs (14 in all) surfaced the first confidently-wrong answer
+  since the bench existed: on iPhone-8 the tone channel accepted a quad whose
+  per-corner radii were `[0, 0, 56, 56]` — two real arcs and two corners that
+  were not rounded at all. The spread test (`max − min ≤ 2.0`) is a similarity
+  test, and two zeros and two 56s happen to fall inside it once the radius is
+  normalised. The quad won as tier 1 against the correct tier-0 edge quad and
+  shipped **124% off**. `has_rounded_corners` now refuses any quad whose
+  smallest corner radius is exactly zero: a radius of zero means no arc was
+  measured, and a screen corner without an arc is not evidence of a screen.
+  iPhone-8 abstains honestly now (the 1% candidate is not reachable — see
+  below). Pinned both ways in `tier_checks`, fault-planted.
+
+### Changed
+
+- **Within a channel, the walk looks past a sharp winner when a rounded one
+  exists.** `_finalize` walks candidates by score, and score is fill × size —
+  a device body is bigger than its screen and just as well filled, so on two
+  photographs the body outscored the screen inside it. The rule is narrow on
+  purpose: only when the top-scoring candidate has **no** rounded corners
+  (tier 0) do tier-2 candidates move ahead of it; a winner with rounded corners
+  of its own is left alone. The whole-walk tier-first order was measured and
+  rejected in v0.40.0 (a tier-2 *wrong* candidate sits deeper in the list on
+  three photographs); this narrower form fixes iPhone-11 and iPhone-3 without
+  touching those. `walk_order_checks` pins the rule with a big sharp rectangle
+  around a smaller rounded one; the plant (`if False:`) puts the answer 345px
+  off.
+
+- **Bench, 14 labelled photographs:** good unaided **12/14** (was 10/14 the
+  moment the new labels landed), confidently wrong **0/14** (was 1), abstained
+  1 (iPhone-8, holding a quad 103% off — an honest "I don't know"), never
+  proposed 0. iPhone-9_16-pro answers at 15%: the 1% candidate ranks eighth
+  and the accepted quad is tier 1, so the rule above does not fire. Still
+  waiting on within-channel ranking, which remains score alone.
+
+- **`iPhone-12_15-pro.webp` cannot be read by OpenCV** (an animated or
+  lossless WebP variant the build does not decode) and is skipped by the
+  bench; it needs a PNG or JPEG export to become a label.
+
 ## [0.42.0] - 2026-09-11
 
 ### Changed

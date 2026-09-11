@@ -1,6 +1,6 @@
 {
   "name": "screengraft",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "description": "Puts a UI screenshot or screen recording onto a photographed device screen at any angle \u2014 exact perspective via homography, not AI. Local browser UI: pick files or a Figma link, match the screen's edges with a rectified strip loupe, then save a composite or render a video.",
   "author": {
     "name": "Dariusz Fraczyk",

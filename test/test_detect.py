@@ -99,6 +99,68 @@ def dark_anchor_checks():
     return failures
 
 
+def walk_order_checks():
+    """The within-channel walk looks past a tier-0 winner when a tier-2 quad
+    is in the same list -- and ONLY then.
+
+    Score is fill x size, and a device body or a large skewed outline wins on
+    size every time. Ordering the whole walk tier-first was tried on 11 Sep
+    2026 and broke three photographs (a tier-2 WRONG quad sits deeper in the
+    list on each). The rule that survived is narrower: a tier-0 winner cannot
+    be corroborated and ends in an abstention anyway, so nothing is lost by
+    preferring a tier-2 candidate over it; a tier-1 winner is left alone.
+    Two photographs went from abstaining to 0% and 1% on it (12 Sep 2026).
+
+    Built rather than photographed: a sharp rectangle contour scores higher
+    (bigger) than a rounded one inside the same image.
+    """
+    failures = 0
+    H, W = 900, 1200
+    img_area = float(H * W)
+
+    def contour_of(mask):
+        cs, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        return max(cs, key=cv2.contourArea)
+
+    sharp = np.zeros((H, W), np.uint8)
+    cv2.rectangle(sharp, (150, 120), (1050, 720), 255, -1)             # big (50%), square corners
+    rounded = np.zeros((H, W), np.uint8)
+    # Under the size plateau, so the bigger rectangle genuinely outscores it.
+    cv2.rectangle(rounded, (400, 250), (750, 550), 255, -1)
+    rounded = cv2.morphologyEx(rounded, cv2.MORPH_OPEN,
+                               cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (61, 61)))
+    big = contour_of(sharp)
+    small = contour_of(rounded)
+    cands = []
+    for c in (big, small):
+        score, quad = D.score_contour(c, img_area)
+        cands.append((score, D.order_quad(quad), c, "t"))
+    failures += not check("the sharp rectangle outscores the rounded one on size",
+                          cands[0][0] > cands[1][0], f"{cands[0][0]:.3f} vs {cands[1][0]:.3f}")
+
+    res = D._finalize(cands, img_area, img_shape=(H, W), method="tone")
+    truth = np.array([[400, 250], [750, 250], [750, 550], [400, 550]], float)
+    err = float(np.max(np.linalg.norm(res["_corners_np"] - truth, axis=1)))
+    failures += not check("...and the walk still picks the rounded one",
+                          err < 12.0, f"{err:.1f}px from the rounded rectangle")
+
+    # The narrow part: a tier-1 winner is NOT looked past. Give the big
+    # rectangle rounded corners too, but loosely (tier 1), and it keeps the win.
+    loose = np.zeros((H, W), np.uint8)
+    cv2.rectangle(loose, (150, 120), (1050, 720), 255, -1)
+    loose = cv2.morphologyEx(loose, cv2.MORPH_OPEN,
+                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (41, 41)))
+    lc = contour_of(loose)
+    ls, lq = D.score_contour(lc, img_area)
+    res2 = D._finalize([(ls, D.order_quad(lq), lc, "t"), cands[1]], img_area,
+                       img_shape=(H, W), method="tone")
+    big_truth = np.array([[150, 120], [1050, 120], [1050, 720], [150, 720]], float)
+    err2 = float(np.max(np.linalg.norm(res2["_corners_np"] - big_truth, axis=1)))
+    failures += not check("a winner with rounded corners of its own is left alone",
+                          err2 < 12.0, f"{err2:.1f}px from the big rectangle")
+    return failures
+
+
 def tier_checks():
     """Evidence tiers in arbitration and in the abstention veto.
 
@@ -136,6 +198,19 @@ def tier_checks():
     failures += not check("a confident radius is tier 2, a merely rounded one tier 1",
                           D.shape_tier(edge_conf) == 2 and D.shape_tier(tone_round) == 1,
                           f"{D.shape_tier(edge_conf)} / {D.shape_tier(tone_round)}")
+
+    # "Rounded" means all four corners. [0, 0, 56, 56] has two corners with no
+    # arc at all, and its spread is exactly 2.00 -- the threshold, on a <=. It
+    # passed, became tier 1, beat an unmeasurable edge quad, and shipped as a
+    # confident answer 124% off: the only confidently wrong result the labelled
+    # bench has ever produced (iPhone-8, 12 Sep 2026).
+    half_round = result("tone", table, [0, 0, 56, 56], 28)
+    failures += not check("a quad rounded at two corners and square at two is not rounded",
+                          not D.has_rounded_corners(half_round) and D.shape_tier(half_round) == 0,
+                          f"rounded={D.has_rounded_corners(half_round)} tier={D.shape_tier(half_round)}")
+    barely = result("tone", table, [1.6, 50, 56, 56], 50)            # smallest on-screen min seen
+    failures += not check("...while a quad with four measured corners still can be",
+                          D.has_rounded_corners(barely), "1.6px corner rejected")
 
     # Arbitration: not nested, edge confident, tone merely rounded -> edge wins.
     out = D.arbitrate([tone_round, edge_conf], shape)
@@ -758,6 +833,8 @@ def main():
     print("the detection instrument")
     print("the Canny sweep on a dark photograph")
     failures += dark_anchor_checks()
+    print("the within-channel walk looks past a tier-0 winner")
+    failures += walk_order_checks()
     print("evidence tiers — arbitration and the abstention veto")
     failures += tier_checks()
     print("corner recovery on a Canny ring")
