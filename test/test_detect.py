@@ -100,16 +100,20 @@ def dark_anchor_checks():
 
 
 def walk_order_checks():
-    """The within-channel walk looks past a tier-0 winner when a tier-2 quad
-    is in the same list -- and ONLY then.
+    """The within-channel walk looks past a non-confident winner when a tier-2
+    quad is in the same list -- past a tier-0 winner for ANY tier-2, past a
+    tier-1 winner only for a tier-2 NESTED INSIDE it. Never past a tier-2.
 
     Score is fill x size, and a device body or a large skewed outline wins on
     size every time. Ordering the whole walk tier-first was tried on 11 Sep
     2026 and broke three photographs (a tier-2 WRONG quad sits deeper in the
-    list on each). The rule that survived is narrower: a tier-0 winner cannot
-    be corroborated and ends in an abstention anyway, so nothing is lost by
-    preferring a tier-2 candidate over it; a tier-1 winner is left alone.
-    Two photographs went from abstaining to 0% and 1% on it (12 Sep 2026).
+    list on each). What survived: a tier-0 winner cannot be corroborated and
+    ends in an abstention anyway, so nothing is lost by preferring a tier-2
+    candidate over it (two photographs went from abstaining to 0% and 1%);
+    a tier-1 winner is a real finding, and only the same finding narrowed to
+    four agreeing corners may replace it (a front-and-back mockup went from
+    105% confidently wrong to 5%; the disjoint form of the rule lost two
+    photographs to a tone patch 202% off -- 12 Sep 2026).
 
     Built rather than photographed: a sharp rectangle contour scores higher
     (bigger) than a rounded one inside the same image.
@@ -144,20 +148,71 @@ def walk_order_checks():
     failures += not check("...and the walk still picks the rounded one",
                           err < 12.0, f"{err:.1f}px from the rounded rectangle")
 
-    # The narrow part: a tier-1 winner is NOT looked past. Give the big
-    # rectangle rounded corners too, but loosely (tier 1), and it keeps the win.
+    # The tier-1 cases. A tier-1 quad is rounded but its four radii disagree
+    # by more than 50% and less than 2x -- built here with three corners at
+    # 30px and one at 60px (spread 1.0). An ellipse-opened rectangle will NOT
+    # do: its radii agree, so it is tier 2 and the rule never engages (the
+    # first version of this check passed for exactly that reason).
+    def rrect(mask, x0, y0, x1, y1, radii):
+        tl, tr, br, bl = radii
+        cv2.rectangle(mask, (x0 + max(tl, bl), y0), (x1 - max(tr, br), y1), 255, -1)
+        cv2.rectangle(mask, (x0, y0 + max(tl, tr)), (x1, y1 - max(bl, br)), 255, -1)
+        for (cx, cy, r) in ((x0 + tl, y0 + tl, tl), (x1 - tr, y0 + tr, tr),
+                            (x1 - br, y1 - br, br), (x0 + bl, y1 - bl, bl)):
+            cv2.circle(mask, (cx, cy), r, 255, -1)
+
     loose = np.zeros((H, W), np.uint8)
-    cv2.rectangle(loose, (150, 120), (1050, 720), 255, -1)
-    loose = cv2.morphologyEx(loose, cv2.MORPH_OPEN,
-                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (41, 41)))
+    rrect(loose, 100, 100, 700, 800, (30, 30, 60, 30))              # 39% of frame, tier 1
     lc = contour_of(loose)
     ls, lq = D.score_contour(lc, img_area)
-    res2 = D._finalize([(ls, D.order_quad(lq), lc, "t"), cands[1]], img_area,
+    loose_cand = (ls, D.order_quad(lq), lc, "t")
+    # Measured the way the walk measures: after corner refinement. The raw
+    # polygon's vertices sit on the arcs and read 0.0px at every corner.
+    lq_ref = D.order_quad(D.refine_corners(lc, D.order_quad(lq), 0.0)[0])
+    loose_tier = D.shape_tier({"corner_radius": D.measure_corner_radius(lc, lq_ref)})
+    failures += not check("the fixture's loosely-rounded rectangle is tier 1",
+                          loose_tier == 1, f"tier {loose_tier}")
+    loose_truth = np.array([[100, 100], [700, 100], [700, 800], [100, 800]], float)
+
+    # (a) A confident quad NESTED INSIDE the tier-1 winner takes over: the same
+    #     finding, narrowed to where the corners agree. iPhone-17's shape --
+    #     the bounding box of two phones, with the screen inside it at 48%.
+    inside = np.zeros((H, W), np.uint8)
+    rrect(inside, 250, 300, 550, 600, (30, 30, 30, 30))
+    ic = contour_of(inside)
+    is_, iq = D.score_contour(ic, img_area)
+    failures += not check("...which outscores the confident quad inside it",
+                          ls > is_, f"{ls:.3f} vs {is_:.3f}")
+    res2 = D._finalize([loose_cand, (is_, D.order_quad(iq), ic, "t")], img_area,
                        img_shape=(H, W), method="tone")
-    big_truth = np.array([[150, 120], [1050, 120], [1050, 720], [150, 720]], float)
-    err2 = float(np.max(np.linalg.norm(res2["_corners_np"] - big_truth, axis=1)))
-    failures += not check("a winner with rounded corners of its own is left alone",
-                          err2 < 12.0, f"{err2:.1f}px from the big rectangle")
+    in_truth = np.array([[250, 300], [550, 300], [550, 600], [250, 600]], float)
+    err2 = float(np.max(np.linalg.norm(res2["_corners_np"] - in_truth, axis=1)))
+    failures += not check("a confident quad nested inside a tier-1 winner takes over",
+                          err2 < 12.0, f"{err2:.1f}px from the nested rectangle")
+
+    # (b) A confident quad SOMEWHERE ELSE does not: a different finding, and a
+    #     rounded top is a real one. The tone channel's disjoint tier-2 patch
+    #     202% off on two photographs is what this pins.
+    apart = np.zeros((H, W), np.uint8)
+    rrect(apart, 800, 300, 1100, 600, (30, 30, 30, 30))
+    ac = contour_of(apart)
+    as_, aq = D.score_contour(ac, img_area)
+    res3 = D._finalize([loose_cand, (as_, D.order_quad(aq), ac, "t")], img_area,
+                       img_shape=(H, W), method="tone")
+    err3 = float(np.max(np.linalg.norm(res3["_corners_np"] - loose_truth, axis=1)))
+    failures += not check("a confident quad elsewhere leaves a tier-1 winner alone",
+                          err3 < 12.0, f"{err3:.1f}px from the loose rectangle")
+
+    # (c) A confident winner is never looked past, nested or not.
+    conf = np.zeros((H, W), np.uint8)
+    rrect(conf, 100, 100, 700, 800, (30, 30, 30, 30))
+    cc = contour_of(conf)
+    cs_, cq = D.score_contour(cc, img_area)
+    res4 = D._finalize([(cs_, D.order_quad(cq), cc, "t"), (is_, D.order_quad(iq), ic, "t")],
+                       img_area, img_shape=(H, W), method="tone")
+    err4 = float(np.max(np.linalg.norm(res4["_corners_np"] - loose_truth, axis=1)))
+    failures += not check("a confident winner is left alone",
+                          err4 < 12.0, f"{err4:.1f}px from the confident rectangle")
     return failures
 
 
@@ -222,11 +277,29 @@ def tier_checks():
 
     # Symmetry: when both are confident and far apart, that IS a gross
     # disagreement and the gate must still refuse. Loosening must not have
-    # switched the veto off.
-    tone_conf = result("tone", table, [44, 46, 45, 45], 45)           # spread 0.04 -> tier 2
+    # switched the veto off. "Far apart" means NOT nested: until 12 Sep 2026
+    # this used `table`, which contains `screen` at 34% -- so what it pinned
+    # was the veto rescuing an outer-wins-on-ratio ruling, not a disagreement
+    # between two places. A confident quad inside the winner no longer vetoes
+    # (see the card case above), so the quad here sits beside the screen.
+    beside = [[950, 100], [1180, 110], [1170, 380], [940, 370]]        # disjoint from `screen`
+    tone_conf = result("tone", beside, [44, 46, 45, 45], 45)          # spread 0.04 -> tier 2
     out2 = D.arbitrate([tone_conf, edge_conf], shape)
     failures += not check("two confident quads far apart still abstain",
                           out2["abstained"], out2.get("agreement", {}).get("note", "")[:80])
+
+    # A confident peer NESTED INSIDE the winner is not a disagreement about
+    # where the screen is. iPhone-15 (12 Sep 2026): arbitration ruled a tone
+    # quad to be a card on the edge quad's screen (9% of its area), then the
+    # veto read that card as a credible peer 32% of the diagonal away and
+    # abstained on a quad 0% from the label -- the bench's "good quad refused".
+    card = [[400, 900], [700, 910], [695, 1100], [395, 1090]]         # inside `screen`, ~11% of it
+    tone_card = result("tone", card, [20, 21, 20, 20], 20)             # confident, tier 2
+    out_n = D.arbitrate([tone_card, edge_conf], shape)
+    failures += not check("a confident card on the screen goes to the screen",
+                          out_n["method"] == "edge", f"chose {out_n['method']}")
+    failures += not check("...and cannot veto the screen it sits on into an abstention",
+                          not out_n["abstained"], out_n.get("abstain_reason", ""))
 
     # Equal tiers, not nested: the old rule stands -- tone wins on its band.
     edge_round = result("edge", screen, [30, 70, 20, 60], 45)

@@ -130,6 +130,12 @@ ABSTAIN_GAP = 0.15
 # small part of it. That one ratio separates "step inward to the screen" from
 # "don't step into a panel", and it arbitrates between the two detectors too.
 NEST_FLOOR = 0.55
+# "Nested" means this much of the inner quad's area falls inside the outer.
+# One number for every place that asks (arbitrate, the walk order, the
+# abstention veto) so they cannot drift apart. 12 Sep 2026: on 18 labelled
+# photographs the quads that are nested overlap at >= 0.95 and the ones that
+# are not at 0.00 -- there is nothing in between to be careful about.
+NESTED_OVERLAP = 0.90
 
 
 def _odd(n: int) -> int:
@@ -635,29 +641,52 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
     # project has never had the number. Off unless asked for, and it must not
     # change the answer: it observes the same lists the walk below uses.
     walked = {}
-    # Walk order: by score -- EXCEPT when the best-scoring candidate has no
-    # shape evidence at all (tier 0: sharp, unmeasurable, or inconsistent
-    # corners) while a tier-2 candidate exists in the same list. A tier-0
-    # winner cannot be corroborated and ends in an abstention or a refusal, so
-    # nothing is lost by looking past it; a tier-2 candidate has four corners
-    # agreeing on a radius, which on the labelled corpus has meant "on the
-    # screen" for every channel-accepted result. Deliberately NOT tier-first
-    # ordering of the whole list: that was tried on 11 Sep 2026 and broke three
-    # photographs, because a tier-2 WRONG candidate sits deeper in the list on
-    # each. This only moves when score alone would have handed the answer to a
-    # quad with nothing to say for itself.
-    def _tier_of(cand):
+    # Walk order: by score -- EXCEPT when the best-scoring candidate is not
+    # itself confident (tier < 2) while a tier-2 candidate exists in the same
+    # list. Two cases, and they are different:
+    #
+    # * Top is tier 0 (sharp, unmeasurable, or inconsistent corners): it cannot
+    #   be corroborated and ends in an abstention or a refusal, so nothing is
+    #   lost by looking past it to ANY tier-2 candidate.
+    # * Top is tier 1 (rounded, but the four radii disagree): it is a real
+    #   finding, and only a tier-2 candidate NESTED INSIDE it may move ahead --
+    #   the same finding narrowed to the part whose four corners agree, which
+    #   is how arbitrate() already reads a confident quad inside a loosely
+    #   rounded one (tiers before area ratio). A tier-2 candidate somewhere
+    #   ELSE is a different finding and does not displace a rounded top on
+    #   tier alone. Measured 12 Sep 2026 on 18 labelled photographs: every
+    #   tier-2 that should jump a tier-1 top lies inside it at >= 0.95
+    #   overlap; every one that must not (tone's patches on two photographs,
+    #   an edge quad on a third) overlaps it at 0.00. Without the nesting
+    #   condition the tone channel promoted a disjoint tier-2 patch 202% off
+    #   on two photographs and the answer was lost to abstention. The case
+    #   that needed this is a front-and-back mockup: the edge channel's top
+    #   candidate is the bounding box of BOTH phones (tier 1, 105% off), and
+    #   the screen sits inside it at 48% of its area -- under NEST_FLOOR, so
+    #   pick_innermost cannot step to it on the ratio.
+    #
+    # Deliberately NOT tier-first ordering of the whole list: that was tried
+    # on 11 Sep 2026 and broke three photographs, because a tier-2 WRONG
+    # candidate sits deeper in the list on each.
+    def _shape_of(cand):
         _score, quad, contour, _tag = cand
         q = order_quad(refine_corners(contour, quad, rail_band)[0]) if refine else quad
-        return shape_tier({"corner_radius": measure_corner_radius(contour, q)})
+        return q, shape_tier({"corner_radius": measure_corner_radius(contour, q)})
 
     order = sorted(candidates, key=lambda c: c[0], reverse=True)
-    if order and _tier_of(order[0]) == 0:
-        # Identity, not equality: candidates hold numpy arrays.
-        strong = [c for c in order if _tier_of(c) == 2]
-        if strong:
-            strong_ids = {id(c) for c in strong}
-            order = strong + [c for c in order if id(c) not in strong_ids]
+    if order:
+        top_q, top_tier = _shape_of(order[0])
+        if top_tier < 2:
+            strong = []
+            for c in order[1:]:
+                q, tier = _shape_of(c)
+                if tier == 2 and (top_tier == 0
+                                  or overlap_frac(q, top_q) >= NESTED_OVERLAP):
+                    strong.append(c)
+            if strong:
+                # Identity, not equality: candidates hold numpy arrays.
+                strong_ids = {id(c) for c in strong}
+                order = strong + [c for c in order if id(c) not in strong_ids]
     for cand in order:
         # NOT necessarily `cand`: pick_innermost steps inward from it while a
         # comparably screen-like quad nests inside, so the quad that gets
@@ -753,7 +782,13 @@ def _walk_rows(generated, survived, walked, method, click, refine=True,
         else:
             verdict, why = walked.get(id(cand), ("unreached",
                                                  "a higher-scoring candidate was accepted first"))
-        rows.append(_trace_row(method, score, quad, tag, verdict, why))
+        row = _trace_row(method, score, quad, tag, verdict, why)
+        # The shape tier of every proposal, not only the winner's: the walk
+        # order rule in _finalize reads tiers, so a bench reading this file
+        # has to be able to see what the walk saw (added 12 Sep 2026 while
+        # tracing a 105% edge win with a 5% tier-2 candidate right behind it).
+        row["tier"] = shape_tier({"corner_radius": measure_corner_radius(contour, quad)})
+        rows.append(row)
     if click is not None:
         for r in rows:
             r["contains_click"] = r["verdict"] != "filtered_by_click"
@@ -1069,7 +1104,7 @@ def arbitrate(results, shape, click=None):
         # the region winning by default.
         inner, outer = (region, e) if ra < ea else (e, region)
         iname, oname = (rname, "edge") if ra < ea else ("edge", rname)
-        nested = overlap_frac(inner["_corners_np"], outer["_corners_np"]) >= 0.90
+        nested = overlap_frac(inner["_corners_np"], outer["_corners_np"]) >= NESTED_OVERLAP
         ratio = min(ra, ea) / max(ra, ea) if max(ra, ea) > 0 else 0.0
         ti, to = shape_tier(inner), shape_tier(outer)
         tr, te = shape_tier(region), shape_tier(e)
@@ -1184,8 +1219,17 @@ def arbitrate(results, shape, click=None):
     # spread of 1.43, vetoed a confident edge quad 0.3% off -- the bench's one
     # "good quad refused". A veto from weaker evidence is not a disagreement
     # between peers; it is noise outvoting a measurement.
+    # ... and a peer sitting INSIDE the winner is not disagreeing about where
+    # the screen is. On iPhone-15 (12 Sep 2026) arbitration had just ruled a
+    # tone quad to be content drawn on the edge quad's screen -- nested at 9%
+    # of its area, a rounded card -- and this gate then read that same card as
+    # a credible second opinion 32% of the diagonal away and abstained, holding
+    # a quad 0% from the label. A veto is for two screen-shaped findings in
+    # two PLACES; a card on the screen is one place. The nested case has
+    # already been decided above, on tiers and ratio, by the time this runs.
     peers = [r for r in results if r is not best and has_rounded_corners(r)
-             and shape_tier(r) >= shape_tier(best)]
+             and shape_tier(r) >= shape_tier(best)
+             and overlap_frac(r["_corners_np"], best["_corners_np"]) < NESTED_OVERLAP]
     if peers:
         diag = float(np.hypot(*shape))
         peer_gap = min(float(np.max(np.linalg.norm(best["_corners_np"]

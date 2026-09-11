@@ -9,6 +9,54 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.44.0] - 2026-09-12
+
+Four more labelled photographs (18 in all) found one confidently-wrong answer
+and one good quad refused. Both fixed; the bench is **17/18 good unaided,
+0/18 confidently wrong, 0 good quads refused**, every answered photograph
+within 5% of its label. The one abstention (iPhone-8) is honest.
+
+### Fixed
+
+- **A front-and-back mockup answered 105% off with confidence.** The edge
+  channel's top-scoring candidate was the bounding box of *both* phones
+  (score 1.0; tier 1, because one of its corners is the back phone's rounded
+  body), and the screen sat inside it at 48% of its area — under
+  `NEST_FLOOR`, so `pick_innermost` could not step to it on the ratio. The
+  walk-order rule from v0.43.0 now has a second case: past a **tier-1** top,
+  a tier-2 candidate may move ahead only when it is **nested inside** that
+  top — the same finding narrowed to the part whose four corners agree, which
+  is how `arbitrate()` already reads a confident quad inside a loosely rounded
+  one. The form without the nesting condition was measured and rejected the
+  same afternoon: the tone channel promoted a disjoint tier-2 patch 202% off
+  on two photographs and lost both answers to abstention. On 18 photographs
+  every tier-2 that should jump a tier-1 top overlaps it at ≥ 0.95 and every
+  one that must not overlaps it at 0.00; `NESTED_OVERLAP = 0.90` is now one
+  shared constant for arbitration, the walk and the veto. iPhone-17: 105% →
+  5%. iPhone-9_16-pro, the 15% from v0.43.0: → 1%.
+
+- **A card on the screen no longer vetoes the screen.** On iPhone-15
+  arbitration ruled a confident tone quad to be content drawn on the edge
+  quad's screen (9% of its area), and the abstention veto then read that same
+  card as a credible peer 32% of the diagonal away and abstained holding a
+  quad 0% from the label — the bench's "good quad refused". A veto is for two
+  screen-shaped findings in two *places*; a quad nested inside the winner is
+  one place. What this gives up: the veto used to also rescue an
+  outer-wins-on-ratio ruling when a confident screen sat inside a confident
+  larger rounded object at under 55% of its area. No photograph has shown
+  that shape; the test fixture that did was `table` containing `screen`, and
+  it now sits beside it as its name always claimed.
+
+### Changed
+
+- **Every trace row carries `tier`.** The walk reads tiers; the bench could
+  not see them. Now it can.
+
+- **`MAX_RADIUS_SPREAD` re-derived on clean geometry and left at 2.0** (the
+  third time). Over 206 tier-1 candidates on 18 photographs, correct ones
+  spread from 0.51 to 1.93 and wrong ones from 0.53 to 2.00 — no margin
+  anywhere. The threshold is not what separates them.
+
 ## [0.43.0] - 2026-09-12
 
 ### Fixed
