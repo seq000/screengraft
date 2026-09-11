@@ -9,6 +9,26 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.33.2] - 2026-09-11
+
+### Added
+
+- **`test/bench_detect.py` — detection measured against corners a human placed.**
+  Not in CI and deliberately so: it needs photographs, and photographs are not in
+  this repository. It is the thing to run when a detection change needs judging,
+  and again afterwards. **The labels come from the fit store** — every composite
+  saved through the workbench records its four corners keyed by the photo's own
+  pixels, so a folder of photographs plus ordinary use *is* the corpus, and
+  nothing is labelled twice. It separates the three outcomes that looked
+  identical before the trace existed: **recall** (was the screen ever proposed),
+  **ranking** (did the proposed one win) and **the gate** (was a correct answer
+  then refused). Errors are a percentage of the screen's own width, because 30px
+  means different things on a 4000px photograph and a 900px one.
+
+  On the eight labelled photographs today: **1 good unaided, 0 confidently
+  wrong, 6 abstained with none of them refusing a good quad, 3 never proposed at
+  all.**
+
 ## [0.33.1] - 2026-09-11
 
 ### Fixed
