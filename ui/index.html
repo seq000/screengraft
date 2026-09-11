@@ -458,6 +458,18 @@
   #outPane{display:grid}
   #outWrap{overflow:auto;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
   #outImg,#outVid{display:block;margin:auto}
+  /* The live layer stacks the clip on the photo. `position:relative` on the
+     wrapper and `transform-origin:0 0` on the video are what make the matrix3d
+     below map the video's own pixel rectangle onto the quad — change either and
+     the maths silently refers to a different origin. */
+  #liveWrap{position:relative;margin:auto;line-height:0}
+  #liveWrap img{display:block;width:100%}
+  #liveVid{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+  /* Emissive, approximated: `screen` is 1-(1-a)(1-b) — the screen's own light
+     PLUS the glass under it, which is the same idea as the real blend and the
+     reason a true-black UI stops reading as a hole. It is NOT the same maths as
+     compose()'s emissive, and the page says so. */
+  #liveVid.emissive{mix-blend-mode:screen}
   /* An ID selector beats the UA's [hidden]{display:none}, so the rule above was
      switching `hidden` OFF for both of these. Invisible on the <img> (no src,
      no height) and glaring on the <video>, which renders a black box with a
@@ -814,7 +826,11 @@
         <span class="spacer"></span>
         <span class="sm" style="color:var(--mute)">shares zoom &amp; pan</span>
       </div>
-      <div id="outWrap"><span class="empty" id="outEmpty">The composite appears here and updates as you drag.</span><img id="outImg" alt="" hidden><video id="outVid" hidden loop muted playsinline controls></video></div>
+      <div id="outWrap"><span class="empty" id="outEmpty">The composite appears here and updates as you drag.</span><img id="outImg" alt="" hidden><video id="outVid" hidden loop muted playsinline controls></video><!--
+        The live layer: the PHOTOGRAPH with the source clip warped onto the
+        fitted quad by the browser. Not the composite — the composite already
+        has a frame burned into it, so playing over that would show two screens.
+      --><div id="liveWrap" hidden><img id="liveBg" alt=""><video id="liveVid" loop muted playsinline></video></div></div>
       <!-- Video controls. Hidden entirely for a still source: a scrubber over a
            screenshot is a control that can only confuse. The fit itself is
            unchanged — you match the edges on one frame and every frame gets the
@@ -826,7 +842,8 @@
              two settings that change over time — the light match is bound once
              from the fitted frame, and the emissive blend moves with the
              content's own brightness. Neither is visible in a still. -->
-        <button class="sm" id="playclip" title="Composite a few seconds from the fitted frame at preview size and play it here. This is the real pipeline at a smaller size, so the grade, grain and emissive blend are all applied — a still cannot show how those hold up as the UI changes.">Play</button>
+        <button class="sm" id="playlive" title="Play the clip on the photo, right now. The browser applies the same four corners and corner radius, and approximates emissive with screen blending; the colour grade and grain are not in this view.">Play</button>
+        <button class="sm" id="playclip" title="Composite a few seconds from the fitted frame through the real pipeline and play that. Slower — it is a render — but it is the only view with the grade, the grain and the true emissive blend.">Render preview</button>
         <span class="sm" style="color:var(--mute)">Fit on frame</span>
         <span class="cvbar-actions">
           <input type="range" id="vframe" min="0" max="0" value="0" step="1"
@@ -1781,6 +1798,10 @@ $('#resetquad').onclick = () => {
 };
 
 function draw(){
+  // The clip follows the quad while it is being dragged: the live layer IS the
+  // fit, so leaving it on the old corners would make the two panes disagree
+  // mid-drag — which is the one thing the side-by-side exists to prevent.
+  if (!$('#liveWrap').hidden) placeLiveVideo();
   ctx.clearRect(0,0,cv.width,cv.height);
   if (!img.naturalWidth) return;
   ctx.drawImage(img, 0,0, cv.width, cv.height);
@@ -2191,6 +2212,15 @@ function markStale(){
   $('#imp').classList.remove('primary');
 }
 function syncOut(){
+  // The live layer is a photo plus a transformed video, so it re-places rather
+  // than being resized: the transform is computed FROM the zoom, and a stale
+  // matrix puts the clip somewhere the fit is not.
+  if (!$('#liveWrap').hidden){
+    placeLiveVideo();
+    const a = $('#scroller'), b = $('#outWrap');
+    b.scrollLeft = a.scrollLeft; b.scrollTop = a.scrollTop;
+    return;
+  }
   // Whichever of the two is showing gets the SAME treatment: the pane exists to
   // be compared with the fit beside it, and a clip that ignored the zoom would
   // break the pairing the moment you looked closely at a corner. The proxy is
@@ -2210,6 +2240,11 @@ function autoPreview(){
   // Judge while you fit: with the compare pane open the composite re-renders
   // after each correction (compose() measures 0.06s server-side), so Preview
   // stops being a round trip.
+  //
+  // The live layer answers to the same settings — emissive and the corner
+  // radius both change what it draws — and it is free to update, so it does it
+  // immediately rather than on the debounce.
+  if (!$('#liveWrap').hidden) placeLiveVideo();
   clearTimeout(autoTimer);
   autoTimer = setTimeout(renderPreview, 350);
 }
@@ -2222,8 +2257,114 @@ function showResult(what){
   const v = $('#outVid');
   if (what !== 'clip' && !v.hidden){ try { v.pause(); } catch(e){} }
   v.hidden = what !== 'clip';
+  const live = $('#liveWrap');
+  if (what !== 'live' && !live.hidden){ try { $('#liveVid').pause(); } catch(e){} }
+  live.hidden = what !== 'live';
   $('#outEmpty').style.display = (what === 'empty') ? '' : 'none';
 }
+
+/* ===== live playback: the clip on the photo, warped by the browser =========
+
+   The fit is a homography, and a homography is exactly what CSS `matrix3d`
+   applies — so the browser can put a moving video on the device's screen with
+   no compositing at all. Instant, where the rendered proxy costs seconds.
+
+   What it can and cannot show, stated because the page states it too:
+     geometry       — exact, the same four corners the render uses
+     corner radius  — applied in the video's own pixel space, before the warp,
+                      which is where compose() applies it
+     emissive       — APPROXIMATED with `screen` blending. Same idea (the
+                      screen's light plus the glass beneath it), not the same
+                      arithmetic as compose()'s emissive.
+     grade, grain   — not applied. Those are per-frame Python and are the reason
+                      the rendered preview costs what it costs.
+
+   So this answers "is it in the right place and does the motion read", and the
+   rendered preview answers "does it look real". Two questions, two controls. */
+
+/* Solve the 8 unknowns of the projective transform taking the video's own
+   rectangle to the quad. Plain Gaussian elimination on an 8x8 — no library, and
+   deterministic, which matters because everything else here is. */
+function solveHomography(src, dst){
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++){
+    const [x, y] = src[i], [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  for (let c = 0; c < 8; c++){
+    let p = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (Math.abs(A[p][c]) < 1e-12) return null;          // degenerate quad
+    [A[c], A[p]] = [A[p], A[c]]; [b[c], b[p]] = [b[p], b[c]];
+    for (let r = 0; r < 8; r++){
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      if (!f) continue;
+      for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k];
+      b[r] -= f * b[c];
+    }
+  }
+  const h = b.map((v, i) => v / A[i][i]);
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+/* Place the clip on the quad at the pane's current zoom. Called on every zoom,
+   pan and corner move, so it does arithmetic and touches two style properties —
+   nothing that reads layout back. */
+function placeLiveVideo(){
+  const wrap = $('#liveWrap'), v = $('#liveVid');
+  if (wrap.hidden || !st.corners || !v.videoWidth) return;
+  const W = v.videoWidth, H = v.videoHeight;
+  const dst = st.corners.map(([x, y]) => [x * scale, y * scale]);
+  const h = solveHomography([[0, 0], [W, 0], [W, H], [0, H]], dst);
+  if (!h) return;
+  v.style.width = W + 'px'; v.style.height = H + 'px';
+  // Column-major, and the third row/column is identity: this is a 2D projective
+  // transform expressed in a 4x4, not a 3D rotation.
+  v.style.transform = `matrix3d(${h[0]},${h[3]},0,${h[6]},`
+                    + `${h[1]},${h[4]},0,${h[7]},`
+                    + `0,0,1,0,`
+                    + `${h[2]},${h[5]},0,${h[8]})`;
+  // The radius is a fraction of the SCREENSHOT's width and is applied before the
+  // warp — same as compose(), which rounds the screenshot and then warps it.
+  v.style.borderRadius = (radiusValue() * W) + 'px';
+  v.classList.toggle('emissive', emisValue() !== null);
+  const bg = $('#liveBg');
+  bg.style.width = Math.round(img.naturalWidth * scale) + 'px';
+  wrap.style.width = bg.style.width;
+}
+
+async function playLive(){
+  if (!(st.photo && st.shot && st.corners && st.video)) return;
+  const v = $('#liveVid'), s = $('#outSt');
+  $('#liveBg').src = fileURL(st.photo);
+  if (!v.src || v.dataset.src !== st.shot){
+    v.dataset.src = st.shot;
+    v.src = fileURL(st.shot);
+  }
+  showResult('live');
+  await new Promise(r => {
+    if (v.videoWidth) return r();
+    v.onloadedmetadata = r;
+    setTimeout(r, 4000);                 // never hang the page on a bad decode
+  });
+  placeLiveVideo();
+  v.currentTime = st.video && st.video.fps ? (+$('#vframe').value / st.video.fps) : 0;
+  v.play().catch(() => {});              // a blocked autoplay is not an error
+  // Never claim more than it is. The honesty contract applies to a preview as
+  // much as to a detection: this is geometry plus a blend mode, and a person
+  // judging colour from it would be judging the wrong thing.
+  s.textContent = 'Playing live — geometry'
+    + (emisValue() !== null ? ' + emissive (approximated)' : '')
+    + ', no grade or grain. Use Render preview for the real look.';
+  s.title = 'The browser applies the same four corners and the corner radius, and '
+          + 'approximates emissive with screen blending. The colour grade and the '
+          + 'grain are computed per frame in Python and are not in this view.';
+}
+
+
+
 
 /* Watch the composite move before committing to a full render.
 
@@ -2287,17 +2428,28 @@ async function playClip(){
   }, 900);
 }
 $('#playclip').onclick = playClip;
+$('#playlive').onclick = playLive;
 
 async function renderPreview(){
   if (!(st.photo && st.shot && st.corners)) return;
   syncPlayable();
   const s = $('#outSt');
-  const say = t => { if (!building) s.textContent = t; };
+  // The status line describes what the pane is SHOWING. The still keeps
+  // rendering behind a clip that is playing — that is deliberate, so switching
+  // back is instant — but it must not narrate over it. Twice now a status has
+  // been overwritten by a preview nobody was looking at.
+  const say = t => { if (!building && $('#liveWrap').hidden) s.textContent = t; };
   say('Rendering…');
   try{
     const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     const im = $('#outImg');
-    im.onload = () => { outNat = im.naturalWidth; showResult('still'); syncOut(); };
+    im.onload = () => {
+      outNat = im.naturalWidth;
+      // autoPreview runs on every drag, and it must not yank the pane away from
+      // a clip that is playing. The still is still rendered and waiting behind.
+      if ($('#liveWrap').hidden) showResult('still');
+      syncOut();
+    };
     im.src = `${fileURL(r.path)}&t=${Date.now()}`;
     say(`radius ${r.radius_px}px on the screenshot`);
     const b = $('#save'); b.disabled = false; b.textContent = saveLabel();
@@ -2333,8 +2485,14 @@ document.querySelectorAll('[data-preset]').forEach(btn => {
    matching, the loupe, the compare view, the realism rail — is untouched,
    because the geometry does not care whether the pixels move. */
 function syncPlayable(){
-  const b = $('#playclip');
-  if (b) b.disabled = !(st.video && st.corners);
+  const ok = !!(st.video && st.corners);
+  for (const id of ['#playclip', '#playlive']){
+    const b = $(id);
+    if (b) b.disabled = !ok;
+  }
+  // Dragging a corner while the clip plays should move the clip, not leave it
+  // behind on the old quad.
+  if (!$('#liveWrap').hidden) placeLiveVideo();
 }
 function syncVideoUI(){
   const v = st.video;
@@ -2342,8 +2500,10 @@ function syncVideoUI(){
   syncPlayable();
   const b = $('#save');
   if (v && v.ffmpeg === false){
+    // Live playback needs no ffmpeg — it is the browser drawing. Only the
+    // rendered preview does.
     $('#playclip').disabled = true;
-    $('#playclip').title = 'Playing the clip means compositing it, which needs ffmpeg.';
+    $('#playclip').title = 'A rendered preview means compositing, which needs ffmpeg.';
     // Say it now, not after the fit. The fitting still works — it is only the
     // encode that cannot run — so the page stays usable and the message names
     // the one thing to do.

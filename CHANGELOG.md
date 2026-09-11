@@ -9,6 +9,36 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.31.0] - 2026-09-11
+
+### Added
+
+- **Play runs the clip on the photo, live, with no wait.** The fit is a
+  homography, and a homography is precisely what CSS `matrix3d` applies — so the
+  browser can put the moving video on the device's screen itself. Press Play and
+  it is there: **1.5 seconds to first frame against 10** for the composited
+  version, and it keeps up while you drag a corner or change the zoom.
+
+  What it is faithful about, and what it is not, because the page says both:
+  the **geometry is exact** — the same four corners, verified against the fit at
+  four zoom levels and after a drag, **0px** difference in every case — and the
+  **corner radius** is applied in the video's own pixel space, which is where
+  `compose()` applies it. **Emissive is approximated** with `screen` blending:
+  the same idea as the real blend (the screen's own light plus the glass beneath
+  it, which is why a true-black UI stops reading as a hole), not the same
+  arithmetic. **The colour grade and the grain are not in this view at all** —
+  they are per-frame Python, and they are what the rendered preview costs its
+  seconds on.
+
+### Changed
+
+- The composited preview is now **Render preview**, a second control. It is the
+  only view that shows the true look over time, so it stays; Play is what you
+  reach for to judge placement and motion.
+- The status line describes **what the pane is showing**. The still keeps
+  re-rendering behind a playing clip — deliberately, so switching back is
+  instant — but it no longer narrates over it.
+
 ## [0.30.1] - 2026-09-11
 
 ### Fixed
