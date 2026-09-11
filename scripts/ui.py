@@ -702,6 +702,10 @@ def _adopt(role, path):
     return {"path": real, "size": [im.shape[1], im.shape[0]], **meta}
 
 
+class RenderBusy(Exception):
+    """A request that must not run while a render is in flight."""
+
+
 def _clear(role):
     """Un-choose a source. The mirror of _adopt(), and the only way to start
     over: picking a different file was the one exit, and a reload restores the
@@ -719,6 +723,13 @@ def _clear(role):
     """
     if role not in ROLES:
         raise ValueError(f"role must be one of {', '.join(ROLES)}")
+    # A render in flight would publish its output and sidecar AFTER this
+    # cleared them, from a source that is no longer loaded -- the exact stale
+    # artefact this exists to prevent. Refused, the way the render route
+    # refuses a second render; the page shows the message.
+    with RENDER_LOCK:
+        if RENDER["state"] == "running":
+            raise RenderBusy("a render is running — wait for it, then remove the source")
     if role == "photo":
         SESSION.update(photo=None, corners=None, output=None)
     else:
@@ -897,7 +908,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(_adopt(b["role"], b["path"]))
 
             if u.path == "/api/clear":
-                return self._json(_clear(b.get("role")))
+                try:
+                    return self._json(_clear(b.get("role")))
+                except RenderBusy as exc:
+                    return self._json({"error": str(exc)}, 409)
 
             if u.path == "/api/figma":
                 return self._json(SESSION.enqueue({

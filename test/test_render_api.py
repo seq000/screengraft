@@ -690,6 +690,27 @@ def clear_a_source(td):
     finally:
         ui.stop()
 
+    # Clearing while a render is in flight would let the worker publish an
+    # output and sidecar from a source that is no longer loaded -- the stale
+    # artefact /api/clear exists to prevent. Found in the v0.41.0 code review.
+    print("\nclearing a source mid-render")
+    ui = build(td, "clr2")
+    if ui is None:
+        return ok("could build the clip for the mid-render clear", False)
+    try:
+        code, r = ui.post("/api/render", BODY)
+        ok("a render is running", code == 200 and r.get("started"), f"{code} {r}")
+        code, r = ui.post("/api/clear", {"role": "screenshot"})
+        ok("clearing the screenshot mid-render is refused with 409",
+           code == 409 and "render" in r.get("error", ""), f"{code} {r}")
+        ok("...and the screenshot is still loaded", bool(ui.state().get("screenshot")))
+        s = ui.wait_render()
+        ok("the render still finishes", s["state"] == "done", s["state"])
+        code, r = ui.post("/api/clear", {"role": "screenshot"})
+        ok("...after which clearing works", code == 200, f"{code} {r}")
+    finally:
+        ui.stop()
+
 
 def file_route_supports_ranges(td):
     """A browser cannot seek in a video the server hands over whole (SG73).

@@ -1490,6 +1490,11 @@ async function clearSource(role){
     // Nothing to draw on: the canvas goes back to its empty state rather
     // than showing the last photograph with no way to act on it.
     const c = $('#c'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    // ... and the edge view, which would otherwise keep showing a strip of a
+    // photograph that is no longer here.
+    for (const id of ['strip', 'stripF']) {
+      const k = $('#' + id); if (k) k.getContext('2d').clearRect(0, 0, k.width, k.height);
+    }
     $('#cvbar').hidden = true;
     $('#detSt').className = 'status';
     $('#detSt').textContent = 'Photo removed. A fit you saved for it comes back when you pick it again.';
@@ -1501,6 +1506,10 @@ async function clearSource(role){
       : 'Screenshot removed.';
   }
   markStale();
+  // The control that had focus has just hidden itself; without this, focus
+  // drops to <body> and a keyboard user is nowhere. The empty chip is the
+  // natural next action.
+  chip.focus();
 }
 document.querySelectorAll('.chipclear').forEach(b => { b.onclick = () => clearSource(b.dataset.role); });
 

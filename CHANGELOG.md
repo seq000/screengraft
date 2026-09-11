@@ -9,6 +9,17 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.41.1] - 2026-09-11
+
+### Fixed
+
+- **Clearing a source while a render is in flight is refused (409).** The
+  worker would otherwise finish and publish an output and sidecar from a
+  source that is no longer loaded — the stale artefact `/api/clear` exists to
+  prevent. Found in the v0.41.0 code review; route-tested mid-render.
+- Clearing the photo also clears the edge-view strip, and moves focus to the
+  now-empty chip rather than dropping it on `<body>`.
+
 ## [0.41.0] - 2026-09-11
 
 ### Added
