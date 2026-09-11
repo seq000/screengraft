@@ -262,7 +262,26 @@ def order_quad(pts: np.ndarray) -> np.ndarray:
     return np.roll(pts, -start, axis=0)
 
 
-def refine_corners(contour, quad: np.ndarray):
+# The Canny path traces a RING -- both sides of one boundary -- and catches
+# content edges drawn inside the screen along with it. Fitting a line to all of
+# that lands it between the glass edge and whatever is drawn near it, which is
+# the 78px failure that banned refinement from this path at v0.13.0.
+#
+# The fix is to pick a rail rather than to ban the fit. Of the points assigned
+# to one edge, keep those within `RAIL_BAND_K` close-kernels of the outermost;
+# the ring's two rails are a kernel apart by construction, and content edges are
+# far deeper. Measured 11 Sep 2026 on the top-scoring edge candidate of five
+# hand-labelled photographs, worst per-edge median residual over the quad's
+# diagonal: 0.0673 fitting everything, 0.0052 after rail selection -- and the
+# quad that refinement had pushed from 12% to 40% lands at 0.4%.
+#
+# 2 is the ring's own thickness rounded up, not a fitted number: one kernel
+# separates the rails, the second is slack for the Canny width itself. A region
+# silhouette has one rail, so this keeps every point and changes nothing.
+RAIL_BAND_K = 2.0
+
+
+def refine_corners(contour, quad: np.ndarray, rail_band: float = 0.0):
     """
     Re-derive corners by intersecting fitted edge lines.
 
@@ -285,7 +304,10 @@ def refine_corners(contour, quad: np.ndarray):
         return quad, False
 
     # Distance from every point to every edge; nearest edge wins the point.
-    dists, projections = [], []
+    # `outward` is the same distance signed so that positive means away from the
+    # quad's own centre, which is what lets the outermost rail be picked below.
+    centre = quad.mean(axis=0)
+    dists, projections, outward = [], [], []
     for i in range(4):
         a, b = quad[i], quad[(i + 1) % 4]
         ab = b - a
@@ -294,17 +316,29 @@ def refine_corners(contour, quad: np.ndarray):
             return quad, False
         u = ab / length
         rel = pts - a
-        dists.append(np.abs(u[0] * rel[:, 1] - u[1] * rel[:, 0]))
+        cross = u[0] * rel[:, 1] - u[1] * rel[:, 0]
+        rc = centre - a
+        sign = -np.sign(u[0] * rc[1] - u[1] * rc[0])
+        dists.append(np.abs(cross))
         projections.append((rel @ ab) / (length ** 2))
+        outward.append(sign * cross)
     nearest = np.argmin(np.vstack(dists), axis=0)
 
     margin = (1.0 - EDGE_MIDDLE) / 2.0
     lines = []
     for i in range(4):
         t = projections[i]
-        sel = pts[(nearest == i) & (t > margin) & (t < 1.0 - margin)]
+        chosen = (nearest == i) & (t > margin) & (t < 1.0 - margin)
+        sel = pts[chosen]
         if len(sel) < 10:
             return quad, False
+        if rail_band > 0:
+            # 95th percentile rather than the maximum: one stray point further
+            # out than the rail would otherwise drag the window off it.
+            far = outward[i][chosen]
+            keep = far >= (float(np.percentile(far, 95)) - rail_band)
+            if int(keep.sum()) >= 10:
+                sel = sel[keep]
         vx, vy, x0, y0 = cv2.fitLine(
             sel.astype(np.float32), cv2.DIST_HUBER, 0, 0.01, 0.01
         ).ravel()
@@ -551,7 +585,7 @@ def _trace_row(method, score, quad, tag, verdict, why=""):
 
 
 def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
-              click=None, trace=None, method=None):
+              click=None, trace=None, method=None, rail_band: float = 0.0):
     """Best candidate that survives refinement AND validation.
 
     Walks candidates best-score-first rather than trusting the top one: a
@@ -559,13 +593,27 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
     miss, not a result, and the next candidate deserves a look before the
     detector gives up.
 
-    `refine` is off for the Canny path. refine_corners() assumes the contour
-    is a filled region's silhouette, where each side has one long straight
-    run to fit. A Canny contour is a ring tracing both sides of an edge, with
-    content edges caught inside it, so the per-edge line fits pick up the
-    wrong points: measured on the gradient-screen mockup it pushed one corner
-    78px off an otherwise correct quad . The polygon approximation of a
-    Canny boundary is already on the edge, so there is nothing to recover.
+    `refine` used to be off for the Canny path, and `rail_band` is why it no
+    longer is. refine_corners() assumes the contour is a filled region's
+    silhouette, where each side has one long straight run to fit; a Canny
+    contour is a ring tracing both sides of an edge, with content edges caught
+    inside it, so the per-edge line fits picked up the wrong points -- measured
+    on the gradient-screen mockup at v0.13.0, 78px off an otherwise correct
+    quad.
+
+    The claim that came with that ban -- "the polygon approximation of a Canny
+    boundary is already on the edge, so there is nothing to recover" -- was
+    wrong, and it cost this project the largest single bucket of detection
+    error for eighteen releases. approxPolyDP puts its vertices ON the rounded
+    corner arcs, inside the true corners, and on real photographs that is
+    **9-11% of the screen's own width** lost from every side.
+
+    `rail_band` fixes the fit instead of banning it: of the points assigned to
+    one edge, only those within a couple of close-kernels of the outermost are
+    fitted, which is the ring's own outer rail and excludes content edges by
+    construction. Measured over the top-scoring edge candidate on five
+    hand-labelled photographs: 12% -> 0.4%, 11% -> 0.5%, 8% -> 3.4%, 9% -> 6.8%.
+    A region silhouette has one rail, so passing 0 there changes nothing.
     """
     generated = candidates
     if click is not None:
@@ -594,7 +642,7 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
         picked = pick_innermost(candidates, cand)
         score, quad, contour, tag = picked
         if refine:
-            refined, did_refine = refine_corners(contour, quad)
+            refined, did_refine = refine_corners(contour, quad, rail_band)
         else:
             refined, did_refine = quad, False
         corners = order_quad(refined)
@@ -627,7 +675,7 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
         if ok:
             if trace is not None:
                 trace.extend(_walk_rows(generated, candidates, walked, method, click,
-                                        refine))
+                                        refine, rail_band))
             return {
                 "corners": [[round(float(x), 1), round(float(y), 1)] for x, y in corners],
                 "score": round(float(score), 5),
@@ -639,11 +687,13 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
             }
         rejected.append({"score": round(float(score), 5), "tag": tag, "why": why})
     if trace is not None:
-        trace.extend(_walk_rows(generated, candidates, walked, method, click, refine))
+        trace.extend(_walk_rows(generated, candidates, walked, method, click, refine,
+                                rail_band))
     return None
 
 
-def _walk_rows(generated, survived, walked, method, click, refine=True):
+def _walk_rows(generated, survived, walked, method, click, refine=True,
+               rail_band: float = 0.0):
     """One row per candidate the detector GENERATED, with what became of it.
 
     Four verdicts, and the distinction between the last two is the whole point:
@@ -674,7 +724,7 @@ def _walk_rows(generated, survived, walked, method, click, refine=True):
     for cand in generated:
         score, quad, contour, tag = cand
         if refine:
-            quad = order_quad(refine_corners(contour, quad)[0])
+            quad = order_quad(refine_corners(contour, quad, rail_band)[0])
         if click is not None and id(cand) not in kept:
             verdict, why = "filtered_by_click", "the click was not inside this quad"
         else:
@@ -767,7 +817,8 @@ def detect_edges(gray: np.ndarray, click=None, trace=None):
             if score > 0 and quad is not None:
                 candidates.append((score, order_quad(quad), c, (lo, hi)))
 
-    res = _finalize(candidates, img_area, refine=False, img_shape=gray.shape[:2],
+    res = _finalize(candidates, img_area, img_shape=gray.shape[:2],
+                    rail_band=RAIL_BAND_K * _odd(0.004 * short),
                     click=click, trace=trace, method="edge")
     if res is None:
         return None
@@ -862,7 +913,8 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
     which — 0.79 on the fixture (screen in body: take the inner, tone), 0.41
     on a gradient screen (slab on screen: take the outer, edge). When they
     don't nest at all, neither is a subregion of the other and tone wins,
-    since its assumptions being met is itself evidence and it refines corners.
+    since its assumptions being met is itself evidence: a screen that lands
+    inside one narrow tone band is a screen.
 
     Disagreement is reported, never silently resolved — the human confirms
     the corners either way.
@@ -900,8 +952,9 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
     # silhouette, so measure_corner_radius reports an artifact for it — 0.0px
     # even when its quad is the correct one to 1.4px (measured on the
     # gradient-screen fixture, where an earlier version of this filter threw
-    # away the right answer). _finalize already skips corner refinement on that
-    # path for the same reason.
+    # away the right answer). Corner REFINEMENT is no longer skipped there --
+    # rail selection made the line fits safe on a ring, see refine_corners() --
+    # but measuring a RADIUS from a ring is a separate claim and still is.
     region = [r for r in results if r["method"] in ("tone", "saturation")]
     if len(region) == 2:
         rounded = [r for r in region if has_rounded_corners(r)]
@@ -913,7 +966,7 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
     e = next((r for r in results if r["method"] == "edge"), None)
     sat = next((r for r in results if r["method"] == "saturation"), None)
     why = "it was the only detector left after the rounded-corner filter" \
-        if len(results) == 1 else "it is the detector that refines corners"
+        if len(results) == 1 else "its tone band assumption held, which is itself evidence"
     if t and e:
         tq, eq = t["_corners_np"], e["_corners_np"]
         ta = float(cv2.contourArea(tq.astype(np.float32)))
@@ -928,10 +981,11 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
             best, why = t, ("the tone quad sits inside the edge quad at %.0f%% of "
                             "its area — a screen inside a device body" % (ratio * 100))
         else:
-            best, why = t, "the two quads aren't nested; the tone detector refines corners"
+            best, why = t, ("the two quads aren't nested; tone's band assumption "
+                            "holding is itself evidence that it found a screen")
     elif t is None and sat is not None:
         # tone was dropped for having sharp corners, or never fired. The
-        # surviving region detector refines corners; edge does not.
+        # surviving region detector measured a real corner radius; edge cannot.
         best, why = sat, ("the saturation detector found a region with rounded "
                           "corners where tone did not")
     else:

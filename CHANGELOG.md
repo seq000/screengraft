@@ -9,6 +9,54 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.34.0] - 2026-09-11
+
+### Changed
+
+- **The Canny path recovers its corners now, and that was the largest fixable
+  bucket of detection error in the tool.** `approxPolyDP` cannot place a vertex
+  on a rounded corner — there isn't one — so it settles for a point on the arc,
+  inside where the two sides would meet, and every side comes up short. On real
+  photographs that is **9-11% of the screen's own width**. `refine_corners()`
+  already cures it by intersecting the fitted sides, and the Canny path had been
+  banned from calling it since v0.13.0 on the grounds that a ring contour
+  corrupts the line fits. The ring was a real problem; the ban was the wrong
+  answer to it.
+
+  **Rail selection** fixes the fit instead: of the points assigned to one edge,
+  only those within a couple of close-kernels of the outermost are fitted. That
+  is the ring's own outer rail, and content edges drawn inside the screen are
+  excluded by construction rather than by a threshold on how bad the result
+  turned out. A filled region has one rail, so nothing changes there.
+
+  Measured over eight hand-labelled photographs — the error of the closest quad
+  any channel proposed, as a percentage of the screen's own width:
+
+  | photo | before | after |
+  |---|---|---|
+  | iPhone-2 | 9% | **0%** |
+  | iPhone-3 | 9% | **0%** |
+  | iPhone-5 | 9% | **0%** |
+  | iPhone-4 | 8% | **2%** |
+
+  **Good with one click went from 1/8 to 4/8.** Confidently wrong stayed at
+  **0/8**, which was the constraint throughout. Unaided answers are unchanged at
+  1/8: on the photographs that still fail, the screen is now proposed almost
+  exactly and loses the ranking, or is never proposed at all — both of which are
+  now clean problems rather than problems measured through a geometry defect.
+
+  The three photographs where nothing near the screen is ever proposed are
+  untouched by this and need recall work.
+
+### Added
+
+- `test/test_detect.py` builds a two-rail ring with a content edge carrying as
+  many points as the screen edge beside it — what a UI card border actually
+  produces in a Canny image. Fitting the whole ring lands **39.6px** out; rail
+  selection holds **8.5px**, against **13.0px** for the polygon approximation it
+  started from. A one-rail silhouette moves 0.00px, so the region channels are
+  provably undisturbed.
+
 ## [0.33.3] - 2026-09-11
 
 ### Fixed

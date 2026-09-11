@@ -40,6 +40,82 @@ def check(name, cond, detail=""):
     return cond
 
 
+def rail_checks():
+    """Corner recovery on a Canny RING, which is where 9-11% of the screen used
+    to be lost on every photograph.
+
+    approxPolyDP cannot put a vertex on a rounded corner, because a rounded
+    corner has no vertex -- it settles for a point on the arc, inside where the
+    two sides would meet, and shortens every side. refine_corners() recovers the
+    corner by intersecting the fitted sides, and the Canny path was BANNED from
+    calling it for eighteen releases: a ring traces both sides of one boundary
+    and catches content edges drawn inside the screen, so the line fits picked up
+    the wrong points (78px off, measured at v0.13.0).
+
+    Rail selection is the answer: fit only the points within a couple of
+    close-kernels of the outermost, which is the ring's outer rail, and content
+    edges are excluded by construction rather than by a threshold on how bad the
+    fit turned out.
+
+    The fixture is built rather than photographed so it runs in CI and so the
+    contamination is a dial: two rails 5px apart around a rounded rectangle,
+    plus a content edge inset 40px carrying as many points as the screen edge on
+    that side -- which is what a UI card border spanning the screen actually
+    produces in a Canny image.
+    """
+    failures = 0
+    x0, y0, x1, y1, r = 280, 200, 920, 700, 46
+    truth = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=np.float64)
+
+    def rail(grow):
+        m = np.zeros((900, 1200), np.uint8)
+        cv2.rectangle(m, (x0 - grow, y0 - grow), (x1 + grow, y1 + grow), 255, -1)
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, k)      # rounds the corners
+        cs, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        return max(cs, key=cv2.contourArea).reshape(-1, 2).astype(np.float64)
+
+    def worst(quad):
+        return float(np.max(np.linalg.norm(
+            D.order_quad(np.array(quad, dtype=np.float64)) - truth, axis=1)))
+
+    xs = np.linspace(x0 + r, x1 - r, 700)
+    ring = np.concatenate([
+        rail(0), rail(5),
+        np.stack([xs, np.full(700, y0 + 40.0)], 1),     # content edge, two rails
+        np.stack([xs, np.full(700, y0 + 45.0)], 1),
+    ]).reshape(-1, 1, 2)
+
+    quad = D.order_quad(D.approx_quad(ring.astype(np.int32)))
+    approx_err = worst(quad)
+    # The defect itself, asserted so it cannot be quietly explained away again:
+    # the polygon approximation IS short, by a distance set by the corner radius.
+    failures += not check("the polygon approximation falls short of the corner",
+                          approx_err > 8.0, f"{approx_err:.1f}px")
+
+    plain, ok_plain = D.refine_corners(ring, quad, 0.0)
+    railed, ok_rail = D.refine_corners(ring, quad, 10.0)
+    failures += not check("rail selection recovers the corner on a ring",
+                          ok_rail and worst(railed) < approx_err,
+                          f"{approx_err:.1f}px -> {worst(railed):.1f}px")
+    # The fault plant lives in the assertion: fitting every assigned point is
+    # what the ban was protecting against, and it must still be visibly worse.
+    failures += not check("...where fitting the whole ring is much worse",
+                          ok_plain and worst(plain) > 3.0 * worst(railed),
+                          f"whole ring {worst(plain):.1f}px against railed "
+                          f"{worst(railed):.1f}px")
+    # A filled region has one rail, so the same call must not disturb it.
+    solid = rail(0).reshape(-1, 1, 2)
+    sq = D.order_quad(D.approx_quad(solid.astype(np.int32)))
+    a, _ = D.refine_corners(solid, sq, 0.0)
+    b, _ = D.refine_corners(solid, sq, 10.0)
+    gap = float(np.max(np.linalg.norm(np.array(a, dtype=np.float64)
+                                      - np.array(b, dtype=np.float64), axis=1)))
+    failures += not check("...and a one-rail silhouette is left alone",
+                          gap <= 0.5, f"moved {gap:.2f}px")
+    return failures
+
+
 def trace_checks(photo_path, truth):
     """The detection instrument.
 
@@ -506,6 +582,8 @@ def main():
     failures += perspective_checks()
 
     print("the detection instrument")
+    print("corner recovery on a Canny ring")
+    failures += rail_checks()
     failures += trace_checks(photo_path, load_truth())
 
     print()
