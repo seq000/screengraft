@@ -23,6 +23,12 @@ for sel in re.findall(r'([^{}]+)\{', re.sub(r'/\*.*?\*/', '', css, flags=re.S)):
     declared |= set(re.findall(r'\.([a-zA-Z][\w-]*)', sel))
 
 used = {c for g in re.findall(r'class="([^"]*)"', body) for c in g.split()}
+# ... and the same attribute inside JS template strings, which is how the
+# toasts (and now their paths) build their markup. Without this, .g, .err and
+# .path were reported dead on every run, and a list that always has false
+# positives in it is a list nobody reads.
+used |= {c for g in re.findall(r'class="([^"]*)"', js) for c in g.split()}
+used |= {c for g in re.findall(r"class='([^']*)'", js) for c in g.split()}
 used |= set(re.findall(r"classList\.(?:add|remove|toggle|contains)\('([^']+)'", js))
 used |= {c for g in re.findall(r"className\s*=\s*[`'\"]([^`'\"]*)", js) for c in g.split()}
 used |= set(re.findall(r"querySelector(?:All)?\('\.([\w-]+)", js))
