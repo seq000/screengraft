@@ -381,7 +381,7 @@
    NOTE the modifier is `is-empty`, not `empty`: `.empty` is already the
    centred placeholder-paragraph class (padding:24px), and the chip was
    silently inheriting it and rendering 50px tall instead of 32. */
-  .inputchip{display:inline-flex;align-items:center;gap:var(--s2);max-width:300px;
+  .inputchip{display:inline-flex;align-items:center;gap:var(--s2);max-width:220px;
              height:32px;padding:0 12px 0 6px;border-radius:999px;
              background:var(--raise);border:1px solid var(--edge);box-shadow:var(--hi)}
   .inputchip .sw{width:22px;height:22px;border-radius:999px;flex:none;
@@ -393,17 +393,23 @@
   .inputchip.is-empty{background:var(--card);border-style:dashed;
                    color:var(--mute);box-shadow:none}
   .inputchip.is-empty .sw{box-shadow:inset 0 0 0 1px var(--line)}
-  /* The clear control is a SIBLING of the chip, not a child: the chip is one
-     <button>, and a button inside a button is invalid HTML that browsers
-     repair unpredictably. Beside it, it is its own keyboard stop with its own
-     name ("Remove photo"), which is also what makes it distinct from the fit
-     bar's Reset -- that resets the QUAD; this un-chooses a SOURCE. A small
-     round Sm button, so it reads as belonging to the chip without competing
-     with it. Only present while the chip is filled. */
-  .chipclear{width:24px;height:24px;padding:0;border-radius:999px;flex:none;
-             margin-left:calc(-1 * var(--s1));font-size:15px;line-height:1;
-             color:var(--mute)}
-  .chipclear:hover{color:var(--ink)}
+  /* The clear control is a SIBLING of the chip in the markup, not a child:
+     the chip is one <button>, and a button inside a button is invalid HTML
+     that browsers repair unpredictably. It is drawn INSIDE the pill though --
+     .chipwrap positions it over the chip's right end and the filled chip
+     reserves room for it -- because beside the chip it read as a stray
+     character and nobody found it ("place clear buttons inside of chip and
+     make it visible", 12 Sep 2026). Its own keyboard stop with its own name
+     ("Remove photo"), distinct from the fit bar's Reset -- that resets the
+     QUAD; this un-chooses a SOURCE. Only present while the chip is filled. */
+  .chipwrap{position:relative;display:inline-flex;min-width:0}
+  .chipwrap .inputchip:not(.is-empty){padding-right:30px}
+  .chipclear{position:absolute;right:5px;top:50%;transform:translateY(-50%);
+             width:22px;height:22px;padding:0;border-radius:999px;flex:none;
+             font-size:15px;line-height:1;color:var(--ink);
+             background:var(--raise-hi);border:1px solid var(--edge)}
+  .chipclear:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
+  .chipclear:active{background:var(--raise-mid);transform:translateY(-50%)}
 
   /* Status carries meaning in THREE channels: glyph, weight, luminance —
      never hue alone. */
@@ -922,11 +928,9 @@
     <div class="tb-left">
       <span class="brand">Screengraft</span><span id="sess" hidden></span>
       <div class="tb-chips">
-        <button class="inputchip is-empty" id="chip1"><span class="sw" id="sw1"></span><span class="nm">Choose a photo…</span></button>
-        <button class="chipclear" id="clear1" data-role="photo" aria-label="Remove photo" title="Remove the photo and start over. A fit you saved for it comes back when you pick it again." hidden>&times;</button>
+        <span class="chipwrap"><button class="inputchip is-empty" id="chip1"><span class="sw" id="sw1"></span><span class="nm">Choose a photo…</span></button><button class="chipclear" id="clear1" data-role="photo" aria-label="Remove photo" title="Remove the photo and start over. A fit you saved for it comes back when you pick it again." hidden>&times;</button></span>
         <span class="tb-arrow">&rarr;</span>
-        <button class="inputchip is-empty" id="chip2"><span class="sw" id="sw2"></span><span class="nm">Choose a screenshot…</span></button>
-        <button class="chipclear" id="clear2" data-role="screenshot" aria-label="Remove screenshot" title="Remove the screenshot. The fit on the photo is kept." hidden>&times;</button>
+        <span class="chipwrap"><button class="inputchip is-empty" id="chip2"><span class="sw" id="sw2"></span><span class="nm">Choose a screenshot…</span></button><button class="chipclear" id="clear2" data-role="screenshot" aria-label="Remove screenshot" title="Remove the screenshot. The fit on the photo is kept." hidden>&times;</button></span>
       </div>
     </div>
     <span class="spacer"></span>
@@ -1512,6 +1516,7 @@ async function clearSource(role){
   const chip = $('#chip'+n);
   chip.classList.add('is-empty');
   chip.querySelector('.nm').textContent = role==='photo' ? 'Choose a photo…' : 'Choose a screenshot…';
+  chip.title = '';
   $('#sw'+n).style.background = '';
   $('#pv'+n).innerHTML = '<span class="empty">Select a recent image</span>';
   $('#clear'+n).hidden = true;
@@ -1560,7 +1565,14 @@ function setChosen(role, path, size, el, meta){
   $('#pv'+n).innerHTML = `<img src="${fileURL(thumb)}" alt="">`;
   const chip = $('#chip'+n);
   chip.classList.remove('is-empty');
-  chip.querySelector('.nm').textContent = `${path.split('/').pop()} · ${size[0]}×${size[1]}`
+  // The file's own name and nothing else. The size and, for a clip, the frame
+  // count used to follow it in the same 12px, which pushed the one thing that
+  // identifies the file into an ellipsis; they live on hover now, with the
+  // full path. An upload's session copy is "<role>-<epoch>-<name>", so the
+  // server sends the original name back as `name`.
+  const shown = (meta && meta.name) || path.split('/').pop();
+  chip.querySelector('.nm').textContent = shown;
+  chip.title = `${homePath(path)}\n${size[0]}×${size[1]}`
     + (meta && meta.video ? ` · ${meta.frames} frames @ ${Math.round(meta.fps)}fps` : '');
   $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(thumb)}")`;
   $('#clear'+n).hidden = false;
@@ -2818,12 +2830,6 @@ function homePath(p){
   const home = st.home || '';
   return (home && p.startsWith(home)) ? '~' + p.slice(home.length) : p;
 }
-function prettyDir(p){
-  // The short form, for places that cannot wrap: the last two segments.
-  const seg = homePath(p).split('/');
-  return seg.length > 4 ? '…/' + seg.slice(-2).join('/') : homePath(p);
-}
-
 let preset = 'web';
 document.querySelectorAll('[data-preset]').forEach(btn => {
   btn.onclick = () => {

@@ -900,7 +900,10 @@ class Handler(BaseHTTPRequestHandler):
                 with open(dest, "wb") as f:
                     f.write(self._body())
                 # A video is only ever a screen source; a photo must be a still.
-                return self._json(_adopt(role, dest))
+                # The chip shows the file's OWN name: the session copy is
+                # "<role>-<epoch>-<name>", and a chip reading "photo-1789…" told
+                # the person nothing about which photo was loaded (12 Sep 2026).
+                return self._json({**_adopt(role, dest), "name": name})
 
             b = self._jbody()
 

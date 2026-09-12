@@ -9,6 +9,28 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.47.0] - 2026-09-12
+
+### Changed
+
+- **The clear control sits inside the source chip, and you can see it.** It
+  was a faint × beside the chip and read as a stray character. Still its own
+  button in the markup (a button inside a button is invalid HTML), drawn
+  inside the pill's right end on a raised surface with a border. Same
+  keyboard stop, same name ("Remove photo" / "Remove screenshot").
+
+- **A chip shows the file's own name and nothing else.** The size — and for
+  a clip, the frame count — followed the name in the same 12px, and an
+  upload's session copy is named `photo-<epoch>-<name>`, so a chip read
+  "photo-1789204531-IMG… · 1800×1395": the one thing that identifies the
+  file was the part cut off. The server returns the original name for
+  uploads; the size and frame count moved to the chip's hover title with the
+  full path. Chips are 220px at most, down from 300 — the name alone can
+  afford it — which is most of the way to the corner bar clipping at 742px
+  (the status pill is still queued).
+
+- Removed `prettyDir()`, unused since v0.42.0 gave paths their own line.
+
 ## [0.46.0] - 2026-09-12
 
 ### Added
