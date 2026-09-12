@@ -941,6 +941,17 @@ class Handler(BaseHTTPRequestHandler):
                                     "with status=done.",
                 }))
 
+            if u.path == "/api/job/cancel":
+                # The page gave up on a pending job. Marked, not deleted: the
+                # agent's complete_job then answers "already cancelled" instead
+                # of finding no job and guessing, and wait_for_job skips it.
+                job = SESSION.read_job()
+                if job and job.get("status") == "pending":
+                    job["status"] = "cancelled"
+                    job["completed"] = time.time()
+                    _write_json_atomic(SESSION.job_path, job)
+                return self._json(job or {"status": "none"})
+
             if u.path == "/api/job/adopt":
                 # page calls this once job.status == done, to make the export the screenshot
                 with open(SESSION.job_path) as f:

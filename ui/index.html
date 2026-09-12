@@ -1180,8 +1180,8 @@
 
 <div class="pop" id="pop2">
   <h3>Screenshot to put on the screen</h3>
-  <p class="sub">A PNG/JPG of the UI — or paste a Figma frame link and Claude will export it for you.</p>
-  <div class="row" style="margin-bottom:8px"><input type="text" id="figma" placeholder="https://www.figma.com/design/…?node-id=…" style="flex:1"><button id="figmaBtn">Export from Figma</button></div>
+  <p class="sub">A PNG/JPG of the UI — or paste a Figma frame link and Claude will import it for you.</p>
+  <div class="row" style="margin-bottom:8px"><input type="text" id="figma" placeholder="https://www.figma.com/design/…?node-id=…" style="flex:1"><button id="figmaBtn">Import from Figma</button></div>
   <div class="status sm" id="figmaSt" style="margin-bottom:10px"></div>
   <div class="hintline" id="figmaHint" hidden style="margin-bottom:10px"></div>
   <div class="picker">
@@ -1693,6 +1693,7 @@ async function awaitJob({onDone, onError, cancelled}) {
     if (cancelled()) return;
     if (j.status === 'done') return onDone(j);
     if (j.status === 'error') return onError(j);
+    if (j.status === 'cancelled') return;   // this page cancelled it (or another tab did)
     if (j.status === 'none') {
       // The job file is gone — a wiped session, or a restarted server. The
       // server answers 'none' instantly, so looping on it would spin as fast
@@ -1702,16 +1703,37 @@ async function awaitJob({onDone, onError, cancelled}) {
     // 'pending' with waited:true — the long poll timed out server-side; go again.
   }
 }
+/* Import from Figma. One button, two jobs: it starts the import, and while
+   the import is pending it reads "Cancel" and stops it — before this the only
+   way out of a pending import was to reload the page (12 Sep 2026). Cancelling
+   tells the server to mark the job cancelled, so an agent that is still
+   exporting gets "already cancelled" from complete_job instead of landing a
+   file on a request nobody is waiting for. */
+let figmaInFlight = null;   // {stop} while an import is pending
 $('#figmaBtn').onclick = async () => {
+  const s = $('#figmaSt'), hint = $('#figmaHint'), btn = $('#figmaBtn');
+  if (figmaInFlight){
+    const inflight = figmaInFlight;
+    try { await api('/api/job/cancel', {}); } catch (e) { /* already finished — the poll will say */ }
+    inflight.stop('', 'Import cancelled.');
+    return;
+  }
   const url = $('#figma').value.trim(); if (!url) return;
-  const s = $('#figmaSt'), hint = $('#figmaHint');
-  const btn = $('#figmaBtn'); btn.disabled = true;
+  // Only a Figma frame link can be imported, and the job is answered by the
+  // agent, so a wrong URL used to cost a full round trip before anyone saw it
+  // (12 Sep 2026: the workbench's own address was pasted and went out as a job).
+  if (!/^https:\/\/(www\.)?figma\.com\/(design|board|slides|file)\/[^/?#]+/.test(url) || !/node-id=\d+[-:]\d+/.test(url)){
+    s.className = 'status sm err';
+    s.textContent = 'That is not a Figma frame link. Copy the link from Figma (Share → Copy link, or right-click the frame → Copy link) — it needs node-id=… in it.';
+    return;
+  }
   const t0 = Date.now();
   let finished = false;
+  btn.textContent = 'Cancel'; btn.title = 'Stop waiting for this import';
   const paint = () => {
     const el = Math.round((Date.now() - t0) / 1000);
     s.className = 'status sm busy';
-    s.innerHTML = `Exporting from Figma <span class="el">${el}s</span>`;
+    s.innerHTML = `Importing from Figma <span class="el">${el}s</span>`;
     if (el >= NUDGE_AFTER && hint.hidden) {
       hint.hidden = false;
       hint.innerHTML = 'Taking longer than usual. Claude picks this up automatically while it\'s ' +
@@ -1726,26 +1748,33 @@ $('#figmaBtn').onclick = async () => {
   // return so the number is right the moment the designer looks at it again.
   document.addEventListener('visibilitychange', paint);
   const stop = (cls, text) => {
-    finished = true;
+    if (finished) return;
+    finished = true; figmaInFlight = null;
     clearInterval(tick);
     document.removeEventListener('visibilitychange', paint);
-    btn.disabled = false; hint.hidden = true;
+    btn.textContent = 'Import from Figma'; btn.title = '';
+    hint.hidden = true;
     s.className = 'status sm ' + cls; s.textContent = text;
-    // The popover is usually closed by now — the in-place line would go unread.
-    toast(cls === 'ok' ? 'ok' : 'err', cls === 'ok' ? 'Screenshot exported from Figma.' : text);
+    // ONE channel. While the picker is open the line under the field is in
+    // view, and a toast on top of it said the same sentence twice, overlapping
+    // the popover (12 Sep 2026). A toast only when the popover is closed and
+    // the line would go unread.
+    if (!$('#pop2').classList.contains('on') && cls)
+      toast(cls === 'ok' ? 'ok' : 'err', cls === 'ok' ? 'Screenshot imported from Figma.' : text);
   };
+  figmaInFlight = {stop};
   try { await api('/api/figma', {url}); }
-  catch (e) { return stop('err', 'Could not queue the export: ' + e.message); }
+  catch (e) { return stop('err', 'Could not start the import: ' + e.message); }
   await awaitJob({
     cancelled: () => finished,
     onDone: async () => {
       try {
         const r = await api('/api/job/adopt', {});
-        stop('ok', 'Exported');
+        stop('ok', 'Imported');
         setChosen('screenshot', r.path, r.size, null, r);
-      } catch (e) { stop('err', 'Exported, but the file could not be read: ' + e.message); }
+      } catch (e) { stop('err', 'Imported, but the file could not be read: ' + e.message); }
     },
-    onError: (j) => stop('err', 'Export failed: ' + (j.message || '')),
+    onError: (j) => stop('err', 'Import failed: ' + (j.message || '')),
   });
 };
 

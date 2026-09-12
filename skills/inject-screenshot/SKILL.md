@@ -94,7 +94,7 @@ It parks until the user presses a button and returns within ~150 ms of the press
 
 | result | what to do |
 |---|---|
-| `status=job`, `job.type="figma_export"` | Extract `fileKey` and `nodeId` from `job.url` (`1-2` → `1:2`), export via the Figma MCP (`download_assets`, PNG, scale 3), save to `job.save_to`, then `complete_job(status="done", path=<saved file>)`. Re-arm. |
+| `status=job`, `job.type="figma_export"` | Extract `fileKey` and `nodeId` from `job.url` (`1-2` → `1:2`), export via the Figma MCP (`download_assets`, PNG, scale 3), save to `job.save_to`, then `complete_job(status="done", path=<saved file>)`. If `complete_job` answers that the job is already **cancelled**, the user pressed Cancel in the page — say so in one line and re-arm; do not retry. Re-arm. |
 | `status=job`, `job.type="present"` | `present_files` on `job.paths`, report what you checked in the composite (§3), then `complete_job(status="done")`. Re-arm. |
 | `status=timeout` | Nothing pressed yet. Call again to keep waiting. Re-arm two or three times, then stop and say you've stopped waiting — do not loop forever burning turns. |
 | `status=ui_closed` | The UI exited. Stop; say so. |
