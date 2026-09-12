@@ -9,6 +9,24 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.0] - 2026-09-13
+
+### Added
+
+- **Depth of field on both sides of the focus line.** A phone whose middle
+  is sharp and both ends soft has its plane of focus *inside* the screen:
+  blur grows toward the camera as well as away from it — the depth of
+  field's near and far limits, the band Photoshop's tilt-shift draws.
+  **Both sides** adds the near limit as a second dashed line behind the focus
+  line, with its own centre handle; strength is shared, as it is in a lens.
+  Turning it on with the focus line at an edge puts the sharp band across the
+  middle with both limits at the screen's edges. `dof_end2` in the sidecar;
+  null (and every earlier sidecar) means one-sided.
+
+### Changed
+
+- The rotation pips are on the sharp line: the plane of focus is what turns.
+
 ## [0.53.0] - 2026-09-13
 
 ### Changed

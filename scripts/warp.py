@@ -270,7 +270,7 @@ class Plan:
                  blend: str = "replace", reflection: float = DEFAULT_REFLECTION,
                  corner_smoothing: float = 0.0,
                  dof_angle: float = 0.0, dof_strength: float = 0.0, dof_start: float = 0.0,
-                 dof_end: float = 1.0, dof_space: str = "photo"):
+                 dof_end: float = 1.0, dof_space: str = "photo", dof_end2=None):
         dst_quad = np.array(corners, dtype=np.float32)
         if shoelace_area(dst_quad) < 1.0:
             raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
@@ -324,6 +324,7 @@ class Plan:
         self.dof_start = float(np.clip(dof_start, 0.0, 0.95))
         self.dof_end = float(np.clip(dof_end, self.dof_start + 0.05, 1.5))
         self.dof_space = "screen" if dof_space == "screen" else "photo"
+        self.dof_end2 = None if dof_end2 is None else float(np.clip(dof_end2, -0.5, self.dof_start - 0.05))
         reach = int(np.ceil(3 * _dof.sigma_max(dst_quad, self.dof_strength))) if self.dof_strength > 0 else 0
         bx0, by0 = max(0, int(np.floor(xs.min())) - 1 - reach), max(0, int(np.floor(ys.min())) - 1 - reach)
         bx1, by1 = min(pw, int(np.ceil(xs.max())) + 2 + reach), min(ph, int(np.ceil(ys.max())) + 2 + reach)
@@ -337,7 +338,7 @@ class Plan:
                                   self.warped_mask[by0:by1, bx0:bx1], bx0, by0,
                                   start=self.dof_start, end=self.dof_end,
                                   space=self.dof_space, H=self.H,
-                                  src_size=(self.new_w, self.new_h))
+                                  src_size=(self.new_w, self.new_h), end2=self.dof_end2)
 
     def _prep(self, frame: np.ndarray, bbox=None) -> np.ndarray:
         """Warp one frame. With `bbox`, warp only that window of the canvas.
@@ -443,7 +444,7 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
             reflection: float = DEFAULT_REFLECTION,
             dof_angle: float = 0.0, dof_strength: float = 0.0,
             dof_start: float = 0.0, dof_end: float = 1.0,
-            dof_space: str = "photo") -> np.ndarray:
+            dof_space: str = "photo", dof_end2=None) -> np.ndarray:
     """Warp `screenshot` into the quad `corners` (TL,TR,BR,BL, photo pixels) on `photo`.
 
     Single resampling pass at the photo's resolution; deterministic. This is the
@@ -458,7 +459,7 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
                 corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection,
                 dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start,
-                dof_end=dof_end, dof_space=dof_space)
+                dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2)
     plan.bind_grade(screenshot, grade)
     return plan.render(screenshot, screen_off=screen_off, specular=specular)
 
@@ -548,7 +549,7 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                   start_frame: int = 0, max_frames: int = None,
                   dof_angle: float = 0.0, dof_strength: float = 0.0,
                   dof_start: float = 0.0, dof_end: float = 1.0,
-                  dof_space: str = "photo") -> dict:
+                  dof_space: str = "photo", dof_end2=None) -> dict:
     """Inject a VIDEO into a still photo. The photo does not move, so there is
     exactly one homography and the whole of Plan is computed once.
 
@@ -577,7 +578,7 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                 corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection,
                 dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start,
-                dof_end=dof_end, dof_space=dof_space)
+                dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2)
     plan.bind_grade(first, grade)
 
     ph, pw = photo.shape[:2]

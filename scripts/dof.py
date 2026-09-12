@@ -90,10 +90,18 @@ def _blur(img: np.ndarray, sigma: float) -> np.ndarray:
     return cv2.GaussianBlur(img, (k, k), sigma, borderType=cv2.BORDER_REPLICATE)
 
 
-def screen_ramp(src_w: int, src_h: int, angle_deg: float, start: float, end: float) -> np.ndarray:
+def screen_ramp(src_w: int, src_h: int, angle_deg: float, start: float, end: float,
+                end2=None) -> np.ndarray:
     """The ramp in SCREENSHOT space: 0 up to `start`, 1 from `end`, linear
     between, along `angle` (0 = toward +x, 90 = toward +y of the screenshot),
-    both as fractions of the screenshot's extent along that direction."""
+    all as fractions of the screenshot's extent along that direction.
+
+    `end2`, when given, is the NEAR limit: a second ramp running the other way
+    from `start`, reaching 1 at `end2` (< start). The plane of focus then sits
+    inside the screen with blur growing on both sides of it — the depth of
+    field's near and far limits, Photoshop's tilt-shift band. None keeps the
+    one-sided ramp, which is the plane of focus at the screen's edge.
+    """
     a = math.radians(angle_deg)
     d = np.array([math.cos(a), math.sin(a)], dtype=np.float64)
     q = np.array([[0, 0], [src_w, 0], [src_w, src_h], [0, src_h]], dtype=np.float64)
@@ -104,7 +112,12 @@ def screen_ramp(src_w: int, src_h: int, angle_deg: float, start: float, end: flo
     s0, s1 = lo + start * (hi - lo), lo + end * (hi - lo)
     xs = np.arange(src_w, dtype=np.float64)[None, :] + 0.5
     ys = np.arange(src_h, dtype=np.float64)[:, None] + 0.5
-    t = (xs * d[0] + ys * d[1] - s0) / max(s1 - s0, 1e-6)
+    pr = xs * d[0] + ys * d[1]
+    t = (pr - s0) / max(s1 - s0, 1e-6)
+    if end2 is not None:
+        e2 = float(np.clip(end2, -0.5, start - 0.05))
+        s2 = lo + e2 * (hi - lo)
+        t = np.maximum(t, (s0 - pr) / max(s0 - s2, 1e-6))
     return np.clip(t, 0.0, 1.0).astype(np.float32)
 
 
@@ -114,14 +127,14 @@ class Field:
 
     def __init__(self, corners, angle_deg: float, strength: float, mask: np.ndarray,
                  x0: int, y0: int, start: float = 0.0, end: float = 1.0,
-                 space: str = "photo", H=None, src_size=None):
+                 space: str = "photo", H=None, src_size=None, end2=None):
         h, w = mask.shape[:2]
         self.x0, self.y0 = x0, y0
         self.smax = sigma_max(corners, strength)
         self.sigmas = [self.smax * k / (DOF_LEVELS - 1) for k in range(DOF_LEVELS)]
         if space == "screen" and H is not None and src_size is not None:
             sw, sh = src_size
-            src = screen_ramp(sw, sh, angle_deg, start, end)
+            src = screen_ramp(sw, sh, angle_deg, start, end, end2)
             T = np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1]], dtype=np.float64)
             t = cv2.warpPerspective(src, T @ np.asarray(H, dtype=np.float64), (w, h),
                                     flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)

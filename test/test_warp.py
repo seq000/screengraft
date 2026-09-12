@@ -338,6 +338,15 @@ def main():
     failures += not check("...and it differs from the photo-space ramp on a steep quad (the spaces are not the same)",
                           abs(t_at(pp, sw/2, 0.5*sh) - 0.5) > 0.05, f"photo-space mid {t_at(pp, sw/2, 0.5*sh):.2f}")
 
+    # Both sides: a near limit behind the focus line. Sharp in the middle,
+    # blurred toward BOTH ends -- the plane of focus inside the screen.
+    pb = W.Plan(tex, shot.shape, steep, 24, dof_angle=90, dof_strength=0.6, dof_start=0.5, dof_end=1.0, dof_space="screen", dof_end2=0.0)
+    n2, m2, f2 = t_at(pb, sw/2, 0.1*sh), t_at(pb, sw/2, 0.5*sh), t_at(pb, sw/2, 0.9*sh)
+    failures += not check("a near limit blurs the other side of the focus line too, and the middle stays sharp",
+                          n2 > 0.75 and m2 < 0.03 and f2 > 0.75, f"near {n2:.2f} mid {m2:.2f} far {f2:.2f}")
+    failures += not check("...and no near limit means the near side is untouched",
+                          t_at(ps, sw/2, 0.1*sh) < 0.02)
+
     # The estimator: sharp all round reads flat; a planted gradient blur on the
     # PHOTO reads back with the planted direction.
     m0 = DOF.measure(plain, quad)

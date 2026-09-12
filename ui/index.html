@@ -386,9 +386,9 @@
   .seg button.sel:active{background:var(--raise-low);transform:none}
   /* A toggle in the strip head. On = the raised surface every selected thing
      on this page has (the segmented thumb, the device chip), off = a label. */
-  .striphead button[aria-pressed]{background:transparent;border-color:transparent;box-shadow:none;color:var(--mute)}
-  .striphead button[aria-pressed]:hover{color:var(--ink)}
-  .striphead button[aria-pressed="true"]{background:var(--raise);border-color:var(--edge);color:var(--ink);font-weight:600}
+  .striphead button[aria-pressed],#dofBoth[aria-pressed]{background:transparent;border-color:transparent;box-shadow:none;color:var(--mute)}
+  .striphead button[aria-pressed]:hover,#dofBoth[aria-pressed]:hover{color:var(--ink)}
+  .striphead button[aria-pressed="true"],#dofBoth[aria-pressed="true"]{background:var(--raise);border-color:var(--edge);color:var(--ink);font-weight:600}
   /* Input chip (Figma 5:14 / 5:20). Surface and shadow are declared here rather
    than inherited from the base button rule, so the filled state is explicit and
    the .is-empty override below has something definite to override.
@@ -1153,6 +1153,7 @@
             </div>
             <input type="range" id="dofStr" min="0" max="1" step="0.05" value="0.3" aria-label="Blur strength at the far edge">
             <div style="display:flex;align-items:center;gap:var(--s2)">
+              <button class="sm" id="dofBoth" aria-pressed="false" title="Blur on both sides of the focus line — the depth of field's near and far limits, for a phone whose middle is sharp and both ends soft. Off, the plane of focus is at the screen's edge and blur grows one way.">Both sides</button>
               <button class="sm" id="dofMeasure" title="Read the direction and a starting strength off the photo's own bezel">Measure from photo</button>
               <span class="status sm" id="dofSt" style="min-width:0"></span>
             </div>
@@ -2577,9 +2578,10 @@ function setDof(on, ang, str){
   dofOn = on;
   if (ang !== undefined) dofAng = ((ang % 360) + 360) % 360;
   if (str !== undefined) dofStr = Math.max(0, Math.min(1, str));
-  remember('dof', on ? '1' : '0'); remember('dofAng', String(dofAng)); remember('dofStr', String(dofStr)); remember('dofStart', String(dofStart)); remember('dofEnd', String(dofEnd));
+  remember('dof', on ? '1' : '0'); remember('dofAng', String(dofAng)); remember('dofStr', String(dofStr)); remember('dofStart', String(dofStart)); remember('dofEnd', String(dofEnd)); remember('dofEnd2', dofEnd2 === null ? '' : String(dofEnd2));
   setSectionOpen($('#secDof'), on);
   paintDof();
+  paintBoth();
   paintGizmo();
 }
 let dofMeasuredFor = null;   // photo path the last measurement was for
@@ -2610,7 +2612,7 @@ async function measureDof(){
         ang = (Math.atan2(p1[1]-p0[1], p1[0]-p0[0]) * 180 / Math.PI + 360) % 360;
       }
     }
-    dofStart = 0; dofEnd = 1; setDof(true, ang, Math.max(r.strength, 0.05));
+    dofStart = 0; dofEnd = 1; dofEnd2 = null; setDof(true, ang, Math.max(r.strength, 0.05));
 
     s.className = 'status sm ok';
     s.textContent = `Measured: grows toward ${dofWord(r.angle)}. Strength is a floor — raise it if the far end looks softer.`;
@@ -2642,14 +2644,30 @@ $('#dofMeasure').onclick = measureDof;
    sit anywhere on the screen or a little past it. Handles:
      solid line centre  -- move focus (start)
      dashed line centre -- move where the ramp ends (end); spacing = ramp length
-     dashed line pips   -- turn both lines (direction), ⇧ snaps to 15°
+     sharp line pips    -- turn all lines about the focus line (direction), ⇧ snaps to 15°
+     second dashed line -- the NEAR limit, when "Both sides" is on: blur grows
+                           the other way from the focus line too
      diamond on the dashed line -- slide along it for how much blur (strength)
    Everything is computed in screenshot pixels and mapped to the photo with H;
    the SVG's viewBox is the photo so it stays aligned at every zoom for free. */
 const gz = $('#dofGizmo');
 const SIGMA_FULL_FRAC = 0.02;   // mirrors dof.DOF_MAX_FRAC -- keep in step
 let dofEnd = parseFloat(recall('dofEnd','1')); if (!(dofEnd > 0)) dofEnd = 1;
+// The near limit. null = one-sided (the plane of focus at the screen's edge).
+let dofEnd2 = recall('dofEnd2','') === '' ? null : parseFloat(recall('dofEnd2','')); if (dofEnd2 !== null && !(dofEnd2 < 1)) dofEnd2 = null;
 function dofEndV(){ return dofOn ? dofEnd : 1; }
+function dofEnd2V(){ return dofOn ? dofEnd2 : null; }
+function paintBoth(){ $('#dofBoth').setAttribute('aria-pressed', dofEnd2 !== null ? 'true' : 'false'); }
+$('#dofBoth').onclick = () => {
+  if (dofEnd2 === null){
+    // Turning it on: the focus line is probably at the edge, where a near
+    // limit has nowhere to go. Put the sharp band across the middle with both
+    // limits at the screen's edges -- the "middle sharp, both ends soft" case.
+    if (dofStart < 0.15){ dofStart = 0.5; dofEnd = 1.0; dofEnd2 = 0.0; }
+    else dofEnd2 = Math.max(-0.5, dofStart - (dofEnd - dofStart));
+  } else dofEnd2 = null;
+  setDof(true); autoPreview();
+};
 function applyH(Hm, p){ const w = Hm[6]*p[0] + Hm[7]*p[1] + Hm[8]; return [(Hm[0]*p[0] + Hm[1]*p[1] + Hm[2]) / w, (Hm[3]*p[0] + Hm[4]*p[1] + Hm[5]) / w]; }
 function gizmoGeom(){
   const [sw, sh] = st.shotSize, a = dofAng * Math.PI / 180;
@@ -2677,6 +2695,8 @@ function paintGizmo(){
   const P = (f, q) => applyH(g.H, gzPt(g, f, q));
   const a0 = P(dofStart, -0.06), a1 = P(dofStart, 1.06), ac = P(dofStart, 0.5);
   const b0 = P(dofEnd, -0.06), b1 = P(dofEnd, 1.06), bc = P(dofEnd, 0.5);
+  const two = dofEnd2 !== null;
+  const c0 = two ? P(dofEnd2, -0.06) : null, c1 = two ? P(dofEnd2, 1.06) : null, cc = two ? P(dofEnd2, 0.5) : null;
   const th = P(dofEnd, 0.08 + 0.84 * dofStr);           // the strength thumb slides along the dashed line
   const sigma = dofStr * SIGMA_FULL_FRAC * g.side;
   const r = 6 * k, rp = 4 * k, fs11 = 11 * k, off = 14 * k;
@@ -2684,16 +2704,20 @@ function paintGizmo(){
   const T = (p, txt, dy) => `<text x="${p[0]}" y="${p[1] + dy}" text-anchor="middle" font-size="${fs11}">${txt}</text>`;
   const away = unit(sub(bc, ac));                        // label offsets: away from the other line
   const beyond = dofEnd > 1.0001;
+  const beyond2 = two && dofEnd2 < -0.0001;
   gz.innerHTML =
     L(a0, a1, 'case', 'stroke-width="4"') + L(a0, a1, 'focus') +
     L(b0, b1, 'case', 'stroke-width="3.5"') + L(b0, b1, 'far' + (beyond ? ' out' : '')) +
+    (two ? L(c0, c1, 'case', 'stroke-width="3.5"') + L(c0, c1, 'far' + (beyond2 ? ' out' : '')) : '') +
+    `<circle cx="${a0[0]}" cy="${a0[1]}" r="${rp}" class="h pip" data-h="rotA"/>` +
+    `<circle cx="${a1[0]}" cy="${a1[1]}" r="${rp}" class="h pip" data-h="rotB"/>` +
     `<circle cx="${ac[0]}" cy="${ac[1]}" r="${r}" class="h" data-h="start"/>` +
-    `<circle cx="${b0[0]}" cy="${b0[1]}" r="${rp}" class="h pip" data-h="rotA"/>` +
-    `<circle cx="${b1[0]}" cy="${b1[1]}" r="${rp}" class="h pip" data-h="rotB"/>` +
     `<circle cx="${bc[0]}" cy="${bc[1]}" r="${r}" class="h hollow" data-h="end"/>` +
+    (two ? `<circle cx="${cc[0]}" cy="${cc[1]}" r="${r}" class="h hollow" data-h="end2"/>` : '') +
     `<rect x="${th[0]-r}" y="${th[1]-r}" width="${2*r}" height="${2*r}" transform="rotate(45 ${th[0]} ${th[1]})" class="h thumb" data-h="str"/>` +
-    T([ac[0] - away[0]*off, ac[1] - away[1]*off], 'sharp', 4*k) +
+    T([ac[0] - away[0]*off*(two ? 0 : 1), ac[1] - away[1]*off*(two ? 0 : 1) + (two ? -off : 0)], 'sharp', 4*k) +
     T([bc[0] + away[0]*off, bc[1] + away[1]*off], `σ ${sigma.toFixed(0)}px from here${beyond ? ' · past the screen' : ''}`, 4*k) +
+    (two ? T([cc[0] - away[0]*off, cc[1] - away[1]*off], `σ ${sigma.toFixed(0)}px from here${beyond2 ? ' · past the screen' : ''}`, 4*k) : '') +
     T([th[0] + away[0]*off*1.6, th[1] + away[1]*off*1.6], `${Math.round(dofStr*100)}%`, 4*k);
 }
 // pointer position in SCREENSHOT pixels
@@ -2716,14 +2740,17 @@ gz.addEventListener('pointermove', e => {
   const f = (p[0]*g.d[0] + p[1]*g.d[1] - g.lo) / (g.hi - g.lo);
   const q = (p[0]*g.u[0] + p[1]*g.u[1] - g.ulo) / (g.uhi - g.ulo);
   if (gzDrag.h === 'start'){
-    dofStart = Math.max(0, Math.min(0.95, Math.min(f, dofEnd - 0.05)));
+    dofStart = Math.max(dofEnd2 === null ? 0 : dofEnd2 + 0.05, Math.min(0.95, Math.min(f, dofEnd - 0.05)));
   } else if (gzDrag.h === 'end'){
     dofEnd = Math.max(dofStart + 0.05, Math.min(1.5, f));
+  } else if (gzDrag.h === 'end2'){
+    dofEnd2 = Math.max(-0.5, Math.min(dofStart - 0.05, f));
   } else if (gzDrag.h === 'str'){
     dofStr = Math.max(0.05, Math.min(1, (q - 0.08) / 0.84));
   } else {
-    // Turn about the dashed line's centre; the pip under the pointer follows.
-    const c = gzPt(g, dofEnd, 0.5);
+    // Turn about the SHARP line's centre -- the plane of focus is what turns;
+    // the pip under the pointer follows.
+    const c = gzPt(g, dofStart, 0.5);
     const v = [p[0]-c[0], p[1]-c[1]];
     const sign = gzDrag.h === 'rotB' ? 1 : -1;      // rotB sits at +u, rotA at -u
     dofAng = ((Math.atan2(v[1]*sign, v[0]*sign) * 180 / Math.PI - 90) % 360 + 360) % 360;
@@ -3131,7 +3158,7 @@ async function playClip(){
   // a preview the user did not ask for, and the wait goes silent again.
   building = true;
   try{
-    await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_space: 'screen',
+    await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen',
                                      device: st.type, grade: gradeValue(),
                                      reflection: emisValue(), fit_frame: +$('#vframe').value});
   }catch(e){
@@ -3190,7 +3217,7 @@ async function renderPreview(){
   const say = t => { if (!building && $('#liveWrap').hidden) s.textContent = t; };
   say('Rendering…');
   try{
-    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_space: 'screen', device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type, grade: gradeValue(), reflection: emisValue()});
     const im = $('#outImg');
     im.onload = () => {
       outNat = im.naturalWidth;
@@ -3320,7 +3347,7 @@ async function renderVideo(){
   b.disabled = true;
   setRenderProgress(0);
   try{
-    await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_space: 'screen', device: st.type,
+    await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type,
                               grade: gradeValue(), reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
   }catch(e){
     setRenderProgress(null);
@@ -3366,7 +3393,7 @@ $('#save').onclick = async () => {
   if (st.video) return renderVideo();
   const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
   try{
-    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_space: 'screen', device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type, grade: gradeValue(), reflection: emisValue()});
     b.textContent = saveLabel();
     // The real destination, not a hardcoded one: --out-dir means saves usually
     // land in the project folder now, and telling the user "~/Desktop" when

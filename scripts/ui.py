@@ -685,9 +685,15 @@ def _dof_args(b):
         strength, angle, start, end = 0.0, 0.0, 0.0, 1.0
     space = "screen" if b.get("dof_space") == "screen" else "photo"
     start = float(min(max(start, 0.0), 0.95))
+    # The near limit is optional: absent or null means one-sided.
+    end2 = b.get("dof_end2")
+    try:
+        end2 = None if end2 is None else float(min(max(float(end2), -0.5), start - 0.05))
+    except (TypeError, ValueError):
+        end2 = None
     return {"dof_angle": angle % 360.0, "dof_strength": float(min(max(strength, 0.0), 1.0)),
             "dof_start": start, "dof_end": float(min(max(end, start + 0.05), 1.5)),
-            "dof_space": space}
+            "dof_space": space, "dof_end2": end2}
 
 
 ROLES = ("photo", "screenshot")
@@ -1246,7 +1252,7 @@ class Handler(BaseHTTPRequestHandler):
                           "blend": blend, "reflection": reflection,
                           "dof_angle": dof["dof_angle"], "dof_strength": dof["dof_strength"],
                           "dof_start": dof["dof_start"], "dof_end": dof["dof_end"],
-                          "dof_space": dof["dof_space"],
+                          "dof_space": dof["dof_space"], "dof_end2": dof["dof_end2"],
                           # A render is always the whole clip; only the preview
                           # passes a segment. Recorded anyway, because the
                           # sidecar's promise is EVERY argument that changes the
@@ -1339,7 +1345,7 @@ class Handler(BaseHTTPRequestHandler):
                           "blend": blend, "reflection": reflection,
                           "dof_angle": dof["dof_angle"], "dof_strength": dof["dof_strength"],
                           "dof_start": dof["dof_start"], "dof_end": dof["dof_end"],
-                          "dof_space": dof["dof_space"],
+                          "dof_space": dof["dof_space"], "dof_end2": dof["dof_end2"],
                           "saved": time.time()}
                 # A fit is remembered when it PRODUCED something, not while it
                 # is being dragged: a quad on the canvas is a work in progress,
