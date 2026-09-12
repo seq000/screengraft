@@ -260,10 +260,22 @@ def approx_quad(contour):
 
 
 def order_quad(pts: np.ndarray) -> np.ndarray:
-    """Order 4 points TL, TR, BR, BL as they appear in the image."""
+    """Order 4 points TL, TR, BR, BL as they appear in the IMAGE.
+
+    Corner 0 is where the screenshot's top-left lands, so this decides the
+    screenshot's orientation -- and this function cannot decide it well: on a
+    phone photographed at ~45 degrees the corner nearest the image's top-left
+    is the screen's physical bottom-left, so a quad right to 1% put the
+    screenshot a quarter turn out (12 Sep 2026). A rule "the top edge of
+    a portrait quad is its higher short edge" was tried here and is wrong for
+    every landscape screen, because which edge is the top depends on the
+    SCREENSHOT's aspect, which only the workbench knows. So this stays
+    geometric and the workbench turns the order to match the screenshot
+    (`orientQuad` in ui/index.html, plus a Rotate 90 degrees control).
+    """
     c = pts.mean(axis=0)
     ang = np.arctan2(pts[:, 1] - c[1], pts[:, 0] - c[0])
-    pts = pts[np.argsort(ang)]           # counter-clockwise in image coords
+    pts = pts[np.argsort(ang)]           # clockwise as seen on screen (y down)
     start = int(np.argmin(pts.sum(axis=1)))  # closest to the image's top-left
     return np.roll(pts, -start, axis=0)
 

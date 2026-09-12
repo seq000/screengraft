@@ -177,6 +177,33 @@
   ok('rail controls animate their state change', noTrans.length === 0,
      noTrans.map(e => e.id || e.className).join(', '));
 
+  // --- 9. orientation -------------------------------------------------------
+  // orientQuad() turns a DETECTED quad so its top edge suits the screenshot's
+  // aspect (portrait -> a short edge, landscape -> a long one). Exercised on
+  // synthetic state and restored, so it runs whether or not a photo is loaded.
+  // Both directions, because the first version of this rule lived in
+  // detect.py and was right for phones and wrong for every landscape screen.
+  if (typeof orientQuad === 'function' && typeof st === 'object') {
+    const keep = { corners: st.corners, shotSize: st.shotSize, quadFrom: st.quadFrom };
+    const tilted = [[490, 439], [1157, 92], [1350, 344], [687, 695]];   // a phone at 45°, image-order start
+    st.corners = tilted.map(c => c.slice()); st.shotSize = [1080, 2280];
+    const turnedP = orientQuad();
+    const topLenP = Math.hypot(st.corners[1][0] - st.corners[0][0], st.corners[1][1] - st.corners[0][1]);
+    ok('a portrait screenshot on a tilted phone gets a short top edge',
+       turnedP && topLenP < 400 && st.corners[0][0] === 1157, `turned=${turnedP} top=${topLenP.toFixed(0)}px first=${st.corners[0]}`);
+    st.corners = tilted.map(c => c.slice()); st.shotSize = [2280, 1080];
+    const turnedL = orientQuad();
+    const topLenL = Math.hypot(st.corners[1][0] - st.corners[0][0], st.corners[1][1] - st.corners[0][1]);
+    ok('a landscape screenshot on the same phone gets a long top edge',
+       !turnedL && topLenL > 600, `turned=${turnedL} top=${topLenL.toFixed(0)}px`);
+    st.corners = [[100, 100], [700, 100], [700, 600], [100, 600]]; st.shotSize = [1080, 2280];
+    const turnedSq = orientQuad();
+    ok('a near-square quad is left alone', !turnedSq, `turned=${turnedSq}`);
+    Object.assign(st, keep);
+  } else {
+    ok('orientQuad is present', false, 'not defined');
+  }
+
   const fail = R.filter(r => !r.pass);
   return { pass: R.length - fail.length, fail: fail.length,
            failures: fail, checks: R.map(r => (r.pass ? '  ok   ' : '  FAIL ') + r.name + (r.extra ? '   ' + r.extra : '')) };

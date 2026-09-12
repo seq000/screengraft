@@ -9,6 +9,33 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.46.0] - 2026-09-12
+
+### Added
+
+- **The screenshot lands the right way up on a tilted phone.** Detection
+  orders corners by where they sit in the photograph — nearest the image's
+  top-left first — and on a phone lying at ~45° that corner is the screen's
+  physical bottom-left, so a quad right to 1% put the screenshot a quarter
+  turn out, and the only fix was dragging all four corners to their
+  neighbours' places. Which edge is the top depends on the *screenshot's*
+  aspect, which detection cannot know; so the workbench decides: after a
+  detection, if the screenshot is portrait and the quad's top edge is a long
+  one (or landscape and short), the order is turned until they agree, taking
+  the higher of the two candidate top edges so an upright photo is unchanged.
+  Near-square quads (under 1.25) are left alone. Remembered and hand-placed
+  fits are never touched — those are somebody's decision. The same rule was
+  first written into `detect.py` and was wrong for every landscape screen;
+  it lives in the page because the page is where both facts are.
+
+- **Rotate 90°** beside Reset in the corner bar: the same four edges, the
+  screenshot a quarter turn round inside them. Four presses is a full turn.
+  The saved fit and the sidecar already carry corners in order, so a rotated
+  fit comes back rotated.
+
+- `ui-audit.js` exercises the orientation rule in both directions and on a
+  near-square quad, on synthetic state, so it runs with no photo loaded.
+
 ## [0.45.0] - 2026-09-12
 
 Eight mockup-grade photographs labelled (26 in all): steep shelf, low
