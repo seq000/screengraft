@@ -232,6 +232,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: there are tests, they
 run in CI, and a change to the compositing engine needs a measurement, not an
 opinion.
 
+
+**Testing a change without reinstalling.** The desktop app snapshots an installed plugin per session and only refreshes it after *Check for updates*, so release → check → new session is a slow loop. Instead, run `scripts/dev-root.sh` once in your checkout: it writes `~/.screengraft/dev-root`, and from then on every session's `launch.sh` — including the installed copy's — runs the UI from your tree. The badge reads `dev <sha>+` while it does. `scripts/dev-root.sh off` restores the installed copy. Only `SKILL.md` and `mcp/server.py` changes still need a real update, because the app loads those itself.
+
 ## Licence
 
 MIT. The bundled Mona Sans subset is SIL OFL — see `ui/fonts/OFL.txt`.

@@ -9,6 +9,20 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.49.0] - 2026-09-12
+
+### Added
+
+- **`scripts/dev-root.sh` — test a checkout without reinstalling the plugin.**
+  The desktop app snapshots an installed plugin per session and refreshes it
+  only after *Check for updates*, so trying a change meant release → check →
+  new session, and things went untested for want of the loop. With
+  `~/.screengraft/dev-root` pointing at a tree, every session's `launch.sh`
+  runs the UI from there instead; the badge reads `dev <sha>+` so it can never
+  pass for a release; a stale path is ignored with a warning. `off` restores
+  the installed copy. Opt-in by the file's existence — nothing changes for
+  anyone who never creates it.
+
 ## [0.48.0] - 2026-09-12
 
 Four defects from the first real use of v0.38–v0.47, all in the workbench.

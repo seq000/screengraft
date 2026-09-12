@@ -18,6 +18,26 @@
 # the same reason a Terminal window did, and there is no window to clean up.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Dev root: run the UI from a checkout instead of the installed copy.
+# `~/.screengraft/dev-root` holds one line, the path to a screengraft tree.
+# The desktop app snapshots every installed plugin per session and only
+# refreshes that snapshot after "Check for updates", so testing a change used
+# to mean release -> check -> new session. With the file in place any session,
+# including one already open, runs whatever is in the tree right now; the
+# badge reads "dev <sha>+" so it can never pass for a release. Opt-in by the
+# file's existence; a path that is not a tree is ignored with a warning, so
+# a stale file cannot silently break a launch. `scripts/dev-root.sh` writes it.
+DEV_ROOT_FILE="$HOME/.screengraft/dev-root"
+if [ -s "$DEV_ROOT_FILE" ]; then
+  DEV_ROOT="$(head -n1 "$DEV_ROOT_FILE")"
+  DEV_ROOT="${DEV_ROOT/#\~/$HOME}"
+  if [ -f "$DEV_ROOT/scripts/ui.py" ]; then
+    ROOT="$DEV_ROOT"
+    echo "dev root: running from $ROOT (remove $DEV_ROOT_FILE to use the installed copy)" >&2
+  else
+    echo "warning: $DEV_ROOT_FILE points at $DEV_ROOT, which has no scripts/ui.py — using the installed copy" >&2
+  fi
+fi
 PORT=0
 OUT_DIR=""
 
