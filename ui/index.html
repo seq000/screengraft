@@ -584,14 +584,16 @@
   button.switch:hover{background:none}
   button.switch:active{background:none;border:none;box-shadow:none;transform:none}
 
-  .sw-track{position:relative;display:block;width:48px;height:22px;border-radius:6px;
+  /* Track 48×20 inside a 48×28 hit area (Figma 17:61): the button keeps the
+     full 28px for the pointer, the drawn track is 20px. Was 22px. */
+  .sw-track{position:relative;display:block;width:48px;height:20px;border-radius:6px;
             background:var(--bg);border:1px solid var(--edge);
             transition:var(--t-all), box-shadow var(--t)}
   .sw-handle{position:absolute;top:1px;bottom:1px;left:1px;width:24px;border-radius:4px;
              background:var(--raise-hi);
              transition:left var(--t), right var(--t), width var(--t), background-color var(--t), opacity var(--t)}
   .sw-grip{position:absolute;border-radius:1px;background:var(--sunk);
-           left:11px;width:4px;top:8px;bottom:8px;
+           left:11px;width:4px;top:7px;bottom:7px;
            transition:left var(--t), width var(--t), top var(--t), bottom var(--t), background-color var(--t)}
 
   /* --- OFF ------------------------------------------------------------- */
@@ -602,7 +604,7 @@
   /* --- ON -------------------------------------------------------------- */
   button.switch[aria-checked="true"] .sw-track{background:var(--acc-btn-rest);border-color:var(--acc-stroke)}
   button.switch[aria-checked="true"] .sw-handle{left:auto;right:1px;background:var(--acc-ink)}
-  button.switch[aria-checked="true"] .sw-grip{left:32px;width:2px;top:5px;bottom:5px;
+  button.switch[aria-checked="true"] .sw-grip{left:32px;width:2px;top:4px;bottom:4px;
                                               background:var(--acc-btn-rest)}
   button.switch[aria-checked="true"]:hover .sw-track{background:var(--acc);border-color:var(--acc-stroke)}
   button.switch[aria-checked="true"]:hover .sw-grip{background:var(--acc)}

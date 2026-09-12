@@ -9,6 +9,13 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.1] - 2026-09-13
+
+### Changed
+
+- The switch track is 20px tall, as the Figma component draws it (17:61);
+  the 48×28 hit area is unchanged. Was 22px.
+
 ## [0.54.0] - 2026-09-13
 
 ### Added
