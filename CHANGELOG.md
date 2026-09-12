@@ -9,6 +9,29 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.53.0] - 2026-09-13
+
+### Changed
+
+- **The depth-of-field ramp lives in the screen's plane, not the photo's.**
+  The plane of focus cuts the screen along a line and blur grows with depth
+  *along the screen*, so iso-blur lines are parallel on the screen — and
+  parallel lines on a receding plane converge in the photograph, like the
+  phone's own edges. v0.51–v0.52 ramped linearly in photo pixels, which is
+  only right for a screen seen square-on; on a steep fit the gizmo's two
+  lines stayed parallel on the picture while the phone's edges did not. The
+  ramp is now built in screenshot coordinates and projected through the
+  fit's homography (`dof_space: "screen"` in the sidecar); sidecars without
+  the key replay the old model, so v0.51–v0.52 saves reproduce.
+
+- **The gizmo's far line is where the ramp ends, and strength is a thumb on
+  it.** The dashed line used to mark a fixed reference blur, which put it off
+  the photograph at ordinary strengths. Now it marks where the blur reaches
+  its full amount — anywhere on the screen or a little past it (`dof_end`,
+  recorded) — with the spacing between the lines as the ramp's length, a
+  diamond sliding along the dashed line for how much blur, and the end pips
+  on the dashed line to turn both. Nothing is ever out of reach.
+
 ## [0.52.0] - 2026-09-13
 
 ### Added

@@ -321,6 +321,23 @@ def main():
     failures += not check("...and start 0 is what every earlier sidecar meant",
                           np.array_equal(down, W.compose(tex, shot, quad, 24, dof_angle=90, dof_strength=0.6, dof_start=0.0)))
 
+    # The ramp lives in the SCREEN's plane: a screenshot point gets the blur of
+    # its screenshot position, whatever the perspective did to it in the photo.
+    # On a steep quad the two spaces disagree, which is what the plant catches.
+    steep = [[300, 120], [520, 150], [560, 640], [260, 700]]
+    ps = W.Plan(tex, shot.shape, steep, 24, dof_angle=90, dof_strength=0.6, dof_start=0.25, dof_end=0.75, dof_space="screen")
+    pp = W.Plan(tex, shot.shape, steep, 24, dof_angle=90, dof_strength=0.6, dof_start=0.25, dof_end=0.75, dof_space="photo")
+    sw, sh = ps.new_w, ps.new_h
+    def t_at(plan, u, v):
+        x, y, w = plan.H @ np.array([u, v, 1.0])
+        x0, y0 = plan.bbox[:2]
+        return float(plan.dof.t[int(round(y / w)) - y0, int(round(x / w)) - x0])
+    mid, near, far = t_at(ps, sw/2, 0.5*sh), t_at(ps, sw/2, 0.1*sh), t_at(ps, sw/2, 0.9*sh)
+    failures += not check("screen-space ramp: 0 before start, 1 past end, half-way at the middle of the screenshot",
+                          abs(mid - 0.5) < 0.03 and near < 0.02 and far > 0.98, f"near {near:.2f} mid {mid:.2f} far {far:.2f}")
+    failures += not check("...and it differs from the photo-space ramp on a steep quad (the spaces are not the same)",
+                          abs(t_at(pp, sw/2, 0.5*sh) - 0.5) > 0.05, f"photo-space mid {t_at(pp, sw/2, 0.5*sh):.2f}")
+
     # The estimator: sharp all round reads flat; a planted gradient blur on the
     # PHOTO reads back with the planted direction.
     m0 = DOF.measure(plain, quad)

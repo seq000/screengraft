@@ -16,6 +16,16 @@ softens exactly as the colour does.
 Spatially varying Gaussian: DOF_LEVELS blur levels, per pixel a linear blend
 of the two nearest. Standard, cheap (five separable blurs on the quad's
 window), and byte-identical to no blur at strength 0.
+
+WHICH SPACE THE RAMP LIVES IN (13 Sep 2026). The plane of focus cuts the
+screen along a line, and blur grows with depth *along the screen*, so
+iso-blur lines are parallel ON THE SCREEN PLANE — and parallel lines on a
+receding plane converge in the photograph, like the phone's own edges. The
+first version ramped linearly in photo pixels, which is only right for a
+screen seen square-on; the mismatch was felt on a steep fit ("top and
+bottom are not perpendicular"). `space="screen"` builds the ramp in the
+screenshot's own coordinates and projects it through the fit's homography;
+`space="photo"` is kept so the sidecars written by v0.51–v0.52 reproduce.
 """
 import math
 
@@ -80,17 +90,45 @@ def _blur(img: np.ndarray, sigma: float) -> np.ndarray:
     return cv2.GaussianBlur(img, (k, k), sigma, borderType=cv2.BORDER_REPLICATE)
 
 
+def screen_ramp(src_w: int, src_h: int, angle_deg: float, start: float, end: float) -> np.ndarray:
+    """The ramp in SCREENSHOT space: 0 up to `start`, 1 from `end`, linear
+    between, along `angle` (0 = toward +x, 90 = toward +y of the screenshot),
+    both as fractions of the screenshot's extent along that direction."""
+    a = math.radians(angle_deg)
+    d = np.array([math.cos(a), math.sin(a)], dtype=np.float64)
+    q = np.array([[0, 0], [src_w, 0], [src_w, src_h], [0, src_h]], dtype=np.float64)
+    proj = q @ d
+    lo, hi = float(proj.min()), float(proj.max())
+    start = float(np.clip(start, 0.0, 0.95))
+    end = float(np.clip(end, start + 0.05, 1.5))
+    s0, s1 = lo + start * (hi - lo), lo + end * (hi - lo)
+    xs = np.arange(src_w, dtype=np.float64)[None, :] + 0.5
+    ys = np.arange(src_h, dtype=np.float64)[:, None] + 0.5
+    t = (xs * d[0] + ys * d[1] - s0) / max(s1 - s0, 1e-6)
+    return np.clip(t, 0.0, 1.0).astype(np.float32)
+
+
 class Field:
     """Everything that does not change per frame: the ramp, the weights, the
     blurred masks. `blur_layer` then costs `levels - 1` blurs of the colour."""
 
     def __init__(self, corners, angle_deg: float, strength: float, mask: np.ndarray,
-                 x0: int, y0: int, start: float = 0.0):
+                 x0: int, y0: int, start: float = 0.0, end: float = 1.0,
+                 space: str = "photo", H=None, src_size=None):
         h, w = mask.shape[:2]
         self.x0, self.y0 = x0, y0
         self.smax = sigma_max(corners, strength)
         self.sigmas = [self.smax * k / (DOF_LEVELS - 1) for k in range(DOF_LEVELS)]
-        t = ramp(corners, angle_deg, x0, y0, w, h, start)
+        if space == "screen" and H is not None and src_size is not None:
+            sw, sh = src_size
+            src = screen_ramp(sw, sh, angle_deg, start, end)
+            T = np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1]], dtype=np.float64)
+            t = cv2.warpPerspective(src, T @ np.asarray(H, dtype=np.float64), (w, h),
+                                    flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+            t = np.clip(t, 0.0, 1.0).astype(np.float32)
+        else:
+            t = ramp(corners, angle_deg, x0, y0, w, h, start)
+        self.t = t                                      # kept for tests and the trace
         self.W = level_weights(t)                       # (L, h, w)
         m = mask.astype(np.float32) / 255.0
         self.masks = [_blur(m, s) for s in self.sigmas]  # each (h, w)
