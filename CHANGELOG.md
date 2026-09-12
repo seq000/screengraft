@@ -9,6 +9,40 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.48.0] - 2026-09-12
+
+Four defects from the first real use of v0.38–v0.47, all in the workbench.
+
+### Fixed
+
+- **Rotate no longer squashes the screenshot.** It was a quarter turn of the
+  corner order, and a portrait screenshot on a phone fits only two ways: one
+  press mapped 804px across the phone's long edge and 1748px down its short
+  one — a 4:1 squash that also flattened the 107px corner rounding into a
+  107×27 ellipse, which read as "square corners that don't fit the frame".
+  Rotate now steps to the next orientation the screenshot fits without
+  stretching: a half turn on a phone, a quarter turn on a near-square screen
+  or where the screenshot's aspect suits the other edges. The button says
+  which turn it made. Three audit checks pin the rule.
+
+- **Swapping a source refreshes the Result pane.** Replacing a clip with a
+  screenshot (or one photo with another while a fit was in hand) left the
+  previous composite on screen, and the live layer kept playing the previous
+  clip: choosing a source only redrew the canvas, and the still render will
+  not take the pane away from a playing clip. Any change of file in either
+  role now stops the clip, empties the pane, un-lights Save, and re-renders
+  once the fit is ready. Reproduced on v0.47.0 before the fix, verified after.
+
+- **The output-format control no longer moves when you switch it.** The
+  selected label is weight 600, which is wider than 400, so choosing ProRes
+  grew that segment and shifted the whole control. Each segment now reserves
+  its label's bold width; measured identical left edge and widths in both
+  states.
+
+- **The chip's clear × is centred.** It was the × character at 15px, which
+  carries its own ascent and sat above centre in the 22px disc. Drawn as a
+  10px SVG in a flex centre: 0.00px off on both axes, measured.
+
 ## [0.47.0] - 2026-09-12
 
 ### Changed

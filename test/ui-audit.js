@@ -199,6 +199,34 @@
     st.corners = [[100, 100], [700, 100], [700, 600], [100, 600]]; st.shotSize = [1080, 2280];
     const turnedSq = orientQuad();
     ok('a near-square quad is left alone', !turnedSq, `turned=${turnedSq}`);
+    // Rotate steps to the NEXT orientation the screenshot fits. On a
+    // phone a portrait screenshot fits only two ways, so one press is a half
+    // turn: corner 0 lands two places on, never on a long edge. Near-square:
+    // a quarter turn. Landscape screenshot on the phone: the top must stay a
+    // long edge, so again a half turn. autoPreview/draw are stubbed out —
+    // this exercises the order rule, not the pipeline.
+    if (typeof rotateQuad === 'function') {
+      const stubs = { draw, drawStrip, autoPreview, toast };
+      draw = () => {}; drawStrip = () => {}; autoPreview = () => {}; toast = () => null;
+      st.corners = [[490, 439], [1157, 92], [1350, 344], [687, 695]]; st.shotSize = [1080, 2280];
+      orientQuad();                         // now corner 0 = [1157,92], top short
+      const before = st.corners.map(c => c.slice());
+      rotateQuad();
+      const topLen = Math.hypot(st.corners[1][0] - st.corners[0][0], st.corners[1][1] - st.corners[0][1]);
+      ok('Rotate on a phone is a half turn — the top stays a short edge',
+         st.corners[0][0] === before[2][0] && topLen < 400, `first=${st.corners[0]} top=${topLen.toFixed(0)}px`);
+      st.corners = [[100, 100], [700, 100], [700, 600], [100, 600]]; st.shotSize = [1080, 2280];
+      rotateQuad();
+      ok('Rotate on a near-square screen is a quarter turn',
+         st.corners[0][0] === 700 && st.corners[0][1] === 100, `first=${st.corners[0]}`);
+      st.corners = [[490, 439], [1157, 92], [1350, 344], [687, 695]]; st.shotSize = [2280, 1080];
+      rotateQuad();
+      const topLenL2 = Math.hypot(st.corners[1][0] - st.corners[0][0], st.corners[1][1] - st.corners[0][1]);
+      ok('Rotate with a landscape screenshot keeps a long top edge', topLenL2 > 600, `top=${topLenL2.toFixed(0)}px`);
+      Object.assign(window, stubs);
+    } else {
+      ok('rotateQuad is present', false, 'not defined');
+    }
     Object.assign(st, keep);
   } else {
     ok('orientQuad is present', false, 'not defined');
