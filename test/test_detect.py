@@ -99,6 +99,36 @@ def dark_anchor_checks():
     return failures
 
 
+def nested_geometry_checks():
+    """pick_innermost steps inward on the quads `quad_of` returns -- the
+    walk hands it REFINED corners, because raw polygon vertices sit on the
+    corner arcs and can land on the outer quad's edge line.
+
+    12 Sep 2026, a two-phone mockup at ~45 degrees: judged on raw vertices
+    the glass was "not contained" by the body (one vertex on the body's edge)
+    and the body shipped 13% off; judged on refined corners the glass is 10px
+    inside all round and ships at 1%. Built here as the same shape: raw quads
+    that touch, refined quads that nest.
+    """
+    failures = 0
+    body_raw = np.array([[100, 100], [700, 100], [700, 900], [100, 900]], float)
+    glass_raw = np.array([[120, 120], [700, 120], [680, 880], [120, 880]], float)   # one vertex ON body's edge
+    body_ref = body_raw.copy()
+    glass_ref = np.array([[112, 112], [688, 112], [688, 888], [112, 888]], float)  # 12px inside all round
+    c = np.array([[0, 0]])  # contour placeholder; pick_innermost never reads it
+    body = (1.0, body_raw, c, "b")
+    glass = (0.9, glass_raw, c, "g")
+    refined = {id(body): body_ref, id(glass): glass_ref}
+
+    raw_pick = D.pick_innermost([body, glass], body)
+    failures += not check("on raw vertices the touching glass is not stepped into",
+                          raw_pick is body, "stepped on raw quads")
+    ref_pick = D.pick_innermost([body, glass], body, quad_of=lambda k: refined[id(k)])
+    failures += not check("on refined corners the nested glass is stepped into",
+                          ref_pick is glass, "stayed on the body")
+    return failures
+
+
 def walk_order_checks():
     """The within-channel walk looks past a non-confident winner when a tier-2
     quad is in the same list -- past a tier-0 winner for ANY tier-2, past a
@@ -906,8 +936,10 @@ def main():
     print("the detection instrument")
     print("the Canny sweep on a dark photograph")
     failures += dark_anchor_checks()
-    print("the within-channel walk looks past a tier-0 winner")
+    print("the within-channel walk looks past a non-confident winner")
     failures += walk_order_checks()
+    print("pick_innermost judges nesting on the quads it is given")
+    failures += nested_geometry_checks()
     print("evidence tiers — arbitration and the abstention veto")
     failures += tier_checks()
     print("corner recovery on a Canny ring")

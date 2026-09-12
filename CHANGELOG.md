@@ -9,6 +9,38 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.45.0] - 2026-09-12
+
+Eight mockup-grade photographs labelled (26 in all): steep shelf, low
+angle, hard shadow, rock and quilted-leather textures, a phone on a stand,
+two two-phone scenes. Seven answered at 0–5% unchanged. The eighth found a
+geometry defect and a bench defect, both fixed. **25/26 good unaided, 0/26
+confidently wrong, 0 good quads refused.**
+
+### Fixed
+
+- **`pick_innermost` judges nesting on refined corners, not raw polygon
+  vertices.** On a phone photographed at ~45° the glass's raw vertex landed
+  exactly on the body's raw edge line; `quad_contains` (every vertex 2px
+  inside) said "not nested" and the body shipped 13% off with the glass —
+  tier 2, 1% off, 87% of the body's area — one step behind it. Raw vertices
+  sit on the corner arcs; refined corners are where the corners are, and the
+  walk already computes them for the tier rule. They are cached once per
+  candidate and handed to `pick_innermost` as `quad_of`. Replacing the
+  containment test with area overlap was tried first and stepped into wrong
+  inner quads on five photographs — the strict test is doing work, it was
+  being fed the wrong quads. Two-phone mockup: 13% → 1%.
+
+- **The bench scores a quad order-invariantly.** The label's corners start at
+  the *screen's* top-left (where the person put the handle); the detector's
+  start at the corner nearest the *image's* top-left. On an upright phone
+  those agree; on one at 45° they are one position apart, and a candidate
+  sitting exactly on the label scored **179%** — reported as "never proposed"
+  and "confidently wrong" on a photograph detection had at 0%. `worst()` now
+  takes the best of the four cyclic rotations, and a new line reports
+  photographs whose quad is right but whose first corner is not the screen's
+  top-left. One of 26 today; the workbench has no control for it (SG86).
+
 ## [0.44.0] - 2026-09-12
 
 Four more labelled photographs (18 in all) found one confidently-wrong answer

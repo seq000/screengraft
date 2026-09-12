@@ -427,7 +427,7 @@ def overlap_frac(inner: np.ndarray, outer: np.ndarray) -> float:
     return float(cv2.contourArea(region.astype(np.float32))) / a
 
 
-def pick_innermost(candidates, best):
+def pick_innermost(candidates, best, quad_of=None):
     """
     A device photo offers more than one screen-shaped region: the glass screen,
     and the bezel or body it sits in. They nest, and the outer one wins on
@@ -442,20 +442,33 @@ def pick_innermost(candidates, best):
     old 0.35 floor a wave-shaped gradient at 49% of its screen was eligible;
     at 0.55 it isn't (an earlier finding, 3 Sep 2026).
     """
+    # `quad_of` maps a candidate to the quad its nesting is judged on. The
+    # walk passes the REFINED corners; the default is the raw polygon
+    # approximation. Raw vertices sit on the corner arcs, not at the corners,
+    # and on a phone photographed at ~45 degrees the glass's raw vertex landed
+    # ON the body's raw edge line -- `quad_contains` was false, and the body
+    # (tier 2, 13% off) shipped with the glass (tier 2, 1%, 87% of its area)
+    # one step behind it (12 Sep 2026, a two-phone mockup). Judged on the
+    # refined corners the glass is 10px inside the body all round. Replacing
+    # the containment test with area overlap was tried first and stepped into
+    # wrong inner quads on five photographs -- the strict test is doing work.
+    if quad_of is None:
+        quad_of = lambda c: c[1]  # noqa: E731
     current = best
     for _ in range(4):  # screen inside bezel inside body: a few steps is plenty
-        c_area = cv2.contourArea(current[1].astype(np.float32))
+        cq = quad_of(current)
+        c_area = cv2.contourArea(cq.astype(np.float32))
         inner = [
             c for c in candidates
             if c is not current
             and c[0] >= 0.25 * current[0]
-            and quad_contains(current[1], c[1])
-            and NEST_FLOOR * c_area <= cv2.contourArea(c[1].astype(np.float32)) < c_area
+            and quad_contains(cq, quad_of(c))
+            and NEST_FLOOR * c_area <= cv2.contourArea(quad_of(c).astype(np.float32)) < c_area
         ]
         if not inner:
             return current
         # Largest of the nested ones: the screen, not a panel drawn on it.
-        current = max(inner, key=lambda c: cv2.contourArea(c[1].astype(np.float32)))
+        current = max(inner, key=lambda c: cv2.contourArea(quad_of(c).astype(np.float32)))
     return current
 
 
@@ -668,10 +681,20 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
     # Deliberately NOT tier-first ordering of the whole list: that was tried
     # on 11 Sep 2026 and broke three photographs, because a tier-2 WRONG
     # candidate sits deeper in the list on each.
+    # Refined corners, once per candidate: the walk order reads tiers off them
+    # and pick_innermost judges nesting on them (raw polygon vertices sit on
+    # the arcs and can land on a neighbouring quad's edge line -- see there).
+    shapes = {}
+
     def _shape_of(cand):
-        _score, quad, contour, _tag = cand
-        q = order_quad(refine_corners(contour, quad, rail_band)[0]) if refine else quad
-        return q, shape_tier({"corner_radius": measure_corner_radius(contour, q)})
+        if id(cand) not in shapes:
+            _score, quad, contour, _tag = cand
+            q = order_quad(refine_corners(contour, quad, rail_band)[0]) if refine else quad
+            shapes[id(cand)] = (q, shape_tier({"corner_radius": measure_corner_radius(contour, q)}))
+        return shapes[id(cand)]
+
+    def _refined(cand):
+        return _shape_of(cand)[0]
 
     order = sorted(candidates, key=lambda c: c[0], reverse=True)
     if order:
@@ -691,7 +714,7 @@ def _finalize(candidates, img_area: float, refine: bool = True, img_shape=None,
         # NOT necessarily `cand`: pick_innermost steps inward from it while a
         # comparably screen-like quad nests inside, so the quad that gets
         # validated -- and returned -- can belong to a different candidate.
-        picked = pick_innermost(candidates, cand)
+        picked = pick_innermost(candidates, cand, quad_of=_refined)
         score, quad, contour, tag = picked
         if refine:
             refined, did_refine = refine_corners(contour, quad, rail_band)

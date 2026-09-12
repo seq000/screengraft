@@ -47,7 +47,29 @@ WRONG = 0.30
 
 
 def worst(quad, ref):
-    return float(np.max(np.linalg.norm(np.array(quad, float) - ref, axis=1)))
+    """Largest corner error between a quad and the label, in pixels.
+
+    Order-invariant over the four cyclic rotations. The label's corners start
+    at the SCREEN's top-left (where the person put the top-left handle); the
+    detector's start at the corner nearest the IMAGE's top-left. On an upright
+    phone those coincide; on one rotated ~45 degrees they need not, and until
+    12 Sep 2026 a candidate sitting exactly on the label scored 179% for that
+    reason alone -- reported as "never proposed" and "confidently wrong" on a
+    photograph where detection had the screen at 0%. Orientation is a real
+    question, but it is a different one from "is this the screen", and it is
+    reported separately by `rotation()`.
+    """
+    q = np.array(quad, float)
+    return min(float(np.max(np.linalg.norm(np.roll(q, -k, axis=0) - ref, axis=1)))
+               for k in range(4))
+
+
+def rotation(quad, ref):
+    """Which cyclic rotation of `quad` matches the label: 0 means the detector's
+    first corner is the screen's top-left, as the label has it."""
+    q = np.array(quad, float)
+    return int(min(range(4), key=lambda k: float(np.max(np.linalg.norm(
+        np.roll(q, -k, axis=0) - ref, axis=1)))))
 
 
 def measure(path):
@@ -76,6 +98,7 @@ def measure(path):
         # abstention: "the gate refused a correct answer" is a real outcome and
         # it cannot be seen without this.
         "answer": None if res is None else worst(res["corners"], ref) / width,
+        "rotation": None if res is None else rotation(res["corners"], ref),
         "recall": None if best is None else worst(best["quad"], ref) / width,
         "recall_from": None if best is None else f"{best['method']}/{best['verdict']}",
         "clicked": (None if (clicked is None or clicked.get("abstained"))
@@ -139,6 +162,10 @@ def main():
         print("  never proposed:    "
               + ", ".join(f"{r['photo']} (closest {100 * r['recall']:.0f}%)"
                           for r in no_recall))
+    turned = [r for r in answered if r["rotation"]]
+    if turned:
+        print("  orientation off (quad right, first corner is not the screen's top-left): "
+              + ", ".join(f"{r['photo']} (by {r['rotation']})" for r in turned))
     unl = len(rows) - n
     if unl:
         print(f"\n  {unl} photograph(s) here have no saved fit and were skipped.")
