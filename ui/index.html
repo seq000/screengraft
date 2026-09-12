@@ -2655,6 +2655,10 @@ $('#dofMeasure').onclick = measureDof;
 const gz = $('#dofGizmo');
 const SIGMA_FULL_FRAC = 0.02;   // mirrors dof.DOF_MAX_FRAC -- keep in step
 let dofEnd = parseFloat(recall('dofEnd','1')); if (!(dofEnd > 0)) dofEnd = 1;
+// Where along the lines the handles sit (0..1 across the screen's extent).
+// Page-only: it changes nothing in the render. Turning re-derives it so the
+// handle stays on the point you turned about instead of sliding along the line.
+let dofK = 0.5;
 // The near limit. null = one-sided (the plane of focus at the screen's edge).
 let dofEnd2 = recall('dofEnd2','') === '' ? null : parseFloat(recall('dofEnd2','')); if (dofEnd2 !== null && !(dofEnd2 < 1)) dofEnd2 = null;
 function dofEndV(){ return dofOn ? dofEnd : 1; }
@@ -2695,10 +2699,10 @@ function paintGizmo(){
   const k = W / Math.max(im.clientWidth, 1);           // photo px per screen px
   const g = gizmoGeom(); if (!g.H || !g.Hi) return;
   const P = (f, q) => applyH(g.H, gzPt(g, f, q));
-  const a0 = P(dofStart, -0.06), a1 = P(dofStart, 1.06), ac = P(dofStart, 0.5);
-  const b0 = P(dofEnd, -0.06), b1 = P(dofEnd, 1.06), bc = P(dofEnd, 0.5);
+  const a0 = P(dofStart, -0.06), a1 = P(dofStart, 1.06), ac = P(dofStart, dofK);
+  const b0 = P(dofEnd, -0.06), b1 = P(dofEnd, 1.06), bc = P(dofEnd, dofK);
   const two = dofEnd2 !== null;
-  const c0 = two ? P(dofEnd2, -0.06) : null, c1 = two ? P(dofEnd2, 1.06) : null, cc = two ? P(dofEnd2, 0.5) : null;
+  const c0 = two ? P(dofEnd2, -0.06) : null, c1 = two ? P(dofEnd2, 1.06) : null, cc = two ? P(dofEnd2, dofK) : null;
   const th = P(dofEnd, 0.08 + 0.84 * dofStr);           // the strength thumb slides along the dashed line
   const sigma = dofStr * SIGMA_FULL_FRAC * g.side;
   const r = 6 * k, rp = 4 * k, fs11 = 11 * k, off = 14 * k;
@@ -2733,7 +2737,19 @@ let gzDrag = null;
 gz.addEventListener('pointerdown', e => {
   const h = e.target.dataset && e.target.dataset.h; if (!h) return;
   e.preventDefault(); gz.setPointerCapture(e.pointerId);
-  gzDrag = {h}; gz.classList.add('drag');
+  gzDrag = {h};
+  if (h === 'rotA' || h === 'rotB'){
+    // Turning keeps the SHARP line's centre where it is on the screen and the
+    // limits at their distances from it, in screenshot pixels. The stored
+    // numbers are fractions of the screen's extent along the direction, and
+    // that extent changes with the angle -- so turning on the fractions alone
+    // slid every line as it turned (reported 13 Sep 2026).
+    const g = gizmoGeom();
+    gzDrag.pivot = gzPt(g, dofStart, dofK);
+    gzDrag.dFar = (dofEnd - dofStart) * (g.hi - g.lo);
+    gzDrag.dNear = dofEnd2 === null ? null : (dofStart - dofEnd2) * (g.hi - g.lo);
+  }
+  gz.classList.add('drag');
 });
 gz.addEventListener('pointermove', e => {
   if (!gzDrag) return;
@@ -2752,11 +2768,26 @@ gz.addEventListener('pointermove', e => {
   } else {
     // Turn about the SHARP line's centre -- the plane of focus is what turns;
     // the pip under the pointer follows.
-    const c = gzPt(g, dofStart, 0.5);
+    const c = gzDrag.pivot;
     const v = [p[0]-c[0], p[1]-c[1]];
     const sign = gzDrag.h === 'rotB' ? 1 : -1;      // rotB sits at +u, rotA at -u
-    dofAng = ((Math.atan2(v[1]*sign, v[0]*sign) * 180 / Math.PI - 90) % 360 + 360) % 360;
-    if (e.shiftKey) dofAng = Math.round(dofAng / 15) * 15;
+    let ang = ((Math.atan2(v[1]*sign, v[0]*sign) * 180 / Math.PI - 90) % 360 + 360) % 360;
+    if (e.shiftKey) ang = Math.round(ang / 15) * 15;
+    else {
+      // Magnetic to the screen's own axes: within 4° of 0/90/180/270 the lines
+      // run exactly along the screen's edges, which is what "along the phone"
+      // means in the photograph once the perspective is applied.
+      const near = Math.round(ang / 90) * 90;
+      if (Math.abs(((ang - near) + 180) % 360 - 180) < 4) ang = near % 360;
+    }
+    dofAng = ang;
+    // Re-express the lines against the new extent so nothing moves but the angle.
+    const g2 = gizmoGeom();
+    const f0 = (c[0]*g2.d[0] + c[1]*g2.d[1] - g2.lo) / (g2.hi - g2.lo);
+    dofStart = Math.max(0, Math.min(0.95, f0));
+    dofK = Math.max(0.05, Math.min(0.95, (c[0]*g2.u[0] + c[1]*g2.u[1] - g2.ulo) / (g2.uhi - g2.ulo)));
+    dofEnd = Math.max(dofStart + 0.05, Math.min(1.5, dofStart + gzDrag.dFar / (g2.hi - g2.lo)));
+    if (dofEnd2 !== null) dofEnd2 = Math.max(-0.5, Math.min(dofStart - 0.05, dofStart - gzDrag.dNear / (g2.hi - g2.lo)));
   }
   paintDof(); paintGizmo(); autoPreview();
 });

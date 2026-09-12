@@ -9,6 +9,23 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.2] - 2026-09-13
+
+### Fixed
+
+- **Turning the depth-of-field lines no longer slides them.** The lines are
+  stored as fractions of the screen's extent along the direction, and that
+  extent changes with the angle — so turning on the fractions alone moved
+  every line as it turned, and the centre handle crept along the line. The
+  sharp line's handle is now the pivot: it stays put to the pixel through a
+  turn, and both limits keep their distance from it in screen pixels.
+
+- **Magnetic to the screen's axes.** Within 4° of 0/90/180/270 the lines snap
+  to run exactly along the screen's edges — which, once the perspective is
+  applied, is what "along the phone" looks like. A family of lines turned a
+  few degrees off is physically consistent but runs along nothing, which is
+  how it read. ⇧ still snaps to 15°.
+
 ## [0.54.1] - 2026-09-13
 
 ### Changed
