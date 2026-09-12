@@ -269,7 +269,7 @@ class Plan:
                  corner_radius: float = 0.0, grain: bool = False,
                  blend: str = "replace", reflection: float = DEFAULT_REFLECTION,
                  corner_smoothing: float = 0.0,
-                 dof_angle: float = 0.0, dof_strength: float = 0.0):
+                 dof_angle: float = 0.0, dof_strength: float = 0.0, dof_start: float = 0.0):
         dst_quad = np.array(corners, dtype=np.float32)
         if shoelace_area(dst_quad) < 1.0:
             raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
@@ -320,6 +320,7 @@ class Plan:
         # exactly where the blur was meant to remove one.
         self.dof_strength = float(np.clip(dof_strength, 0.0, 1.0))
         self.dof_angle = float(dof_angle)
+        self.dof_start = float(np.clip(dof_start, 0.0, 0.95))
         reach = int(np.ceil(3 * _dof.sigma_max(dst_quad, self.dof_strength))) if self.dof_strength > 0 else 0
         bx0, by0 = max(0, int(np.floor(xs.min())) - 1 - reach), max(0, int(np.floor(ys.min())) - 1 - reach)
         bx1, by1 = min(pw, int(np.ceil(xs.max())) + 2 + reach), min(ph, int(np.ceil(ys.max())) + 2 + reach)
@@ -330,7 +331,8 @@ class Plan:
         self.dof = None
         if self.dof_strength > 0 and self.bbox is not None:
             self.dof = _dof.Field(dst_quad, self.dof_angle, self.dof_strength,
-                                  self.warped_mask[by0:by1, bx0:bx1], bx0, by0)
+                                  self.warped_mask[by0:by1, bx0:bx1], bx0, by0,
+                                  start=self.dof_start)
 
     def _prep(self, frame: np.ndarray, bbox=None) -> np.ndarray:
         """Warp one frame. With `bbox`, warp only that window of the canvas.
@@ -434,7 +436,8 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
             grade: float = 0.0, grain: bool = False, screen_off: np.ndarray = None,
             specular: float = 0.75, blend: str = "replace",
             reflection: float = DEFAULT_REFLECTION,
-            dof_angle: float = 0.0, dof_strength: float = 0.0) -> np.ndarray:
+            dof_angle: float = 0.0, dof_strength: float = 0.0,
+            dof_start: float = 0.0) -> np.ndarray:
     """Warp `screenshot` into the quad `corners` (TL,TR,BR,BL, photo pixels) on `photo`.
 
     Single resampling pass at the photo's resolution; deterministic. This is the
@@ -448,7 +451,7 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
     plan = Plan(photo, screenshot.shape, corners, corner_radius, grain=grain,
                 corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection,
-                dof_angle=dof_angle, dof_strength=dof_strength)
+                dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start)
     plan.bind_grade(screenshot, grade)
     return plan.render(screenshot, screen_off=screen_off, specular=specular)
 
@@ -536,7 +539,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                   frames_dir: str = None, progress=None, blend: str = "replace",
                   reflection: float = DEFAULT_REFLECTION,
                   start_frame: int = 0, max_frames: int = None,
-                  dof_angle: float = 0.0, dof_strength: float = 0.0) -> dict:
+                  dof_angle: float = 0.0, dof_strength: float = 0.0,
+                  dof_start: float = 0.0) -> dict:
     """Inject a VIDEO into a still photo. The photo does not move, so there is
     exactly one homography and the whole of Plan is computed once.
 
@@ -564,7 +568,7 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     plan = Plan(photo, first.shape, corners, corner_radius, grain=grain,
                 corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection,
-                dof_angle=dof_angle, dof_strength=dof_strength)
+                dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start)
     plan.bind_grade(first, grade)
 
     ph, pw = photo.shape[:2]

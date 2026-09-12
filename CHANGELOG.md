@@ -9,6 +9,26 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.52.0] - 2026-09-13
+
+### Added
+
+- **Depth of field is set on the result itself.** Two lines over the
+  composite, the graduated-filter idiom: a solid line where focus ends (drag
+  its centre to move it, either end pip to turn both lines), a dashed line
+  where the blur reaches 30% of full — about 6px on a phone, where text stops
+  being readable — dragged closer for a steeper falloff, further for a
+  gentler one, out over the photograph if need be. Drawn in the photo's own
+  pixels (the SVG's viewBox is the photo), so it stays aligned at every zoom;
+  faint until the pointer is over the pane, solid while dragging; ⇧ snaps
+  the angle to 15°. The sliders and the gizmo are one model.
+
+- **A focus start.** The gizmo exposes what the sliders could not: where the
+  blur *begins*. `dof_start` (0–0.95 of the screen's extent along the
+  direction) keeps the screen sharp up to the line and ramps from there; 0
+  is the whole-screen ramp every earlier sidecar meant, byte-identical.
+  Both sidecars record it.
+
 ## [0.51.0] - 2026-09-13
 
 ### Added

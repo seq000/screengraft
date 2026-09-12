@@ -34,17 +34,23 @@ def sigma_max(corners, strength: float) -> float:
     return float(np.clip(strength, 0.0, 1.0)) * DOF_MAX_FRAC * float(side)
 
 
-def ramp(corners, angle_deg: float, x0: int, y0: int, w: int, h: int) -> np.ndarray:
-    """Per-pixel 0..1 distance along `angle` across the quad, over a window.
+def ramp(corners, angle_deg: float, x0: int, y0: int, w: int, h: int,
+         start: float = 0.0) -> np.ndarray:
+    """Per-pixel 0..1 blur fraction along `angle` across the quad, over a window.
 
-    0 at the quad's nearest extent in that direction, 1 at its farthest; pixels
-    outside the quad clamp. The window is (x0, y0, w, h) in photo pixels.
+    `start` (0..1) is where focus ends and the blur begins, as a fraction of
+    the quad's extent along the direction: 0 at the nearest extent (the whole
+    screen ramps, the default), 0.5 sharp across the near half then ramping.
+    1 at the farthest extent; pixels outside the quad clamp. The window is
+    (x0, y0, w, h) in photo pixels.
     """
     a = math.radians(angle_deg)
     d = np.array([math.cos(a), math.sin(a)], dtype=np.float64)
     q = np.asarray(corners, dtype=np.float64)
     proj = q @ d
     lo, hi = float(proj.min()), float(proj.max())
+    start = float(np.clip(start, 0.0, 0.95))
+    lo = lo + start * (hi - lo)
     if hi - lo < 1e-6:
         return np.zeros((h, w), dtype=np.float32)
     xs = np.arange(x0, x0 + w, dtype=np.float64)[None, :]
@@ -79,12 +85,12 @@ class Field:
     blurred masks. `blur_layer` then costs `levels - 1` blurs of the colour."""
 
     def __init__(self, corners, angle_deg: float, strength: float, mask: np.ndarray,
-                 x0: int, y0: int):
+                 x0: int, y0: int, start: float = 0.0):
         h, w = mask.shape[:2]
         self.x0, self.y0 = x0, y0
         self.smax = sigma_max(corners, strength)
         self.sigmas = [self.smax * k / (DOF_LEVELS - 1) for k in range(DOF_LEVELS)]
-        t = ramp(corners, angle_deg, x0, y0, w, h)
+        t = ramp(corners, angle_deg, x0, y0, w, h, start)
         self.W = level_weights(t)                       # (L, h, w)
         m = mask.astype(np.float32) / 255.0
         self.masks = [_blur(m, s) for s in self.sigmas]  # each (h, w)

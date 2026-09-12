@@ -310,6 +310,17 @@ def main():
     failures += not check("the far glass edge softens with the blur (the mask blurs with the layer)",
                           s_plain <= 2 and s_far >= 8 and s_near <= 2,
                           f"rows of screen spilling past the edge: none {s_plain}, far {s_far}, near {s_near}")
+    # A focus START: the near part of the screen stays sharp up to the start
+    # line and the ramp begins there. At start 0.5 the 40% band is untouched;
+    # at start 0 (the default) the same band is already softened.
+    half = W.compose(tex, shot, quad, 24, dof_angle=90, dof_strength=0.6, dof_start=0.5)
+    mid_default, mid_half, mid_plain = lap_var(down, 300, 340), lap_var(half, 300, 340), lap_var(plain, 300, 340)
+    failures += not check("dof_start keeps the screen sharp up to the focus line",
+                          mid_half > 0.85 * mid_plain and mid_default < 0.5 * mid_plain,
+                          f"40% band: plain {mid_plain:.0f}, start 0 -> {mid_default:.0f}, start 0.5 -> {mid_half:.0f}")
+    failures += not check("...and start 0 is what every earlier sidecar meant",
+                          np.array_equal(down, W.compose(tex, shot, quad, 24, dof_angle=90, dof_strength=0.6, dof_start=0.0)))
+
     # The estimator: sharp all round reads flat; a planted gradient blur on the
     # PHOTO reads back with the planted direction.
     m0 = DOF.measure(plain, quad)
