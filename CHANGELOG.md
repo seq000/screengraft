@@ -9,6 +9,26 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.50.0] - 2026-09-12
+
+Two edge-strip improvements from use.
+
+### Added
+
+- **Contrast, a toggle on the edge strip.** A dark screen on a dark frame
+  puts the boundary a few levels apart — on a hand-held black phone the left
+  edge's strip spanned luminance 0–22 — and no zoom adds contrast. The strip's
+  own 1st–99th percentile is stretched to 0–255 with the same gain on every
+  channel, so hue is kept; flat strips are left alone. Viewing aid only: the
+  composite, the fit and the saved file never see it. Remembered.
+
+- **The strip shows which end of the edge will swing.** Grabbing an edge near
+  one end pivots on the other; the canvas marked this with pips but the eye
+  is on the strip while placing. The strip now draws the pivot pip and a
+  double arrow at the swinging end, at the same 0.16/0.84 positions as the
+  canvas, and the caption says it in words ("the left end swings, pivot on
+  the right").
+
 ## [0.49.0] - 2026-09-12
 
 ### Added
