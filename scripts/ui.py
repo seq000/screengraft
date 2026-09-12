@@ -699,6 +699,15 @@ def _adopt(role, path):
         e = FIT.recall(FIT.key_for(im))
         if e:
             meta["remembered"] = e
+    # mtime rides along as the page's cache-buster: the same path with new
+    # bytes (imported, cleared, overwritten on disk, imported again) used to
+    # come back as the OLD picture in every <img> the browser had cached --
+    # chip swatch, popover preview, the canvas itself for a photo -- while the
+    # composite, which the server renders from disk, was already new.
+    try:
+        meta["mtime"] = int(os.path.getmtime(real))
+    except OSError:
+        meta["mtime"] = 0
     return {"path": real, "size": [im.shape[1], im.shape[0]], **meta}
 
 

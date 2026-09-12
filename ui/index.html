@@ -1393,6 +1393,9 @@ const api = async (p, body, raw) => {
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
 };
 const fileURL = p => '/file?path=' + encodeURIComponent(p);
+// A source's URL carries the file's mtime, so new bytes at an old path are
+// fetched rather than served from the browser's cache (see _adopt in ui.py).
+const srcURL = (p, v) => fileURL(p) + (v ? '&v=' + v : '');
 const st = {photo:null, shot:null, corners:null, frac:0, type:null, preset:null, measured:null,
             // Where the quad on screen came from: 'detected' | 'remembered' | 'restored'
             // | 'default'. The tool's contract is that it never presents a guess as a
@@ -1597,7 +1600,8 @@ function setChosen(role, path, size, el, meta){
   if (el) el.classList.add('sel');
   // A video cannot be shown by <img>, so a clip gets its poster frame instead.
   const thumb = (meta && meta.poster) ? meta.poster : path;
-  $('#pv'+n).innerHTML = `<img src="${fileURL(thumb)}" alt="">`;
+  const ver = (meta && meta.mtime) || Date.now();
+  $('#pv'+n).innerHTML = `<img src="${srcURL(thumb, ver)}" alt="">`;
   const chip = $('#chip'+n);
   chip.classList.remove('is-empty');
   // The file's own name and nothing else. The size and, for a clip, the frame
@@ -1613,14 +1617,16 @@ function setChosen(role, path, size, el, meta){
   if ((role==='photo' ? st.photo : st.shot) !== path) dropResult();
   chip.title = `${homePath(path)}\n${size[0]}×${size[1]}`
     + (meta && meta.video ? ` · ${meta.frames} frames @ ${Math.round(meta.fps)}fps` : '');
-  $('#sw'+n).style.background = `center/cover no-repeat url("${fileURL(thumb)}")`;
+  $('#sw'+n).style.background = `center/cover no-repeat url("${srcURL(thumb, ver)}")`;
   $('#clear'+n).hidden = false;
   // A fit the server recognised from this photograph's own pixels. Held
   // rather than applied here: the quad only means anything once there is a
   // screenshot to put inside it, which is what maybeStart() waits for.
-  if (role==='photo'){ st.photo = path; st.corners = null;
+  if (role==='photo'){ st.photo = path; st.photoV = ver; st.corners = null;
     st.remembered = (meta && meta.remembered) || null; }
-  else { st.shot = path; st.shotSize = size; st.video = meta && meta.video ? meta : null; syncVideoUI();
+  else { st.shot = path; st.shotV = ver; st.shotSize = size; st.video = meta && meta.video ? meta : null; syncVideoUI();
+    // The status line may still be narrating the clear ("Screenshot removed…").
+    if (st.corners){ $('#detSt').className = 'status ok'; $('#detSt').textContent = 'Screenshot changed — the fit on the photo is kept'; }
     // A detected quad is re-oriented for the new screenshot; a remembered or
     // hand-placed one is somebody's decision and is left alone.
     if (st.corners && st.quadFrom === 'detected' && orientQuad()){ draw(); drawStrip(); autoPreview(); } }
@@ -1849,7 +1855,7 @@ async function maybeStart(){
     else if (st.remembered) applyRemembered();
     else detect();
   };
-  img.src = fileURL(st.photo);
+  img.src = srcURL(st.photo, st.photoV);
 }
 function computeFit(){
   const box = $('#scroller');
@@ -2838,10 +2844,10 @@ async function playLive(){
   if (!(st.photo && st.shot && st.corners && st.video)) return;
   if (!$('#liveWrap').hidden && !$('#liveVid').paused) return stopLive();
   const v = $('#liveVid'), s = $('#outSt');
-  $('#liveBg').src = fileURL(st.photo);
+  $('#liveBg').src = srcURL(st.photo, st.photoV);
   if (!v.src || v.dataset.src !== st.shot){
     v.dataset.src = st.shot;
-    v.src = fileURL(st.shot);
+    v.src = srcURL(st.shot, st.shotV);
   }
   showResult('live');
   await new Promise(r => {

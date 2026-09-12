@@ -53,7 +53,13 @@ def thumb(item, out_dir: str, size: int = 320):
     """Write a small JPEG thumbnail; returns its path or None."""
     os.makedirs(out_dir, exist_ok=True)
     base = os.path.splitext(item["name"])[0]
-    out = os.path.join(out_dir, f"{abs(hash(item['path']))}_{base[:40]}.jpg")
+    # The mtime is part of the name: a file overwritten in place gets a new
+    # thumbnail instead of the one made from its old bytes (12 Sep 2026).
+    try:
+        stamp = int(os.path.getmtime(item["path"]))
+    except OSError:
+        stamp = 0
+    out = os.path.join(out_dir, f"{abs(hash(item['path']))}_{stamp}_{base[:40]}.jpg")
     if os.path.exists(out):
         return out
     if sys.platform == "darwin":
