@@ -232,6 +232,37 @@
     ok('orientQuad is present', false, 'not defined');
   }
 
+  // --- 10. the edge strip ---------------------------------------------------
+  // Contrast: a strip whose whole tonal range is 8..20 (a dark screen on a
+  // dark body) must come out spanning most of 0..255, and a flat strip must
+  // be left alone. On a scratch canvas, so the real strip is untouched.
+  if (typeof stretchContrast === 'function') {
+    const sc = document.createElement('canvas'); sc.width = 64; sc.height = 8;
+    const g = sc.getContext('2d');
+    g.fillStyle = 'rgb(8,8,8)'; g.fillRect(0, 0, 32, 8);
+    g.fillStyle = 'rgb(20,20,20)'; g.fillRect(32, 0, 32, 8);
+    stretchContrast(g, 64, 8);
+    const px = g.getImageData(0, 0, 64, 8).data;
+    const row4 = 4*64*4;
+    const spread = px[row4 + 32*4] - px[row4];   // row 4: x=32 vs x=0
+    ok('strip contrast stretches an 8..20 boundary to most of the range', spread > 200, `spread=${spread}`);
+    g.fillStyle = 'rgb(40,40,40)'; g.fillRect(0, 0, 64, 8);
+    stretchContrast(g, 64, 8);
+    ok('strip contrast leaves a flat strip alone', g.getImageData(0, 0, 1, 1).data[0] === 40,
+       `value=${g.getImageData(0, 0, 1, 1).data[0]}`);
+    const hc = document.getElementById('stripHC');
+    ok('the Contrast toggle states its pressed state', hc && hc.hasAttribute('aria-pressed'));
+  } else {
+    ok('stretchContrast is present', false, 'not defined');
+  }
+  // Which end swings: the caption names it, one way per pivot mode.
+  if (typeof swingText === 'function') {
+    ok('rotA caption: right end swings, pivot left', /right end swings/.test(swingText('rotA')) && /pivot on the left/.test(swingText('rotA')), swingText('rotA'));
+    ok('rotB caption: left end swings, pivot right', /left end swings/.test(swingText('rotB')) && /pivot on the right/.test(swingText('rotB')), swingText('rotB'));
+  } else {
+    ok('swingText is present', false, 'not defined');
+  }
+
   const fail = R.filter(r => !r.pass);
   return { pass: R.length - fail.length, fail: fail.length,
            failures: fail, checks: R.map(r => (r.pass ? '  ok   ' : '  FAIL ') + r.name + (r.extra ? '   ' + r.extra : '')) };

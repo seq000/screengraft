@@ -384,6 +384,11 @@
   .seg button.sel{background:var(--raise);color:var(--ink);font-weight:600}
   .seg button.sel:hover{background:var(--raise-mid)}
   .seg button.sel:active{background:var(--raise-low);transform:none}
+  /* A toggle in the strip head. On = the raised surface every selected thing
+     on this page has (the segmented thumb, the device chip), off = a label. */
+  .striphead button[aria-pressed]{background:transparent;border-color:transparent;box-shadow:none;color:var(--mute)}
+  .striphead button[aria-pressed]:hover{color:var(--ink)}
+  .striphead button[aria-pressed="true"]{background:var(--raise);border-color:var(--edge);color:var(--ink);font-weight:600}
   /* Input chip (Figma 5:14 / 5:20). Surface and shadow are declared here rather
    than inherited from the base button rule, so the filled state is explicit and
    the .is-empty override below has something definite to override.
@@ -1136,6 +1141,7 @@
       <span class="lbl">Edge view</span>
       <span class="stepper dock-step"><button class="sm" id="stripOut">&minus;</button><button class="sm" id="stripIn">+</button></span>
       <span class="sm" id="stripZ" style="color:var(--mute);font-variant-numeric:tabular-nums"></span>
+      <button class="sm" id="stripHC" aria-pressed="false" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched.">Contrast</button>
       <span class="spacer"></span>
       <span class="sm" id="stripSt" style="color:var(--mute)"></span>
     </div>
@@ -2463,7 +2469,38 @@ $('#emisAmt').onchange = e => { setEmis(true, parseFloat(e.target.value)); autoP
 
 $('#edgeBtn').onclick = () => setLoupeMode(loupeMode === 'float' ? 'dock' : 'float');
 
-function paintStrip(c, W, H, i){
+/* Contrast for the strip only. A dark screen on a dark frame puts the
+   boundary a few levels apart — 8 against 20 — which is invisible at any
+   zoom, and no amount of magnification adds contrast. This takes the strip's
+   own 1st–99th percentile of luminance and stretches it to 0–255, the same
+   gain on every channel so hue is kept. It is a viewing aid: the composite,
+   the fit and the saved file never see it. Per strip, per frame — 1280×130
+   is 166k pixels and this runs on every hover. */
+let stripHC = recall('stripHC','0') === '1';
+function stretchContrast(c, W, H){
+  const im = c.getImageData(0, 0, W, H), d = im.data, n = W*H;
+  const hist = new Uint32Array(256);
+  for (let k = 0; k < n; k++){
+    const o = k*4;
+    hist[(d[o]*77 + d[o+1]*151 + d[o+2]*28) >> 8]++;
+  }
+  let lo = 0, hi = 255, acc = 0;
+  for (let v = 0; v < 256; v++){ acc += hist[v]; if (acc > n*0.01){ lo = v; break; } }
+  acc = 0;
+  for (let v = 255; v >= 0; v--){ acc += hist[v]; if (acc > n*0.01){ hi = v; break; } }
+  if (hi - lo < 2) return;
+  const g = 255 / (hi - lo);
+  const lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) lut[v] = Math.max(0, Math.min(255, (v - lo) * g));
+  for (let o = 0; o < n*4; o += 4){ d[o] = lut[d[o]]; d[o+1] = lut[d[o+1]]; d[o+2] = lut[d[o+2]]; }
+  c.putImageData(im, 0, 0);
+}
+function setStripHC(on){
+  stripHC = on; remember('stripHC', on ? '1' : '0');
+  $('#stripHC').setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+$('#stripHC').onclick = () => { setStripHC(!stripHC); drawStrip(); };
+function paintStrip(c, W, H, i, mode){
   c.setTransform(1,0,0,1,0,0);
   c.fillStyle = '#0c0c0b'; c.fillRect(0,0,W,H);
   const A = st.corners[i], B = st.corners[(i+1)%4];
@@ -2478,7 +2515,25 @@ function paintStrip(c, W, H, i){
   c.imageSmoothingEnabled = true;
   c.drawImage(img, 0, 0);
   c.restore();
+  if (stripHC) stretchContrast(c, W, H);
   cased(c, () => { c.beginPath(); c.moveTo(0, H/2); c.lineTo(W, H/2); }, 1.25, CORE_ACTIVE);
+  // Which end is about to swing. The canvas shows this with the pivot pips,
+  // but the eye is on the strip while an edge is being placed, and "rotA" /
+  // "rotB" are meaningless there without a mark. A grab near one end pivots
+  // on the OTHER: the pivot end gets the same filled pip the canvas uses, the
+  // swinging end a double arrow across the rule. Translate marks nothing —
+  // both ends move. Left in the strip is A, the edge's first corner.
+  if (mode === 'rotA' || mode === 'rotB'){
+    // At 0.16 / 0.84 of the edge: where the canvas draws its pips, and clear
+    // of the screen/outside labels at the left edge.
+    const pivotX = mode === 'rotA' ? W*0.16 : W*0.84, swingX = mode === 'rotA' ? W*0.84 : W*0.16;
+    casedDisc(c, pivotX, H/2, 3.5, CORE_ACTIVE);
+    cased(c, () => { c.beginPath();
+      c.moveTo(swingX, H/2 - 22); c.lineTo(swingX, H/2 + 22);
+      c.moveTo(swingX - 5, H/2 - 16); c.lineTo(swingX, H/2 - 22); c.lineTo(swingX + 5, H/2 - 16);
+      c.moveTo(swingX - 5, H/2 + 16); c.lineTo(swingX, H/2 + 22); c.lineTo(swingX + 5, H/2 + 16); },
+      1.5, CORE_ACTIVE);
+  }
   cased(c, () => { c.beginPath();
     for (const f of [0.25,0.5,0.75]){ c.moveTo(W*f, H/2-9); c.lineTo(W*f, H/2+9); } },
     1, 'rgba(255,255,255,.7)');
@@ -2487,6 +2542,11 @@ function paintStrip(c, W, H, i){
   c.font = '600 11px system-ui'; c.textBaseline = 'middle';
   casedText(c, 'screen', 9, inwardIsDown ? H/2 + 15 : H/2 - 15, 'rgba(255,255,255,.95)');
   casedText(c, 'outside', 9, inwardIsDown ? H/2 - 15 : H/2 + 15, 'rgba(255,255,255,.62)');
+}
+function swingText(mode){
+  if (mode === 'rotA') return 'the right end swings, pivot on the left';
+  if (mode === 'rotB') return 'the left end swings, pivot on the right';
+  return 'flat on the rule means aligned';
 }
 function drawStrip(){
   const a = drag || hover || pick;
@@ -2500,13 +2560,13 @@ function drawStrip(){
       $('#stripSt').textContent = 'Hover or drag an edge — this straightens it, so misalignment shows as a wedge.';
       return;
     }
-    paintStrip(sctx, W, H, a.i);
-    $('#stripSt').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px · ${(H/(2*stripHalf)).toFixed(1)}× across the boundary — flat on the rule means aligned`;
+    paintStrip(sctx, W, H, a.i, a.mode);
+    $('#stripSt').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px · ${(H/(2*stripHalf)).toFixed(1)}× across the boundary — ${swingText(a.mode)}`;
   } else {
     const fl = $('#floatLoupe');
     if (!has){ fl.classList.remove('on'); return; }
-    paintStrip(fctx, stripF.width, stripF.height, a.i);
-    $('#stripFCap').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px — flat on the rule means aligned`;
+    paintStrip(fctx, stripF.width, stripF.height, a.i, a.mode);
+    $('#stripFCap').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px — ${swingText(a.mode)}`;
     fl.classList.add('on');
     const w = fl.offsetWidth || 356, h = fl.offsetHeight || 130;
     let x = lastPointer[0] + 26, y = lastPointer[1] - h - 18;
@@ -3110,6 +3170,7 @@ $('#imp').onclick = async () => {
     b.onclick=()=>{setType(t); applyPreset(); autoPreview();}; types.appendChild(b);
   }
   setLoupeMode(loupeMode);
+  setStripHC(stripHC);
   setGrade(gradeOn, gradeAmt);
   setEmis(emisOn, emisAmt);
   setRadiusOn(radiusOn);
