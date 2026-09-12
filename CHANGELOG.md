@@ -9,6 +9,52 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.51.0] - 2026-09-13
+
+### Added
+
+- **Depth of field.** A blur that grows across the screen in one direction —
+  a phone shot at an angle is a plane receding from the camera, so its far
+  end is softer than its near end, and a pin-sharp screenshot across all of
+  it gives the fake away. Two controls, direction and strength, off by
+  default. Applied in photo space after the warp, to the premultiplied
+  screen layer *and its mask* together, so the glass edge softens exactly as
+  the bezel does — a sharp alpha edge inside a soft bezel is the tell in bad
+  mockups. Spatially varying Gaussian, five levels blended per pixel; a
+  still costs ~0.1 s, a 6 s video preview ~30% more than before. Strength 0
+  is byte-identical to no blur, so every earlier sidecar reproduces; both
+  sidecars record `dof_angle` and `dof_strength`. The live in-place playback
+  cannot show it and says so.
+
+- **Measure from photo** reads the direction and a starting strength off the
+  photograph's own screen boundary: the blur width of each edge from the
+  peak derivative of the step (σ = A / (√2π · peak)), a plane through the
+  four, its gradient is the direction. Measured: sharp renders read 0.7–1.05
+  px on every edge and answer *flat* (4/4, no false positives); blur planted
+  toward 0°, 90° and 225° reads back within 20°. The estimator saturates
+  around 5 px, so the strength it proposes is a floor, and the caption says
+  so. On mockup *templates* the device is usually rendered sharp with the
+  blur only on the background, so Measure answers flat there — set it by
+  eye. The contrast-normalised Laplacian estimator was tried first and
+  rejected: not monotonic with blur, angle errors to 87°, a sharp render
+  measured 0.55.
+
+- **Import from Figma can be cancelled.** The button reads Cancel while a job
+  is pending; the job is marked cancelled (kept, not deleted) so an agent
+  still exporting is told "already cancelled" instead of landing a file on a
+  request nobody is waiting for. A non-Figma link is refused before it
+  becomes a job. Relabelled from Export.
+
+### Fixed
+
+- **A source overwritten on disk loads its new bytes.** Import, clear,
+  overwrite the file, import again showed the old picture in every place the
+  browser had cached by URL — chip swatch, popover preview, recent-rail
+  thumbnail, the canvas itself — while the composite was already new. Source
+  URLs carry the file's mtime now, and recent thumbnails are keyed on it.
+
+- The picker no longer gets a toast repeating the line under its own field.
+
 ## [0.50.0] - 2026-09-12
 
 Two edge-strip improvements from use.

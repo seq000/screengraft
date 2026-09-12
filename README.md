@@ -29,6 +29,10 @@ prototype, then put the recording inside a real photograph.
 - **Realism pass** *(optional)* — matches the screen's white balance and grain to
   the light in the room, and can lift the device's real reflections from a
   screen-off frame of the same shot.
+- **Depth of field** *(optional)* — a blur that grows across the screen in one
+  direction, glass edge included, so a screenshot on a phone shot at an angle
+  goes soft where the phone does. Direction and strength are yours; *Measure
+  from photo* proposes them from the photograph's own screen boundary.
 - **Emissive screens** *(optional)* — a display emits light *and* reflects the
   room, which is why a switched-off phone looks dark grey rather than black.
   Paint a true-black UI on flat and it reads as a hole cut in the photo. Turn

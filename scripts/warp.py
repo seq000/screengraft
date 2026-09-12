@@ -37,6 +37,7 @@ import cv2
 import numpy as np
 
 import grade as _grade   # M2: the realism pass
+import dof as _dof       # depth of field across the screen
 
 
 MASK_SS = 4   # destination-space supersampling for the screen's edge
@@ -267,7 +268,8 @@ class Plan:
     def __init__(self, photo: np.ndarray, frame_shape, corners,
                  corner_radius: float = 0.0, grain: bool = False,
                  blend: str = "replace", reflection: float = DEFAULT_REFLECTION,
-                 corner_smoothing: float = 0.0):
+                 corner_smoothing: float = 0.0,
+                 dof_angle: float = 0.0, dof_strength: float = 0.0):
         dst_quad = np.array(corners, dtype=np.float32)
         if shoelace_area(dst_quad) < 1.0:
             raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
@@ -313,9 +315,22 @@ class Plan:
         # Integer bbox of the quad, clamped to the canvas and padded by a pixel
         # so the antialiased edge is never clipped.
         xs, ys = dst_quad[:, 0], dst_quad[:, 1]
-        bx0, by0 = max(0, int(np.floor(xs.min())) - 1), max(0, int(np.floor(ys.min())) - 1)
-        bx1, by1 = min(pw, int(np.ceil(xs.max())) + 2), min(ph, int(np.ceil(ys.max())) + 2)
+        # Depth of field widens the window: the soft edge reaches 3 sigma past
+        # the sharp mask, and a window that clipped it would leave a hard line
+        # exactly where the blur was meant to remove one.
+        self.dof_strength = float(np.clip(dof_strength, 0.0, 1.0))
+        self.dof_angle = float(dof_angle)
+        reach = int(np.ceil(3 * _dof.sigma_max(dst_quad, self.dof_strength))) if self.dof_strength > 0 else 0
+        bx0, by0 = max(0, int(np.floor(xs.min())) - 1 - reach), max(0, int(np.floor(ys.min())) - 1 - reach)
+        bx1, by1 = min(pw, int(np.ceil(xs.max())) + 2 + reach), min(ph, int(np.ceil(ys.max())) + 2 + reach)
         self.bbox = (bx0, by0, bx1, by1) if bx1 > bx0 and by1 > by0 else None
+        # The field is built once: ramp, level weights, the blurred masks.
+        # At strength 0 there is no field and every path below is untouched,
+        # which is what keeps every earlier sidecar reproducing byte for byte.
+        self.dof = None
+        if self.dof_strength > 0 and self.bbox is not None:
+            self.dof = _dof.Field(dst_quad, self.dof_angle, self.dof_strength,
+                                  self.warped_mask[by0:by1, bx0:bx1], bx0, by0)
 
     def _prep(self, frame: np.ndarray, bbox=None) -> np.ndarray:
         """Warp one frame. With `bbox`, warp only that window of the canvas.
@@ -377,13 +392,21 @@ class Plan:
         simplest code is the one to trust, and on for video renders. Both
         produce identical bytes; test_video.py asserts it rather than assuming.
         """
-        if fast and self.bbox is not None:
+        # Depth of field always takes the windowed path: the field is built on
+        # the window, and the still and video renders must share one code
+        # path here for the same reason they share Plan.
+        if (fast or self.dof is not None) and self.bbox is not None:
             x0, y0, x1, y1 = self.bbox
             warped_screen = self._prep(frame, self.bbox)
             if self.grade_params is not None:
                 warped_screen = _grade.apply_light(warped_screen, self.grade_params)
             out = self.photo.copy()
             win = self.mask3[y0:y1, x0:x1]
+            if self.dof is not None:
+                # Blur colour and mask together, premultiplied, so the glass
+                # edge goes soft exactly as the far end of the bezel already is.
+                warped_screen = self.dof.blur_layer(warped_screen.astype(np.float32))
+                win = self.dof.alpha3
             pw = self.photo[y0:y1, x0:x1]
             src = self._blend(pw, warped_screen)
             out[y0:y1, x0:x1] = np.clip(
@@ -410,7 +433,8 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
             corner_smoothing: float = 0.0,
             grade: float = 0.0, grain: bool = False, screen_off: np.ndarray = None,
             specular: float = 0.75, blend: str = "replace",
-            reflection: float = DEFAULT_REFLECTION) -> np.ndarray:
+            reflection: float = DEFAULT_REFLECTION,
+            dof_angle: float = 0.0, dof_strength: float = 0.0) -> np.ndarray:
     """Warp `screenshot` into the quad `corners` (TL,TR,BR,BL, photo pixels) on `photo`.
 
     Single resampling pass at the photo's resolution; deterministic. This is the
@@ -423,7 +447,8 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
     # asserted byte-identical to this function's output.
     plan = Plan(photo, screenshot.shape, corners, corner_radius, grain=grain,
                 corner_smoothing=corner_smoothing,
-                blend=blend, reflection=reflection)
+                blend=blend, reflection=reflection,
+                dof_angle=dof_angle, dof_strength=dof_strength)
     plan.bind_grade(screenshot, grade)
     return plan.render(screenshot, screen_off=screen_off, specular=specular)
 
@@ -510,7 +535,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                   preset: str = "web", fit_frame: int = 0, audio: bool = True,
                   frames_dir: str = None, progress=None, blend: str = "replace",
                   reflection: float = DEFAULT_REFLECTION,
-                  start_frame: int = 0, max_frames: int = None) -> dict:
+                  start_frame: int = 0, max_frames: int = None,
+                  dof_angle: float = 0.0, dof_strength: float = 0.0) -> dict:
     """Inject a VIDEO into a still photo. The photo does not move, so there is
     exactly one homography and the whole of Plan is computed once.
 
@@ -537,7 +563,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     first = read_frame_at(video_path, fit_frame)
     plan = Plan(photo, first.shape, corners, corner_radius, grain=grain,
                 corner_smoothing=corner_smoothing,
-                blend=blend, reflection=reflection)
+                blend=blend, reflection=reflection,
+                dof_angle=dof_angle, dof_strength=dof_strength)
     plan.bind_grade(first, grade)
 
     ph, pw = photo.shape[:2]

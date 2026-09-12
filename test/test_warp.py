@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import warp as W  # noqa: E402
+import dof as DOF  # noqa: E402
 
 
 def check(name, cond, detail=""):
@@ -265,6 +266,66 @@ def main():
     failures += not check("more smoothing removes more of the corner",
                           all(a > b for a, b in zip(areas[:-1], areas[1:], strict=True)),
                           " > ".join(str(a) for a in areas))
+
+    # ---- depth of field: a blur that grows in one direction, edge included ----
+    # A textured photograph, so the far edge's softness is measurable against
+    # the near edge's, and a screenshot with fine structure everywhere.
+    rng = np.random.default_rng(3)
+    tex = np.clip(rng.normal(128, 40, (768, 1024, 3)), 0, 255).astype(np.uint8)
+    tex = cv2.GaussianBlur(tex, (0, 0), 1.2)
+    shot = text_like_screenshot(600, 1200)
+    quad = [[300, 120], [720, 130], [710, 650], [290, 640]]
+    plain = W.compose(tex, shot, quad, 24)
+    zero = W.compose(tex, shot, quad, 24, dof_angle=90, dof_strength=0.0)
+    failures += not check("dof strength 0 is byte-identical to no dof (every old sidecar reproduces)",
+                          np.array_equal(plain, zero))
+    down = W.compose(tex, shot, quad, 24, dof_angle=90, dof_strength=0.6)   # blur grows toward +y
+
+    def lap_var(img, y0, y1):
+        g = cv2.cvtColor(img[y0:y1, 340:670], cv2.COLOR_BGR2GRAY).astype(np.float32)
+        return float(cv2.Laplacian(g, cv2.CV_32F).var())
+    # Bands at 2% and 80% of the way along the ramp: the near band is inside
+    # the first blur step (sigma under 1px), the far one at four times that.
+    near, far = lap_var(down, 134, 150), lap_var(down, 520, 620)
+    near0, far0 = lap_var(plain, 134, 150), lap_var(plain, 520, 620)
+    failures += not check("blur grows in the chosen direction: the far band is far softer than the near band",
+                          near > 10 * far and near > 0.5 * near0,
+                          f"near {near:.0f} (was {near0:.0f}) far {far:.0f} (was {far0:.0f})")
+    up = W.compose(tex, shot, quad, 24, dof_angle=270, dof_strength=0.6)
+    nearu, faru = lap_var(up, 520, 620), lap_var(up, 150, 250)
+    failures += not check("...and the opposite angle blurs the opposite end",
+                          nearu > 3 * faru, f"bottom {nearu:.0f} top {faru:.0f}")
+    # The glass edge softens WITH the blur: below the far edge the COMPOSITE
+    # departs from the photograph for many rows (the soft alpha lets screen
+    # through); below the near edge, and everywhere without dof, for none.
+    # Read from the composite, not from the Field -- a render that built the
+    # field and then blended by the sharp mask would pass a Field-only check.
+    def spill(img, y_edge, x=500):
+        g = cv2.cvtColor(img[y_edge + 1:y_edge + 30, x - 3:x + 4], cv2.COLOR_BGR2GRAY).astype(np.float32)
+        t = cv2.cvtColor(tex[y_edge + 1:y_edge + 30, x - 3:x + 4], cv2.COLOR_BGR2GRAY).astype(np.float32)
+        return int((np.abs(g - t).mean(axis=1) > 3).sum())
+    yb = int(640 + (650 - 640) * (500 - 290) / (710 - 290))        # bottom edge at x=500
+    s_plain, s_far = spill(plain, yb), spill(down, yb)
+    s_near = spill(up, yb)                                          # blur toward the top: bottom edge stays sharp
+    failures += not check("the far glass edge softens with the blur (the mask blurs with the layer)",
+                          s_plain <= 2 and s_far >= 8 and s_near <= 2,
+                          f"rows of screen spilling past the edge: none {s_plain}, far {s_far}, near {s_near}")
+    # The estimator: sharp all round reads flat; a planted gradient blur on the
+    # PHOTO reads back with the planted direction.
+    m0 = DOF.measure(plain, quad)
+    failures += not check("measure: a sharp screen boundary reads flat", m0["flat"], str(m0))
+    for ang in (90.0, 0.0, 225.0):
+        q = np.array(quad, dtype=np.float64)
+        f = DOF.Field(q, ang, 1.0, np.full(plain.shape[:2], 255, np.uint8), 0, 0)
+        f.sigmas = [4.0 * k / (DOF.DOF_LEVELS - 1) for k in range(DOF.DOF_LEVELS)]
+        col = plain.astype(np.float32); num = np.zeros_like(col)
+        for k in range(DOF.DOF_LEVELS):
+            bk = col if f.sigmas[k] <= 0 else DOF._blur(col, f.sigmas[k]); num += f.W[k][:, :, None] * bk
+        m = DOF.measure(np.clip(num, 0, 255).astype(np.uint8), quad)
+        err = None if m["flat"] else abs(((m["angle"] - ang) + 180) % 360 - 180)
+        failures += not check(f"measure: a blur planted toward {ang:.0f}° reads back within 20°",
+                              not m["flat"] and err < 20 and m["strength"] > 0.05,
+                              f"angle {m.get('angle')} strength {m.get('strength')} sigma {m.get('sigma')}")
 
     print()
     if failures:

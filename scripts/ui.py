@@ -49,6 +49,7 @@ import numpy as np  # noqa: E402
 import detect as D  # noqa: E402
 import fitfile as FF  # noqa: E402
 import fits as FIT  # noqa: E402
+import dof as DOF   # noqa: E402
 import scan as S  # noqa: E402
 import warp as W  # noqa: E402
 
@@ -577,7 +578,8 @@ PREVIEW_SECONDS = 6.0
 
 def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
                    blend="replace", reflection=None, result=None, kind="render",
-                   start_frame=0, max_frames=None, *, smoothing=0.0):
+                   start_frame=0, max_frames=None, *, smoothing=0.0,
+                   dof_angle=0.0, dof_strength=0.0):
     """Encode the clip, and only if that SUCCEEDS publish what it produced.
 
     `result` is the sidecar this render would write. It is handed to the worker
@@ -602,7 +604,8 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
                                blend=blend,
                                reflection=(W.DEFAULT_REFLECTION if reflection is None
                                            else reflection),
-                               start_frame=start_frame, max_frames=max_frames)
+                               start_frame=start_frame, max_frames=max_frames,
+                               dof_angle=dof_angle, dof_strength=dof_strength)
         if kind == "preview":
             # A preview publishes NOTHING. It is not a save: no sidecar, no fit
             # file, and above all not the session output -- /api/import reads
@@ -662,6 +665,18 @@ def _blend_args(b):
     if r is None:
         return "replace", W.DEFAULT_REFLECTION
     return "emissive", float(max(0.0, min(1.0, float(r))))
+
+
+def _dof_args(b):
+    """(dof_angle, dof_strength) from the page. Absent or null strength means
+    0 -- no field, and every path in Plan untouched -- so a client that predates
+    depth of field and a sidecar replayed through the CLI both reproduce."""
+    try:
+        strength = float(b.get("dof_strength") or 0.0)
+        angle = float(b.get("dof_angle") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0, 0.0
+    return angle % 360.0, float(min(max(strength, 0.0), 1.0))
 
 
 ROLES = ("photo", "screenshot")
@@ -950,6 +965,18 @@ class Handler(BaseHTTPRequestHandler):
                                     "with status=done.",
                 }))
 
+            if u.path == "/api/dof":
+                # Depth of field read off the photograph's own screen boundary:
+                # the direction the blur grows in and how far, from the blur
+                # width of each edge of the quad. `flat` means the bezel is
+                # sharp all round and the feature has nothing to match.
+                ppath = SESSION.state.get("photo")
+                if not ppath:
+                    return self._json({"error": "no photo chosen"}, 400)
+                photo, _ = _read_image(ppath)
+                corners = _quad(b["corners"])
+                return self._json(DOF.measure(photo, corners))
+
             if u.path == "/api/job/cancel":
                 # The page gave up on a pending job. Marked, not deleted: the
                 # agent's complete_job then answers "already cancelled" instead
@@ -1149,7 +1176,9 @@ class Handler(BaseHTTPRequestHandler):
                                            gr, grain, "web", fit_frame,
                                            blend, reflection, None, "preview",
                                            fit_frame, max_frames),
-                                     kwargs={"smoothing": _smoothing(b)}).start()
+                                     kwargs={"smoothing": _smoothing(b),
+                                             "dof_angle": _dof_args(b)[0],
+                                             "dof_strength": _dof_args(b)[1]}).start()
                 except BaseException:
                     with RENDER_LOCK:
                         RENDER.update(state="error", message="could not start the preview")
@@ -1183,6 +1212,7 @@ class Handler(BaseHTTPRequestHandler):
                 gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
                 grain = bool(b.get("grain", gr > 0))
                 blend, reflection = _blend_args(b)
+                dof_angle, dof_strength = _dof_args(b)
                 preset = "prores" if b.get("preset") == "prores" else "web"
                 ext = ".mov" if preset == "prores" else ".mp4"
                 os.makedirs(OUT_DIR, exist_ok=True)
@@ -1204,6 +1234,7 @@ class Handler(BaseHTTPRequestHandler):
                           "grade": gr, "grain": grain,
                           "video": True, "preset": preset, "fit_frame": fit_frame,
                           "blend": blend, "reflection": reflection,
+                          "dof_angle": dof_angle, "dof_strength": dof_strength,
                           # A render is always the whole clip; only the preview
                           # passes a segment. Recorded anyway, because the
                           # sidecar's promise is EVERY argument that changes the
@@ -1230,7 +1261,9 @@ class Handler(BaseHTTPRequestHandler):
                                      args=(photo, spath, corners, dest, radius_px,
                                            gr, grain, preset, fit_frame,
                                            blend, reflection, result),
-                                     kwargs={"smoothing": _smoothing(b)}).start()
+                                     kwargs={"smoothing": _smoothing(b),
+                                             "dof_angle": dof_angle,
+                                             "dof_strength": dof_strength}).start()
                 except BaseException:
                     # If the thread cannot even be created, the flag must not
                     # outlive the request.
@@ -1253,10 +1286,12 @@ class Handler(BaseHTTPRequestHandler):
                 gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
                 blend, reflection = _blend_args(b)
                 smoothing = _smoothing(b)
+                dof_angle, dof_strength = _dof_args(b)
                 out = W.compose(photo, shot, corners, radius_px,
                                 corner_smoothing=smoothing,
                                 grade=gr, grain=bool(b.get("grain", gr > 0)),
-                                blend=blend, reflection=reflection)
+                                blend=blend, reflection=reflection,
+                                dof_angle=dof_angle, dof_strength=dof_strength)
                 SESSION.update(corners=corners, radius_frac=frac, device=b.get("device"),
                                grade=gr)
                 if u.path == "/api/preview":
@@ -1292,6 +1327,7 @@ class Handler(BaseHTTPRequestHandler):
                           "corner_smoothing": smoothing,
                           "grade": gr, "grain": bool(b.get("grain", gr > 0)),
                           "blend": blend, "reflection": reflection,
+                          "dof_angle": dof_angle, "dof_strength": dof_strength,
                           "saved": time.time()}
                 # A fit is remembered when it PRODUCED something, not while it
                 # is being dragged: a quad on the canvas is a work in progress,

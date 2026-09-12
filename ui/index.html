@@ -1049,7 +1049,7 @@
                end. Icon-only, so each carries an aria-label — a title alone
                names it for a mouse and not for a screen reader. -->
           <button class="sm icon" id="playlive" aria-label="Play the clip on the photo"
-                  title="Play the clip on the photo, right now. The browser applies the same four corners and corner radius, and approximates emissive with screen blending; the colour grade and grain are not in this view.">
+                  title="Play the clip on the photo, right now. The browser applies the same four corners and corner radius, and approximates emissive with screen blending; the colour grade, grain and depth of field are not in this view.">
             <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" focusable="false"><path d="M3 1.5 10 6 3 10.5Z" fill="currentColor"/></svg>
           </button>
           <button class="sm" id="playclip"
@@ -1110,6 +1110,35 @@
           <div style="display:grid;gap:var(--s2);justify-items:end">
             <span class="sm" id="emisVal" style="font-variant-numeric:tabular-nums"></span>
             <input type="range" id="emisAmt" min="0" max="1" step="0.05" value="0.35" aria-label="Reflection strength">
+          </div>
+          </div></div>
+      </div>
+      <div class="sect" id="secDof" data-on="0">
+        <div class="sect-top">
+          <div class="sect-left">
+            <h4>Depth of field</h4>
+            <button class="info" type="button" aria-label="About depth of field"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">A phone shot at an angle is a plane receding from the camera, so its far end is softer than its near end — and a screenshot pasted pin-sharp across all of it gives the fake away. On, the screenshot blurs across the screen in one direction, and the glass edge softens with it. Measure reads the direction and a starting strength off your photo's own bezel; the strength it finds is a floor, so raise it if the far end of the phone looks softer than the screen.</span></button>
+          </div>
+          <button class="switch" id="dofBtn" role="switch" aria-checked="false" aria-label="Depth of field">
+            <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
+          </button>
+        </div>
+        <div class="sect-body"><div class="sect-body-in">
+          <div style="display:grid;gap:var(--s2)">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--s2)">
+              <span class="sm" style="color:var(--mute)">Blur grows toward</span>
+              <span class="sm" id="dofDirVal" style="font-variant-numeric:tabular-nums"></span>
+            </div>
+            <input type="range" id="dofDir" min="0" max="355" step="5" value="90" aria-label="Direction the blur grows in">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--s2)">
+              <span class="sm" style="color:var(--mute)">Strength</span>
+              <span class="sm" id="dofStrVal" style="font-variant-numeric:tabular-nums"></span>
+            </div>
+            <input type="range" id="dofStr" min="0" max="1" step="0.05" value="0.3" aria-label="Blur strength at the far edge">
+            <div style="display:flex;align-items:center;gap:var(--s2)">
+              <button class="sm" id="dofMeasure" title="Read the direction and a starting strength off the photo's own bezel">Measure from photo</button>
+              <span class="status sm" id="dofSt" style="min-width:0"></span>
+            </div>
           </div>
           </div></div>
       </div>
@@ -2502,6 +2531,70 @@ $('#emisAmt').oninput  = e => { emisAmt = parseFloat(e.target.value); paintEmis(
 $('#emisAmt').onchange = e => { setEmis(true, parseFloat(e.target.value)); autoPreview(); };
 
 
+/* Depth of field: a blur that grows across the screen in one direction, and
+   the glass edge softening with it (dof.py). Off sends nothing, so the engine
+   takes the byte-identical path it took before the feature existed. The
+   direction and strength are the designer's numbers; Measure proposes them
+   from the photograph's own bezel and says how far it can be trusted — the
+   measured strength is a floor (the estimator saturates around 5px of blur),
+   never a ceiling. The live layer cannot show it; the composite does. */
+let dofOn  = recall('dof','0') === '1';
+let dofAng = parseFloat(recall('dofAng','90')) || 0;
+let dofStr = parseFloat(recall('dofStr','0.3')); if (!(dofStr >= 0)) dofStr = 0.3;
+function dofAngle(){ return dofOn ? dofAng : 0; }
+function dofStrength(){ return dofOn ? dofStr : 0; }
+function dofWord(a){
+  const names = ['the right','the bottom-right','the bottom','the bottom-left','the left','the top-left','the top','the top-right'];
+  return names[Math.round(((a % 360) + 360) % 360 / 45) % 8];
+}
+function paintDof(){
+  setSwitch($('#dofBtn'), dofOn);
+  $('#dofDirVal').textContent = `${dofWord(dofAng)} · ${Math.round(dofAng)}°`;
+  $('#dofStrVal').textContent = Math.round(dofStr * 100) + '%';
+  const d = $('#dofDir'); d.value = Math.round(dofAng / 5) * 5; d.style.setProperty('--p', (dofAng % 360) / 355);
+  const st = $('#dofStr'); st.value = dofStr; st.style.setProperty('--p', dofStr);
+}
+function setDof(on, ang, str){
+  dofOn = on;
+  if (ang !== undefined) dofAng = ((ang % 360) + 360) % 360;
+  if (str !== undefined) dofStr = Math.max(0, Math.min(1, str));
+  remember('dof', on ? '1' : '0'); remember('dofAng', String(dofAng)); remember('dofStr', String(dofStr));
+  setSectionOpen($('#secDof'), on);
+  paintDof();
+}
+let dofMeasuredFor = null;   // photo path the last measurement was for
+async function measureDof(){
+  const s = $('#dofSt');
+  if (!(st.photo && st.corners)){ s.className = 'status sm'; s.textContent = 'Fit the screen first.'; return; }
+  s.className = 'status sm busy'; s.textContent = 'Measuring…';
+  try {
+    const r = await api('/api/dof', {corners: st.corners});
+    dofMeasuredFor = st.photo;
+    if (r.flat){
+      s.className = 'status sm'; s.textContent = 'The bezel is sharp all round — nothing to match. Set by eye if you want it anyway.';
+      s.title = `Edge blur ${(r.sigma || []).map(v => v.toFixed(1)).join(' / ')}px`;
+      autoPreview();   // still on, at the slider's own numbers
+      return;
+    }
+    setDof(true, r.angle, Math.max(r.strength, 0.05));
+    s.className = 'status sm ok';
+    s.textContent = `Measured: grows toward ${dofWord(r.angle)}. Strength is a floor — raise it if the far end looks softer.`;
+    s.title = `Edge blur ${r.sigma.map(v => v.toFixed(1)).join(' / ')}px, spread ${r.spread}×`;
+    autoPreview();
+  } catch (e) { s.className = 'status sm err'; s.textContent = 'Could not measure: ' + e.message; }
+}
+$('#dofBtn').onclick = () => {
+  setDof(!dofOn);
+  // First time on for this photograph: propose from the photo rather than
+  // from a remembered slider position that belongs to another one.
+  if (dofOn && dofMeasuredFor !== st.photo && st.corners) measureDof(); else autoPreview();
+};
+$('#dofDir').oninput  = e => { dofAng = parseFloat(e.target.value); paintDof(); };
+$('#dofDir').onchange = e => { setDof(true, parseFloat(e.target.value)); autoPreview(); };
+$('#dofStr').oninput  = e => { dofStr = parseFloat(e.target.value); paintDof(); };
+$('#dofStr').onchange = e => { setDof(true, undefined, parseFloat(e.target.value)); autoPreview(); };
+$('#dofMeasure').onclick = measureDof;
+
 $('#edgeBtn').onclick = () => setLoupeMode(loupeMode === 'float' ? 'dock' : 'float');
 
 /* Contrast for the strip only. A dark screen on a dark frame puts the
@@ -2748,6 +2841,9 @@ function showResult(what){
      geometry       — exact, the same four corners the render uses
      corner radius  — applied in the video's own pixel space, before the warp,
                       which is where compose() applies it
+     depth of field — ABSENT. A blur that grows across the screen has no
+                      CSS equivalent that follows a homography; the composite
+                      is the only view that shows it.
      emissive       — APPROXIMATED with `screen` blending. Same idea (the
                       screen's light plus the glass beneath it), not the same
                       arithmetic as compose()'s emissive.
@@ -2894,7 +2990,7 @@ async function playClip(){
   // a preview the user did not ask for, and the wait goes silent again.
   building = true;
   try{
-    await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(),
+    await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(),
                                      device: st.type, grade: gradeValue(),
                                      reflection: emisValue(), fit_frame: +$('#vframe').value});
   }catch(e){
@@ -2953,7 +3049,7 @@ async function renderPreview(){
   const say = t => { if (!building && $('#liveWrap').hidden) s.textContent = t; };
   say('Rendering…');
   try{
-    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     const im = $('#outImg');
     im.onload = () => {
       outNat = im.naturalWidth;
@@ -3083,7 +3179,7 @@ async function renderVideo(){
   b.disabled = true;
   setRenderProgress(0);
   try{
-    await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), device: st.type,
+    await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), device: st.type,
                               grade: gradeValue(), reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
   }catch(e){
     setRenderProgress(null);
@@ -3129,7 +3225,7 @@ $('#save').onclick = async () => {
   if (st.video) return renderVideo();
   const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
   try{
-    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), device: st.type, grade: gradeValue(), reflection: emisValue()});
     b.textContent = saveLabel();
     // The real destination, not a hardcoded one: --out-dir means saves usually
     // land in the project folder now, and telling the user "~/Desktop" when
@@ -3208,6 +3304,7 @@ $('#imp').onclick = async () => {
   setStripHC(stripHC);
   setGrade(gradeOn, gradeAmt);
   setEmis(emisOn, emisAmt);
+  setDof(dofOn, dofAng, dofStr);
   setRadiusOn(radiusOn);
   sectionsBooted = true;   // animate from here on, not during the first paint
   // Compare is the DEFAULT view: judging a fit means comparing it with the
