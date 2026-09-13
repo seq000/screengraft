@@ -9,6 +9,17 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.5] - 2026-09-13
+
+### Fixed
+
+- The depth-of-field gizmo's dashes now match the fit overlay's at every
+  zoom. SVG dash lengths are in the viewBox's units — the photo's pixels —
+  and `non-scaling-stroke` does not cover them, so 6/5 rendered as 3/2.5 at
+  half zoom; they are now set in screen pixels through the zoom factor. The
+  casing under a dashed line is dashed with it, instead of a solid dark line
+  with orange dashes on top.
+
 ## [0.54.4] - 2026-09-13
 
 ### Changed
