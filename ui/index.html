@@ -461,7 +461,12 @@
      make it visible", 12 Sep 2026). Its own keyboard stop with its own name
      ("Remove photo"), distinct from the fit bar's Reset -- that resets the
      QUAD; this un-chooses a SOURCE. Only present while the chip is filled. */
-  .chipwrap{position:relative;display:inline-flex;min-width:0}
+  /* Above the scrim (z 50) and beside the popover (z 51): the chip whose
+     popover is open stays visible and lit, so it is clear which source is
+     being chosen; the other chip stays clickable to switch (14 Sep 2026). The
+     top bar creates no stacking context of its own, so this z-index reaches
+     the root. */
+  .chipwrap{position:relative;display:inline-flex;min-width:0;z-index:52}
   .chipwrap .inputchip:not(.is-empty){padding-right:30px}
   .chipclear{position:absolute;right:5px;top:50%;transform:translateY(-50%);
              width:22px;height:22px;padding:0;border-radius:999px;flex:none;

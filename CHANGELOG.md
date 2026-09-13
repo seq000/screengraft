@@ -9,6 +9,13 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.62.1] - 2026-09-14
+
+### Changed
+
+- The source chips sit above the popover scrim, so the chip whose popover is
+  open stays visible and lit, and the other stays clickable to switch.
+
 ## [0.62.0] - 2026-09-14
 
 ### Changed
