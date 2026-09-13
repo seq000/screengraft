@@ -9,6 +9,29 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.62.0] - 2026-09-14
+
+### Changed
+
+- **The corner loupe frames the whole arc.** It magnified a corner as much as
+  the edge strip does (±14px, ~4.6×), and a rounded corner at that scale is a
+  blank curve with neither edge in view. The corner view now covers 2.5 radii
+  on each side of the corner — the radius in photo pixels is the radius
+  fraction times the quad's top edge — never tighter than the strip, and the
+  caption states the magnification.
+- **The source chip wears its Active state while its popover is open** — the
+  same accent stroke (empty) or accent fill (filled) a dragged file shows —
+  so the popover reads as belonging to that chip. A drag leaving the chip no
+  longer un-lights it while the popover is up.
+- **The drop zone's dashed rule is drawn, not bordered**: a masked pseudo
+  element paints `--edge-mid` through an SVG rounded rect with a 5px dash and
+  4px gap (2 and 1 longer than the browser's), half a pixel inside the edge,
+  so it is lighter and looser as asked; hover and drag-over recolour it
+  through the same mask.
+- **The popover is glass**: `--float` at 86% over a 5px backdrop blur (a
+  Figma background blur of 10 — Figma's radius is about twice CSS's), with a
+  hairline stroke.
+
 ## [0.61.0] - 2026-09-14
 
 ### Changed

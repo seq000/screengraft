@@ -39,6 +39,8 @@
     /* surface/float is a real token (#26262b, the chip hover surface). The
        canvas overlay is a separate thing and gets its own name. */
     --float:#26262b;
+    /* --float at 86%: the popover's glass, over a background blur. */
+    --float-glass:rgba(38,38,43,.86);
     --overlay:rgba(17,17,18,.98);
     --ink:#e9ecf1; --mute:#8f939a; --faint:#8f939ab2;
     --line:#1d1e20; --edge:#3a3b41; --edge-mid:#494a50; --edge-hi:#6d6f79;
@@ -1006,8 +1008,13 @@
          opacity:0;visibility:hidden;
          transition:opacity var(--t-pop), visibility 0s linear var(--t-pop)}
   .scrim.on{opacity:1;visibility:visible;transition:opacity var(--t-pop), visibility 0s}
+  /* surface/float at 86% over a background blur. Figma's blur radius is
+     about twice CSS's -- a Figma background blur of 10 is blur(5px) here
+     (14 Sep 2026, on request). Enough shows through to read as glass; the
+     stroke stays a hairline. */
   .pop{position:fixed;z-index:51;width:640px;max-width:calc(100vw - 24px);
-       max-height:78vh;overflow:auto;background:var(--float);border:1px solid var(--edge);
+       max-height:78vh;overflow:auto;background:var(--float-glass);border:var(--bw) solid var(--edge);
+       backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
        border-radius:var(--r-lg);box-shadow:var(--shadow), var(--hi);padding:16px;
        opacity:0;visibility:hidden;transform:translateY(6px) scale(.985);
        transform-origin:50% 0;
@@ -1047,11 +1054,23 @@
   .pv{border-radius:var(--r-md);background:var(--sunk);min-height:0;
       display:grid;place-items:center;overflow:hidden}
   .pv img{max-width:100%;max-height:300px;object-fit:contain;display:block}
-  .drop{border:var(--bw) dashed var(--edge);border-radius:var(--r-md);padding:30px 14px;text-align:center;
+  /* The drop zone's dashed rule is drawn, not bordered: CSS `dashed` fixes the
+     dash at ~3× the stroke and cannot be tuned. A masked pseudo-element paints
+     a token colour through an SVG rounded rect with a 5px dash / 4px gap
+     (2 longer / 1 longer than the browser's, on request, 14 Sep 2026) and a
+     1px stroke centred on the box edge, so half a pixel shows inside -- the
+     same hairline weight as every other stroke -- in the lighter edge tone. */
+  .drop{position:relative;border:0;border-radius:var(--r-md);padding:30px 14px;text-align:center;
         color:var(--mute);cursor:pointer;margin-top:12px;font-size:12px;
         transition:var(--t-all)}
-  .drop:hover{border-color:var(--edge-hi);color:var(--ink)}
-  .drop.over{border-color:var(--acc);color:var(--ink);background:var(--acc-soft)}
+  .drop::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+        background:var(--edge-mid);transition:background-color var(--t);
+        -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' rx='8' fill='none' stroke='%23000' stroke-width='1' stroke-dasharray='5 4'/%3E%3C/svg%3E") 0 0/100% 100% no-repeat;
+        mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' rx='8' fill='none' stroke='%23000' stroke-width='1' stroke-dasharray='5 4'/%3E%3C/svg%3E") 0 0/100% 100% no-repeat}
+  .drop:hover{color:var(--ink)}
+  .drop:hover::before{background:var(--edge-hi)}
+  .drop.over{color:var(--ink);background:var(--acc-soft)}
+  .drop.over::before{background:var(--acc-stroke)}
   .sm{font-size:12px}
   code{font:12px ui-monospace,Menlo,monospace;background:var(--sunk);padding:2px 6px;
        border-radius:var(--r-sm);box-shadow:inset 0 0 0 1px var(--line)}
@@ -1850,8 +1869,11 @@ for (const [n, role] of [[1,'photo'],[2,'screenshot']]){
   // popover. Same upload path as the popover's drop zone.
   const chip = $('#chip'+n);
   chip.ondragover = e => { if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); chip.classList.add('over'); } };
-  chip.ondragleave = () => chip.classList.remove('over');
-  chip.ondrop = e => { e.preventDefault(); chip.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) upload(role, f); };
+  // Leaving with a drag only un-lights the chip if its popover is not the
+  // reason it is lit.
+  const popOpen = () => $('#pop'+n).classList.contains('on');
+  chip.ondragleave = () => { if (!popOpen()) chip.classList.remove('over'); };
+  chip.ondrop = e => { e.preventDefault(); if (!popOpen()) chip.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) upload(role, f); };
 }
 /* One popover mechanic for every popover: anchor it under whatever opened it,
    clamped into the viewport. The pickers and the preview both use it. */
@@ -1862,10 +1884,16 @@ function openPopAt(pop, anchor){
   pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, anchor.left)) + 'px';
   pop.style.top = (anchor.bottom + 8) + 'px';
 }
-function openPop(n){ openPopAt($('#pop'+n), $('#chip'+n).getBoundingClientRect()); }
+// The chip whose popover is open wears the Input chip's ACTIVE state (the
+// same one a file dragged over it shows): the popover is about that chip.
+function openPop(n){
+  openPopAt($('#pop'+n), $('#chip'+n).getBoundingClientRect());
+  $('#chip'+n).classList.add('over');
+}
 function closePop(){
   document.querySelectorAll('.pop').forEach(p=>p.classList.remove('on'));
   $('#scrim').classList.remove('on');
+  document.querySelectorAll('.inputchip.over').forEach(c => c.classList.remove('over'));
 }
 $('#scrim').onclick = closePop;
 
@@ -3078,10 +3106,22 @@ function swingText(mode){
    the strip (H / 2·stripHalf, so the ± buttons work here too), centred on the
    corner, unrotated, with both edges drawn through it and the ring at the
    centre. Requested 13 Sep 2026; edges keep the strip as it is. */
+// The corner view's own scale. A corner is an ARC, not a point: it starts a
+// radius away from where the two edges would meet, on each edge. At the edge
+// strip's magnification (±14px) a rounded corner showed only the bezel's
+// blank curve and neither edge, so there was nothing to judge (14 Sep 2026).
+// The window covers 2.5 radii on each side -- the whole arc plus enough straight
+// edge to see it land -- never tighter than the strip. The radius in photo px
+// is the radius fraction (of the screenshot's width) times the quad's top edge.
+function cornerHalf(){
+  const C = st.corners; if (!C) return stripHalf;
+  const rPhoto = (typeof radiusValue === 'function' ? radiusValue() : 0) * vlen(sub(C[1], C[0]));
+  return Math.max(stripHalf, 1.25 * rPhoto, 24);
+}
 function paintCorner(c, W, H, i){
   c.setTransform(1,0,0,1,0,0);
   c.fillStyle = '#0c0c0b'; c.fillRect(0,0,W,H);
-  const P = st.corners[i], M = H / (2*stripHalf);
+  const P = st.corners[i], M = H / (2*cornerHalf());
   c.save();
   c.setTransform(M, 0, 0, M, W/2 - P[0]*M, H/2 - P[1]*M);
   c.imageSmoothingEnabled = true;
@@ -3115,7 +3155,7 @@ function drawStrip(){
     }
     if (corner){
       paintCorner(sctx, W, H, a.i);
-      $('#stripSt').textContent = `${LBL[a.i]} corner · ${(H/(2*stripHalf)).toFixed(1)}× — where the two edges meet`;
+      $('#stripSt').textContent = `${LBL[a.i]} corner · ${(H/(2*cornerHalf())).toFixed(1)}× — the whole arc, and where each edge lands on it`;
     } else {
       paintStrip(sctx, W, H, a.i, a.mode);
       $('#stripSt').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px · ${(H/(2*stripHalf)).toFixed(1)}× across the boundary — ${swingText(a.mode)}`;
@@ -3125,7 +3165,7 @@ function drawStrip(){
     if (!has){ fl.classList.remove('on'); return; }
     if (corner){
       paintCorner(fctx, stripF.width, stripF.height, a.i);
-      $('#stripFCap').textContent = `${LBL[a.i]} corner · ${(stripF.height/(2*stripHalf)).toFixed(1)}× — where the two edges meet`;
+      $('#stripFCap').textContent = `${LBL[a.i]} corner · ${(stripF.height/(2*cornerHalf())).toFixed(1)}× — the whole arc, and where each edge lands on it`;
     } else {
       paintStrip(fctx, stripF.width, stripF.height, a.i, a.mode);
       $('#stripFCap').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px — ${swingText(a.mode)}`;
