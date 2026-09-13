@@ -800,6 +800,18 @@ def server_authenticates(td):
            st == 403 and not os.path.exists(ui.info["job"]), str(st))
         st, j = ui.get("/api/state", headers={"X-Screengraft-Token": "not-the-token"})
         ok("a wrong token is refused 403", st == 403, str(st))
+        st, j = ui.get("/api/state", headers={"X-Screengraft-Token": "t\u00f6k\u00e9n"})
+        ok("a non-ASCII token is refused 403, not 500", st == 403, str(st))
+        # A refused upload is read off the wire before the 403 goes back, so
+        # the client sees the refusal and not a broken pipe.
+        req = urllib.request.Request(ui.url + "/api/upload", data=b"x" * 300_000,
+                                     headers={"X-Filename": "a.png", "X-Role": "photo"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                st = r.status
+        except urllib.error.HTTPError as e:
+            st = e.code
+        ok("a refused 300KB upload is answered 403 cleanly", st == 403, str(st))
         st, j = ui.get("/api/state", headers={"X-Screengraft-Token": ui.token,
                                               "Sec-Fetch-Site": "cross-site"})
         ok("a cross-site request is refused even WITH the token", st == 403, str(st))

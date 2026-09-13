@@ -680,9 +680,10 @@ def _grain_gain(b) -> float:
     """How much of the surround's noise floor the screen carries.
 
     The page does not set this; fresh renders get grade.SCREEN_GRAIN_GAIN. It
-    is read from the body so a sidecar replayed through the API keeps its own
-    value -- a sidecar from before the gain existed carries none and passes
-    1.0 explicitly at the replay site, never here.
+    is read from the body so a caller that does send one (a future control, a
+    test) is honoured. Absent means the shipped gain, NOT 1.0: the API is for
+    new renders. Replaying an old sidecar is done through compose() directly,
+    where the parameter's own default (1.0) reproduces the old bytes.
     """
     try:
         g = float(b.get("grain_gain")) if b.get("grain_gain") is not None \
@@ -845,7 +846,11 @@ class Handler(BaseHTTPRequestHandler):
         if site and site not in ("same-origin", "none"):
             return False
         tok = self.headers.get("X-Screengraft-Token") or (q.get("t") or [""])[0]
-        return bool(tok) and bool(TOKEN) and secrets.compare_digest(tok, TOKEN)
+        # compare_digest wants ASCII str on both sides; a token is url-safe
+        # base64, so anything else is wrong before it is compared.
+        if not (tok and TOKEN and tok.isascii()):
+            return False
+        return secrets.compare_digest(tok, TOKEN)
 
     def _refuse(self, u):
         if u.path == "/":
@@ -1003,9 +1008,15 @@ class Handler(BaseHTTPRequestHandler):
             # Read the body off the wire first (bounded): refusing while the
             # client is still sending turns a clean 403 into a broken pipe on
             # its side, which reads as "the server died", not "you were refused".
-            n = min(int(self.headers.get("Content-Length") or 0), 64 << 20)
+            try:
+                n = min(int(self.headers.get("Content-Length") or 0), 64 << 20)
+            except ValueError:
+                n = 0
             while n > 0:
-                n -= len(self.rfile.read(min(n, 1 << 20)) or b"\0")
+                chunk = self.rfile.read(min(n, 1 << 20))
+                if not chunk:            # client gone; nothing left to drain
+                    break
+                n -= len(chunk)
             return self._refuse(u)
         try:
             if u.path == "/api/upload":

@@ -9,6 +9,17 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.56.1] - 2026-09-13
+
+### Fixed
+
+- Review of v0.55–v0.56: a refused `POST` drained its body one byte per loop
+  once the client had gone (a claimed 64 MB body meant 64 M empty reads);
+  a garbage `Content-Length` would have raised; a non-ASCII token header
+  would have reached `compare_digest` and raised instead of being refused;
+  and `_grain_gain`'s docstring described a replay path that does not exist.
+  Two checks added (non-ASCII token, a refused 300 KB upload answered 403).
+
 ## [0.56.0] - 2026-09-13
 
 ### Security
