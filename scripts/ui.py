@@ -28,6 +28,7 @@ stdlib only on the server side; OpenCV via detect/warp.
 """
 import argparse
 import atexit
+import hashlib
 import json
 import mimetypes
 import os
@@ -733,7 +734,10 @@ def _thumb_for(item):
     out_dir = os.path.join(SESSION.dir, "thumbs")
     if item.get("ext") in VIDEO_EXT:
         os.makedirs(out_dir, exist_ok=True)
-        out = os.path.join(out_dir, f"{abs(hash(item['path']))}_{int(item.get('mtime') or 0)}_clip.jpg")
+        # A stable name: hash() is salted per process, so a name built on it
+        # misses the cache on every launch.
+        key = hashlib.sha1(item["path"].encode()).hexdigest()[:16]
+        out = os.path.join(out_dir, f"{key}_{int(item.get('mtime') or 0)}_clip.jpg")
         if not os.path.exists(out):
             try:
                 fr = W.read_frame_at(item["path"], 0)
@@ -981,7 +985,10 @@ class Handler(BaseHTTPRequestHandler):
                 # The folder scan (scan.py) still exists for the CLI and for a
                 # first run with nothing used yet; ?role= selects the list.
                 role = (q.get("role") or ["photo"])[0]
-                limit = int(q.get("limit", ["40"])[0])
+                try:
+                    limit = max(1, min(200, int(q.get("limit", ["40"])[0])))
+                except ValueError:
+                    limit = 40
                 items = RECENT.items(role, limit)
                 for it in items:
                     it["thumb"] = _thumb_for(it)
@@ -1546,6 +1553,11 @@ def _publish_current(payload):
     """
     os.makedirs(os.path.dirname(CURRENT), exist_ok=True)
     _write_json_atomic(CURRENT, payload)
+    # The pointer carries the session token: owner-only, like a credential.
+    try:
+        os.chmod(CURRENT, 0o600)
+    except OSError:
+        pass
 
     def clear():
         cur = None

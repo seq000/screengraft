@@ -39,7 +39,16 @@ def _load() -> dict:
         if not isinstance(d, dict):
             raise ValueError
     except (OSError, ValueError):
+        # No store (or an unreadable one): build it from the sessions on disk
+        # and WRITE it, or every read until the first record() walks them again.
         d = _seed()
+        for r in ROLES:
+            d.setdefault(r, [])
+        try:
+            _save(d)
+        except OSError:
+            pass
+        return d
     for r in ROLES:
         d.setdefault(r, [])
     return d
@@ -52,6 +61,10 @@ def _save(d: dict):
     with open(tmp, "w") as f:
         json.dump(d, f, indent=1)
     os.replace(tmp, p)
+    try:
+        os.chmod(p, 0o600)      # paths under the user's home: owner-only
+    except OSError:
+        pass
 
 
 def _seed() -> dict:

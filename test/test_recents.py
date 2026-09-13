@@ -25,6 +25,8 @@ with tempfile.TemporaryDirectory() as td:
         open(p, "wb").write(b"x")
 
     ok("empty at first", R.items("photo") == [] and R.items("screenshot") == [])
+    ok("the first read writes the store, so the seed runs once", os.path.exists(R.store_path()))
+    ok("...owner-only", (os.stat(R.store_path()).st_mode & 0o777) == 0o600, oct(os.stat(R.store_path()).st_mode & 0o777))
     R.record("photo", a); time.sleep(0.01); R.record("photo", b); R.record("screenshot", c)
     names = [i["name"] for i in R.items("photo")]
     ok("newest used first", names == ["b.png", "a.png"], str(names))

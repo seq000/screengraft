@@ -786,6 +786,11 @@ def server_authenticates(td):
         ok("the launch line carries base, url and token",
            ui.info["base"].startswith("http://127.0.0.1:") and ui.token
            and ui.info["url"] == ui.info["base"] + "?t=" + ui.token, str(ui.info["url"]))
+        cur = os.path.join(td, "auth", "home", ".screengraft", "current.json")
+        ok("current.json (it carries the token) is owner-only",
+           (os.stat(cur).st_mode & 0o777) == 0o600, oct(os.stat(cur).st_mode & 0o777))
+        st, j = ui.get("/api/recent?role=photo&limit=abc")
+        ok("/api/recent with a garbage limit answers, not 500", st == 200 and "items" in j, str(st))
         st, j = ui.get("/api/ping", headers={})
         ok("/api/ping needs no token", st == 200 and j.get("ok") is True, str(st))
         ok("...and says only that a screengraft is here",

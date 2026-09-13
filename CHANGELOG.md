@@ -9,6 +9,17 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.62.2] - 2026-09-14
+
+### Fixed
+
+- Code review of v0.55–v0.62: the recents store re-seeded itself from every
+  session directory on each read until the first record (the seed was never
+  saved); a clip thumbnail was named with Python's per-process `hash()`, so
+  the cache missed on every launch; `/api/recent?limit=abc` raised; and
+  `current.json`, which carries the session token, was world-readable — it
+  and `recents.json` are now owner-only. Checks for each.
+
 ## [0.62.1] - 2026-09-14
 
 ### Changed
