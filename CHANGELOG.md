@@ -9,6 +9,17 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.8] - 2026-09-13
+
+### Added
+
+- **A corner under the pointer gets a magnified view in the edge strip.**
+  Hover, pick or drag a corner handle and the strip below the canvas shows an
+  unrotated crop centred on that corner at the strip's own magnification, with
+  both adjoining edges drawn through it and the corner named. Edges keep the
+  rectified band, which is the strip's real job; the corner view is for the
+  moment the two edges meet and neither band can show it.
+
 ## [0.54.7] - 2026-09-13
 
 ### Changed

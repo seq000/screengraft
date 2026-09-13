@@ -2920,9 +2920,38 @@ function swingText(mode){
   if (mode === 'rotB') return 'the left end swings, pivot on the right';
   return 'flat on the rule means aligned';
 }
+/* A corner under the pointer gets a plain magnified view instead of the
+   rectified strip: the strip straightens ONE edge, and a corner is where two
+   meet, so straightening either would bend the other. Same magnification as
+   the strip (H / 2·stripHalf, so the ± buttons work here too), centred on the
+   corner, unrotated, with both edges drawn through it and the ring at the
+   centre. Requested 13 Sep 2026; edges keep the strip as it is. */
+function paintCorner(c, W, H, i){
+  c.setTransform(1,0,0,1,0,0);
+  c.fillStyle = '#0c0c0b'; c.fillRect(0,0,W,H);
+  const P = st.corners[i], M = H / (2*stripHalf);
+  c.save();
+  c.setTransform(M, 0, 0, M, W/2 - P[0]*M, H/2 - P[1]*M);
+  c.imageSmoothingEnabled = true;
+  c.drawImage(img, 0, 0);
+  c.restore();
+  if (stripHC) stretchContrast(c, W, H);
+  const toS = q => [W/2 + (q[0]-P[0])*M, H/2 + (q[1]-P[1])*M];
+  const prev = st.corners[(i+3)%4], next = st.corners[(i+1)%4];
+  for (const q of [prev, next]){
+    const e = toS(q), d = unit(sub(e, [W/2, H/2]));
+    const s0 = add([W/2, H/2], mul(d, HANDLE_GAP_S)), s1 = add([W/2, H/2], mul(d, 4000));
+    cased(c, () => { c.beginPath(); c.moveTo(s0[0], s0[1]); c.lineTo(s1[0], s1[1]); }, QUAD_W, CORE_QUAD);
+  }
+  casedRing(c, W/2, H/2, 4, CORE_QUAD);
+  c.font = '600 11px system-ui'; c.textBaseline = 'middle';
+  casedText(c, LBL[i], W/2 + 12, H/2 - 12, 'rgba(255,255,255,.95)');
+}
+const HANDLE_GAP_S = 4 + 1 + CASE_PAD/2 + 1;   // the same break the canvas leaves around a ring
 function drawStrip(){
   const a = drag || hover || pick;
-  const has = !!(st.corners && a && a.kind === 'edge' && img.naturalWidth);
+  const has = !!(st.corners && a && (a.kind === 'edge' || a.kind === 'corner') && img.naturalWidth);
+  const corner = has && a.kind === 'corner';
   $('#stripZ').textContent = '±' + stripHalf + 'px';
   if (loupeMode === 'dock'){
     $('#floatLoupe').classList.remove('on');
@@ -2932,13 +2961,23 @@ function drawStrip(){
       $('#stripSt').textContent = 'Hover or drag an edge — this straightens it, so misalignment shows as a wedge.';
       return;
     }
-    paintStrip(sctx, W, H, a.i, a.mode);
-    $('#stripSt').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px · ${(H/(2*stripHalf)).toFixed(1)}× across the boundary — ${swingText(a.mode)}`;
+    if (corner){
+      paintCorner(sctx, W, H, a.i);
+      $('#stripSt').textContent = `${LBL[a.i]} corner · ${(H/(2*stripHalf)).toFixed(1)}× — where the two edges meet`;
+    } else {
+      paintStrip(sctx, W, H, a.i, a.mode);
+      $('#stripSt').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px · ${(H/(2*stripHalf)).toFixed(1)}× across the boundary — ${swingText(a.mode)}`;
+    }
   } else {
     const fl = $('#floatLoupe');
     if (!has){ fl.classList.remove('on'); return; }
-    paintStrip(fctx, stripF.width, stripF.height, a.i, a.mode);
-    $('#stripFCap').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px — ${swingText(a.mode)}`;
+    if (corner){
+      paintCorner(fctx, stripF.width, stripF.height, a.i);
+      $('#stripFCap').textContent = `${LBL[a.i]} corner · ${(stripF.height/(2*stripHalf)).toFixed(1)}× — where the two edges meet`;
+    } else {
+      paintStrip(fctx, stripF.width, stripF.height, a.i, a.mode);
+      $('#stripFCap').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px — ${swingText(a.mode)}`;
+    }
     fl.classList.add('on');
     const w = fl.offsetWidth || 356, h = fl.offsetHeight || 130;
     let x = lastPointer[0] + 26, y = lastPointer[1] - h - 18;

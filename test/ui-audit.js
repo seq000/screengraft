@@ -263,6 +263,10 @@
     ok('swingText is present', false, 'not defined');
   }
 
+  // A corner under the pointer gets a magnified crop in the strip (v0.54.8);
+  // an edge keeps the rectified band. Presence only — the picture needs an eye.
+  ok('the strip can paint a corner loupe', typeof paintCorner === 'function');
+
   const fail = R.filter(r => !r.pass);
   return { pass: R.length - fail.length, fail: fail.length,
            failures: fail, checks: R.map(r => (r.pass ? '  ok   ' : '  FAIL ') + r.name + (r.extra ? '   ' + r.extra : '')) };
