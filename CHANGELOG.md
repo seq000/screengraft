@@ -9,6 +9,20 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.60.0] - 2026-09-14
+
+### Changed
+
+- **Rails re-measured against the updated design file.** The Segment Button
+  grew to 32px (from 28) with 8px side padding, a text label padded a further
+  6px; the zoom rail keeps 8px between its two groups and 32px separates it
+  from the corner rail; the bottom rail sits 8px off the edge. Measured in the
+  page against the frame: groups 86 / 114 / 61 px against Figma's 85 / 113 /
+  61 (the difference is the two half-pixel strokes), the left rail 33×97 /
+  33×33 / 33×129 against 32×96 / 32×32 / 32×128. The edge-view zoom stepper
+  is two Md buttons joined at a hairline (Frame 263: 66×28), not two Sm ones,
+  and both carry accessible names.
+
 ## [0.59.2] - 2026-09-14
 
 ### Fixed

@@ -362,7 +362,7 @@
   .stepper button:first-child{border-top-left-radius:var(--r-sm);border-bottom-left-radius:var(--r-sm)}
   .stepper button:last-child{border-top-right-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
   /* One border between neighbours rather than two stacked. */
-  .stepper button + button{margin-left:-1px}
+  .stepper button + button{margin-left:calc(-1 * var(--bw))}
   .stepper button:hover,.stepper button:focus-visible{position:relative;z-index:1}
   /* The dock's stepper is Sm height but keeps 12px padding (Figma 8:31/8:33). */
   .dock-step button{padding:0 var(--s3)}
@@ -544,7 +544,7 @@
 
   /* ------------------------------------------------------------------
      Rails over the well (Figma 7:12, Button Group 145:372, Segment Button
-     138:255). A rail is a Button Group: a 28px-wide column of 28px segment
+     138:255). A rail is a Button Group: a 32px-wide column of 32px segment
      buttons on the raised surface, one 0.5px translucent stroke and one
      shadow around the whole group — the stroke is the only translucent one
      in the system, because the group sits over a photograph of any tone.
@@ -555,8 +555,12 @@
           background:var(--raise);border:var(--bw) solid var(--group-edge);
           border-radius:var(--r-xs);box-shadow:var(--group-shadow);overflow:hidden}
   .segbtn,.segbtn:hover,.segbtn:active{border:0;border-radius:0;box-shadow:none;transform:none}
-  .segbtn{height:28px;min-width:28px;padding:0 6px;font-size:12px;color:var(--ink);
+  /* Segment Button re-read 14 Sep 2026: 32px tall, 32px minimum, 8px side
+     padding; a text label sits in its own 6px-padded box, so a text button
+     pads 14px. Was 28 / 6. */
+  .segbtn{height:32px;min-width:32px;padding:0 8px;font-size:12px;color:var(--ink);
           background:var(--raise);display:inline-flex;align-items:center;justify-content:center;gap:4px}
+  .segbtn.txt{padding:0 14px}
   .segbtn:hover{background:var(--raise-mid)}
   .segbtn:active{background:var(--raise-low)}
   .segbtn.sel,.segbtn[aria-pressed="true"]{background:var(--raise-hi)}
@@ -565,8 +569,8 @@
   .segbtn svg{width:16px;height:16px;display:block;flex:none}
   .segbtn svg text{font:600 8px/1 -apple-system,BlinkMacSystemFont,"SF Pro",system-ui,sans-serif;fill:var(--ink)}
   .lrail{position:absolute;left:24px;top:48px;z-index:3;display:flex;flex-direction:column;gap:var(--s2)}
-  .lrail .corners{margin-top:var(--s3)}       /* 8 + 12 = the design's 20px */
-  .brail{position:absolute;left:0;right:0;bottom:12px;z-index:3;display:flex;justify-content:center;
+  .lrail .corners{margin-top:var(--s6)}       /* 8 + 24 = the design's 32px between rails */
+  .brail{position:absolute;left:0;right:0;bottom:8px;z-index:3;display:flex;justify-content:center;
          align-items:center;gap:4px;pointer-events:none;flex-wrap:wrap;padding:0 var(--s4)}
   .brail .bgroup{pointer-events:auto}
   /* The status pill (Status pill 5:7 / 5:10): floats top-centre, its own
@@ -1122,10 +1126,10 @@
            rail — it is navigation, not an action on the fit. Rotate is not in
            the design frame and is kept until it is ruled on. -->
       <div class="brail" id="cvbar">
-        <div class="bgroup"><button class="segbtn" id="redetect">Re-detect</button></div>
-        <div class="bgroup"><button class="segbtn" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button></div>
-        <div class="bgroup"><button class="segbtn" id="rotatequad" title="Turn the screenshot inside the same four edges. The edges stay where they are; only which one is the top changes. A portrait screenshot fits a phone only two ways, so on a phone this is a half turn; a quarter turn where the screen is near-square or the screenshot fits the other way.">Rotate</button></div>
-        <div class="bgroup"><button class="segbtn" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button></div>
+        <div class="bgroup"><button class="segbtn txt" id="redetect">Re-detect</button></div>
+        <div class="bgroup"><button class="segbtn txt" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button></div>
+        <div class="bgroup"><button class="segbtn txt" id="rotatequad" title="Turn the screenshot inside the same four edges. The edges stay where they are; only which one is the top changes. A portrait screenshot fits a phone only two ways, so on a phone this is a half turn; a quarter turn where the screen is near-square or the screenshot fits the other way.">Rotate</button></div>
+        <div class="bgroup"><button class="segbtn txt" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button></div>
       </div>
     </section>
 
@@ -1279,7 +1283,7 @@
   <footer class="dock" id="dock">
     <div class="striphead">
       <span class="lbl">Edge view</span>
-      <span class="stepper dock-step"><button class="sm" id="stripOut">&minus;</button><button class="sm" id="stripIn">+</button></span>
+      <span class="stepper dock-step"><button id="stripOut" aria-label="Zoom the edge view out">&minus;</button><button id="stripIn" aria-label="Zoom the edge view in">+</button></span>
       <span class="sm" id="stripZ" style="color:var(--mute);font-variant-numeric:tabular-nums"></span>
       <button class="sm" id="stripHC" aria-pressed="false" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched.">Contrast</button>
       <span class="spacer"></span>
