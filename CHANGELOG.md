@@ -9,6 +9,30 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.56.0] - 2026-09-13
+
+### Security
+
+- **The local server now answers only its own page.** It always bound
+  127.0.0.1, so nothing off the machine could reach it — but it authenticated
+  nothing, and a web page the person happened to have open in the same browser
+  could sweep localhost ports and fire blind `POST`s: not readable back
+  (same-origin policy), but delivered, and `/api/figma` turns one into a job an
+  agent then acts on. Two checks close two doors. A **per-launch token**
+  (`secrets.token_urlsafe`) rides in the page's URL (`/?t=…`) and comes back on
+  every request — as `X-Screengraft-Token` from the page's fetches, as `t` on
+  `<img>`/`<video>` sources, which cannot set headers; constant-time compare.
+  And **`Sec-Fetch-Site`**, which the browser stamps and a page cannot forge:
+  anything but `same-origin` / `none` is refused even with the token in hand,
+  so a token that leaks into a screenshot is still not a way in. `/api/ping`
+  is the one open route — liveness and version, nothing else; `launch.sh` and
+  the skill probe that instead of `/api/state`. The launch line now carries
+  `url` (with the token — the thing to open), `base` and `token`. A bare
+  `http://127.0.0.1:<port>/` gets a one-sentence page saying to use the
+  launcher's link; since the port was already random per launch, no working
+  bookmark existed to break. Nine checks in `test_render_api.py`; a planted
+  `return True` in `_authorised` turns eight red.
+
 ## [0.55.0] - 2026-09-13
 
 ### Changed

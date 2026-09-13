@@ -73,13 +73,15 @@ if [ ! -s "$LOG" ]; then
   exit 1
 fi
 URL=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['url'])" "$LOG" 2>/dev/null || true)
-if [ -z "$URL" ]; then
+BASE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['base'])" "$LOG" 2>/dev/null || true)
+if [ -z "$URL" ] || [ -z "$BASE" ]; then
   echo "error: couldn't parse url from $LOG:" >&2
   cat "$LOG" >&2
   exit 1
 fi
 sleep 1
-if ! curl -sf -o /dev/null "${URL}api/state"; then
+# /api/ping is the one route that needs no token: it answers liveness only.
+if ! curl -sf -o /dev/null "${BASE}api/ping"; then
   echo "error: server not responding at $URL after launch. Log: $LOG" >&2
   cat "$LOG" >&2
   exit 1

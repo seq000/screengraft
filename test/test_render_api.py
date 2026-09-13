@@ -63,22 +63,30 @@ class UI:
         if not line:
             raise RuntimeError("server did not start: " + self.p.stderr.read())
         self.info = json.loads(line)
-        self.url = self.info["url"].rstrip("/")
+        self.url = self.info["base"].rstrip("/")
+        self.token = self.info["token"]
+        self.auth = {"X-Screengraft-Token": self.token}
 
-    def post(self, path, body):
+    def post(self, path, body, headers=None):
         """-> (status, json). A 4xx is an ANSWER here, not an exception: half
         these checks are about what the server says when it refuses."""
         req = urllib.request.Request(self.url + path, data=json.dumps(body).encode(),
-                                     headers={"Content-Type": "application/json"})
+                                     headers={"Content-Type": "application/json",
+                                              **(self.auth if headers is None else headers)})
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
                 return r.status, json.load(r)
         except urllib.error.HTTPError as e:
             return e.code, json.load(e)
 
-    def get(self, path):
-        with urllib.request.urlopen(self.url + path, timeout=60) as r:
-            return r.status, json.load(r)
+    def get(self, path, headers=None):
+        req = urllib.request.Request(self.url + path,
+                                     headers=self.auth if headers is None else headers)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
 
     def wait_render(self, timeout=180):
         end = time.time() + timeout
@@ -358,8 +366,10 @@ def version_badge(td):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
         try:
             info = json.loads(proc.stdout.readline())
-            with urllib.request.urlopen(info["url"].rstrip("/") + "/api/state",
-                                        timeout=30) as r:
+            with urllib.request.urlopen(
+                    urllib.request.Request(info["base"].rstrip("/") + "/api/state",
+                                           headers={"X-Screengraft-Token": info["token"]}),
+                    timeout=30) as r:
                 st2 = json.load(r)
             ok("a copy with no .git is NOT labelled dev", st2.get("build") == "",
                f"build={st2.get('build')!r}")
@@ -726,7 +736,7 @@ def file_route_supports_ranges(td):
         return ok("could build the range fixture", False)
     try:
         clip = ui.state()["screenshot"]
-        url = ui.url + "/file?path=" + urllib.parse.quote(clip)
+        url = ui.url + "/file?t=" + ui.token + "&path=" + urllib.parse.quote(clip)
         whole = urllib.request.urlopen(url, timeout=30).read()
 
         req = urllib.request.Request(url, headers={"Range": "bytes=100-199"})
@@ -758,6 +768,60 @@ def file_route_supports_ranges(td):
         ui.stop()
 
 
+def server_authenticates(td):
+    """The local server answers only its own page (SG56).
+
+    It binds 127.0.0.1, but before this a page the person happened to have open
+    in the same browser could sweep localhost ports and fire blind POSTs -- not
+    readable back, but delivered, and /api/figma turns one into a job an agent
+    acts on. Two doors, two checks: a per-launch token the page echoes on every
+    request, and Sec-Fetch-Site, which the browser stamps and a cross-site page
+    cannot forge.
+    """
+    print("\nthe server refuses everything but its own page")
+    ui = build(td, "auth")
+    if ui is None:
+        return ok("could build the auth fixture", False)
+    try:
+        ok("the launch line carries base, url and token",
+           ui.info["base"].startswith("http://127.0.0.1:") and ui.token
+           and ui.info["url"] == ui.info["base"] + "?t=" + ui.token, str(ui.info["url"]))
+        st, j = ui.get("/api/ping", headers={})
+        ok("/api/ping needs no token", st == 200 and j.get("ok") is True, str(st))
+        ok("...and says only that a screengraft is here",
+           set(j) == {"ok", "version"}, str(sorted(j)))
+        st, j = ui.get("/api/state", headers={})
+        ok("a GET without the token is refused 403", st == 403, str(st))
+        st, j = ui.post("/api/dof", {"dof_strength": 1.0}, headers={"Content-Type": "application/json"})
+        ok("a POST without the token is refused 403", st == 403, str(st))
+        st, j = ui.post("/api/figma", {"url": "https://example.invalid"},
+                        headers={"Content-Type": "application/json"})
+        ok("...including the one that would enqueue a job for the agent",
+           st == 403 and not os.path.exists(ui.info["job"]), str(st))
+        st, j = ui.get("/api/state", headers={"X-Screengraft-Token": "not-the-token"})
+        ok("a wrong token is refused 403", st == 403, str(st))
+        st, j = ui.get("/api/state", headers={"X-Screengraft-Token": ui.token,
+                                              "Sec-Fetch-Site": "cross-site"})
+        ok("a cross-site request is refused even WITH the token", st == 403, str(st))
+        st, j = ui.get("/api/state", headers={"X-Screengraft-Token": ui.token,
+                                              "Sec-Fetch-Site": "same-origin"})
+        ok("the page's own fetch (same-origin + token) is answered", st == 200, str(st))
+        st, j = ui.get("/api/state?t=" + ui.token, headers={"Sec-Fetch-Site": "none"})
+        ok("the token as a query parameter works (img/video sources)", st == 200, str(st))
+        # The page itself: a bare bookmark gets a sentence, the launch URL gets the app.
+        for path, want in (("/", 403), ("/?t=" + ui.token, 200)):
+            req = urllib.request.Request(ui.url + path)
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    got, ctype = r.status, r.headers.get("Content-Type", "")
+            except urllib.error.HTTPError as e:
+                got, ctype = e.code, e.headers.get("Content-Type", "")
+            ok(f"GET {path[:3]!r:6} -> {want}", got == want and ctype.startswith("text/html"),
+               f"{got} {ctype}")
+    finally:
+        ui.stop()
+
+
 def main():
     if not W.ffmpeg_exe():
         msg = "ffmpeg unavailable - the render route cannot be exercised"
@@ -769,6 +833,7 @@ def main():
         print("SKIP  " + msg)
         return 0
     with tempfile.TemporaryDirectory() as td:
+        server_authenticates(td)
         happy_path(td)
         failed_encode(td)
         encode_fails_late(td)

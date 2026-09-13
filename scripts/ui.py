@@ -31,6 +31,7 @@ import atexit
 import json
 import mimetypes
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -65,6 +66,13 @@ UI_HTML = os.path.join(ROOT, "ui", "index.html")
 # to find the session, and checks the pid so a pointer left by a crashed UI is
 # treated as no UI at all rather than one that never answers.
 CURRENT = os.path.join(HOME, ".screengraft", "current.json")
+# The session token. Minted once per launch in main(); the page gets it in its
+# URL (`/?t=<token>`) and echoes it on every request. Without it the server
+# binds 127.0.0.1 but authenticates nothing: a page the person happens to have
+# open in the same browser can sweep localhost ports and fire blind POSTs --
+# not readable back (same-origin), but delivered, and one of them enqueues a
+# job that an agent then acts on. See _authorised() for the two checks.
+TOKEN = None
 
 
 def _write_json_atomic(path, obj):
@@ -819,6 +827,40 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     # ---- helpers ----
+    def _authorised(self, q) -> bool:
+        """Two checks, both cheap, closing two different doors.
+
+        1. `Sec-Fetch-Site`: a browser stamps every request with where it came
+           from. `same-origin` is our own page, `none` is the address bar or a
+           bookmark. Anything else -- `cross-site`, `same-site` -- is another
+           page on another origin driving this server, and is refused whether
+           or not it somehow holds the token (the URL can end up in a
+           screenshot). curl and urllib send no such header and pass this
+           check; that is what the token is for.
+        2. The token, as the `X-Screengraft-Token` header (the page's fetches)
+           or the `t` query parameter (the page itself, <img>/<video> sources,
+           which cannot set headers). Constant-time compare, as a habit.
+        """
+        site = self.headers.get("Sec-Fetch-Site")
+        if site and site not in ("same-origin", "none"):
+            return False
+        tok = self.headers.get("X-Screengraft-Token") or (q.get("t") or [""])[0]
+        return bool(tok) and bool(TOKEN) and secrets.compare_digest(tok, TOKEN)
+
+    def _refuse(self, u):
+        if u.path == "/":
+            body = (b"<!doctype html><meta charset=utf-8><title>screengraft</title>"
+                    b"<p style='font:14px system-ui;margin:2em'>This page needs the link the "
+                    b"launcher printed &mdash; it carries a one-session token. "
+                    b"Relaunch with <code>scripts/launch.sh</code> and open the URL it prints.")
+            self.send_response(403)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self._json({"error": "missing or wrong session token"}, 403)
+
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
         self.send_response(code)
@@ -893,6 +935,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
+        # The one open route: liveness. Says nothing but that a screengraft is
+        # here and which version -- launch.sh and the skill probe it before
+        # telling anyone the UI is ready, with no token in hand.
+        if u.path == "/api/ping":
+            return self._json({"ok": True, "version": VERSION})
+        if not self._authorised(q):
+            return self._refuse(u)
         try:
             if u.path == "/":
                 return self._file(UI_HTML, "text/html; charset=utf-8")
@@ -950,6 +999,14 @@ class Handler(BaseHTTPRequestHandler):
     # ---- POST ----
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
+        if not self._authorised(urllib.parse.parse_qs(u.query)):
+            # Read the body off the wire first (bounded): refusing while the
+            # client is still sending turns a clean 403 into a broken pipe on
+            # its side, which reads as "the server died", not "you were refused".
+            n = min(int(self.headers.get("Content-Length") or 0), 64 << 20)
+            while n > 0:
+                n -= len(self.rfile.read(min(n, 1 << 20)) or b"\0")
+            return self._refuse(u)
         try:
             if u.path == "/api/upload":
                 # raw bytes + X-Filename + X-Role (photo|screenshot); no multipart, no cgi module.
@@ -1473,7 +1530,7 @@ def _publish_current(payload):
 
 
 def main():
-    global SESSION, OUT_DIR, VERSION, BUILD
+    global SESSION, OUT_DIR, VERSION, BUILD, TOKEN
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=0, help="0 = pick a free port")
     ap.add_argument("--no-open", action="store_true", help="Don't open the browser")
@@ -1498,7 +1555,11 @@ def main():
     sdir = args.session or os.path.join(HOME, ".screengraft", "sessions", time.strftime("%Y%m%d-%H%M%S"))
     SESSION = Session(sdir)
     port = args.port or free_port()
-    url = f"http://127.0.0.1:{port}/"
+    TOKEN = secrets.token_urlsafe(18)
+    base = f"http://127.0.0.1:{port}/"
+    # `url` is what a person opens; `base` + the token header is what a tool
+    # uses. Kept apart so nobody has to strip a query string off a URL.
+    url = f"{base}?t={TOKEN}"
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     freed = _prune_sessions(sdir)
     # The live session's own copies go when this process does. Registered before
@@ -1506,11 +1567,11 @@ def main():
     # scripts/stop.sh sends SIGTERM for exactly this reason. A kill -9 cannot be
     # caught, which is what the launch-time sweep above is for.
     atexit.register(lambda: _sweep_session(sdir))
-    _publish_current({"session": sdir, "url": url, "pid": os.getpid(),
-                      "out_dir": OUT_DIR, "started": time.time()})
-    print(json.dumps({"url": url, "session": sdir, "job": SESSION.job_path,
-                      "result": SESSION.result_path, "out_dir": OUT_DIR,
-                      "reclaimed_mb": round(freed / 1e6, 1)}), flush=True)
+    _publish_current({"session": sdir, "url": url, "base": base, "token": TOKEN,
+                      "pid": os.getpid(), "out_dir": OUT_DIR, "started": time.time()})
+    print(json.dumps({"url": url, "base": base, "token": TOKEN, "session": sdir,
+                      "job": SESSION.job_path, "result": SESSION.result_path,
+                      "out_dir": OUT_DIR, "reclaimed_mb": round(freed / 1e6, 1)}), flush=True)
     if not args.no_open:
         opener = "open" if sys.platform == "darwin" else "xdg-open"
         threading.Timer(0.3, lambda: subprocess.Popen([opener, url])).start()

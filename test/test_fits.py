@@ -59,7 +59,7 @@ def upload(ui, role, path):
     req = urllib.request.Request(
         ui.url + "/api/upload", data=open(path, "rb").read(),
         headers={"X-Filename": urllib.parse.quote(os.path.basename(path)),
-                 "X-Role": role})
+                 "X-Role": role, **ui.auth})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return json.load(r)

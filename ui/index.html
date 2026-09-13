@@ -1444,11 +1444,18 @@ function toast(kind, html, opts = {}) {
   return item;
 }
 
+// The session token rides in the page's own URL (`/?t=...`, minted per launch)
+// and goes back on every request: as a header from fetch, as a query
+// parameter on <img>/<video> sources, which cannot set headers. The server
+// refuses anything without it, and anything cross-site with it.
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+const authFetch = (p, init = {}) =>
+  fetch(p, {...init, headers: {...(init.headers || {}), 'X-Screengraft-Token': TOKEN}});
 const api = async (p, body, raw) => {
-  const r = await fetch(p, body===undefined ? {} : {method:'POST', headers: raw ? raw.headers : {'Content-Type':'application/json'}, body: raw ? raw.body : JSON.stringify(body)});
+  const r = await authFetch(p, body===undefined ? {} : {method:'POST', headers: raw ? raw.headers : {'Content-Type':'application/json'}, body: raw ? raw.body : JSON.stringify(body)});
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
 };
-const fileURL = p => '/file?path=' + encodeURIComponent(p);
+const fileURL = p => '/file?t=' + encodeURIComponent(TOKEN) + '&path=' + encodeURIComponent(p);
 // A source's URL carries the file's mtime, so new bytes at an old path are
 // fetched rather than served from the browser's cache (see _adopt in ui.py).
 const srcURL = (p, v) => fileURL(p) + (v ? '&v=' + v : '');
@@ -3291,7 +3298,7 @@ async function playClip(){
     // that FINISHED left the button on "Rendering…" for ever, with no toast and
     // Send to Claude never enabled. It looks exactly like a hung encode, which
     // is why it was reported as "no progress" rather than as a broken poll.
-    let d; try { d = await (await fetch('/api/render_status')).json(); }
+    let d; try { d = await (await authFetch('/api/render_status')).json(); }
     catch(e){ return; }
     if (d.state === 'running'){
       // The wait is real — tens of seconds on a long clip — so it counts frames
@@ -3481,7 +3488,7 @@ async function renderVideo(){
     // that FINISHED left the button on "Rendering…" for ever, with no toast and
     // Send to Claude never enabled. It looks exactly like a hung encode, which
     // is why it was reported as "no progress" rather than as a broken poll.
-    let d; try { d = await (await fetch('/api/render_status')).json(); }
+    let d; try { d = await (await authFetch('/api/render_status')).json(); }
     catch(e){ return; }
     if (d.state === 'running'){
       // The button IS the progress bar now. A spinner cannot be told apart
