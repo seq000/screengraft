@@ -1472,14 +1472,29 @@ const recall = (k,d) => { try{ const v = localStorage.getItem('sg.'+k); return v
    The dark casing underneath is NOT optional and stays: flat accent measures
    ~1.06:1 against mid-tone photography, which is the failure the casing was
    introduced to fix. CORE_IDLE stays white for the strip's idle rule. */
-const CASE_A = 'rgba(0,0,0,.62)', CORE_IDLE = 'rgba(255,255,255,.92)';
+const CASE_A = 'rgba(0,0,0,.45)', CORE_IDLE = 'rgba(255,255,255,.92)';
 const CORE_ACTIVE = '#f5623d';
 const CORE_QUAD = '#f23b0d';
+// Line weights for the fit overlay, in one place. Thinned 13 Sep 2026 on
+// request: quad 1 -> 0.8, active edge 2 -> 1.5, casing +2.5 -> +1.6 at 45%
+// black instead of 62%. The casing is still there -- it is the part that
+// survives an arbitrary photograph -- just lighter.
+// There is no native rotate cursor; this is a 22px circular arrow, white
+// with a dark outline so it reads on any photograph, hotspot at its centre.
+const ROTATE_CURSOR = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">' +
+  '<path d="M17.5 11a6.5 6.5 0 1 1-2.2-4.9" fill="none" stroke="rgba(0,0,0,.85)" stroke-width="4.2" stroke-linecap="round"/>' +
+  '<path d="M17.5 11a6.5 6.5 0 1 1-2.2-4.9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>' +
+  '<path d="M15.6 2.6l0.4 4.2-4.2 0.3" fill="none" stroke="rgba(0,0,0,.85)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '<path d="M15.6 2.6l0.4 4.2-4.2 0.3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '</svg>') + '") 11 11, crosshair';
+const QUAD_W = 0.8, QUAD_ACTIVE_W = 1.5, GUIDE_W = 0.8, CASE_PAD = 1.6;
+const GUIDE_DASH = [10, 7];
 function cased(c, path, coreW, coreColor, dash){
   c.save();
   if (dash) c.setLineDash(dash);
   c.lineCap = 'round'; c.lineJoin = 'round';
-  c.strokeStyle = CASE_A; c.lineWidth = coreW + 2.5; path(); c.stroke();
+  c.strokeStyle = CASE_A; c.lineWidth = coreW + CASE_PAD; path(); c.stroke();
   c.strokeStyle = coreColor; c.lineWidth = coreW; path(); c.stroke();
   c.restore();
 }
@@ -1488,8 +1503,8 @@ function cased(c, path, coreW, coreColor, dash){
    readability guarantee that makes markers survive an arbitrary photograph. */
 function casedDisc(c, x, y, r, coreColor){
   c.save();
-  c.strokeStyle = CASE_A; c.lineWidth = 2.5;
-  c.beginPath(); c.arc(x, y, r + 0.75, 0, Math.PI*2); c.stroke();
+  c.strokeStyle = CASE_A; c.lineWidth = 1.8;
+  c.beginPath(); c.arc(x, y, r + 0.6, 0, Math.PI*2); c.stroke();
   c.fillStyle = coreColor;
   c.beginPath(); c.arc(x, y, r, 0, Math.PI*2); c.fill();
   c.restore();
@@ -2285,7 +2300,7 @@ function draw(){
     const a=P[active.i], b=P[(active.i+1)%4], d=unit(sub(b,a)), big=4000;
     cased(ctx, () => { ctx.beginPath();
       ctx.moveTo(a[0]-d[0]*big, a[1]-d[1]*big); ctx.lineTo(b[0]+d[0]*big, b[1]+d[1]*big); },
-      0.8, CORE_ACTIVE, [2,6]);
+      GUIDE_W, CORE_ACTIVE, GUIDE_DASH);
   }
 
   for (let i=0;i<4;i++){
@@ -2300,7 +2315,7 @@ function draw(){
     const s1 = add(a, mul(d, Math.max(0, L - gap)));
     if (L > 1){
       cased(ctx, () => { ctx.beginPath(); ctx.moveTo(s0[0],s0[1]); ctx.lineTo(s1[0],s1[1]); },
-            on ? 2 : 1, CORE_QUAD);
+            on ? QUAD_ACTIVE_W : QUAD_W, CORE_QUAD);
     }
     // Pivot pips on the active edge keep their meaning: grab near an end to
     // rotate. Filled, like the corners, but deliberately smaller — size is what
@@ -2382,7 +2397,7 @@ cv.onpointermove = e => {
     const h = hitTest(p);
     const changed = JSON.stringify(h) !== JSON.stringify(hover);
     hover = h;
-    cv.style.cursor = h ? (h.kind==='corner' ? 'grab' : (h.mode==='translate' ? 'move' : 'crosshair')) : 'default';
+    cv.style.cursor = h ? (h.kind==='corner' ? 'move' : (h.mode==='translate' ? 'move' : ROTATE_CURSOR)) : 'default';
     if (changed){ draw(); drawStrip(); }
     return;
   }

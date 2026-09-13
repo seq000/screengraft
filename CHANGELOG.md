@@ -9,6 +9,20 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.3] - 2026-09-13
+
+### Changed
+
+- **The fit overlay is thinner and its casing lighter.** Quad 0.8px (was
+  1), active edge 1.5 (was 2), the dark casing under every stroke +1.6px at
+  45% black (was +2.5 at 62%). The casing stays — it is what keeps the
+  overlay readable over any photograph — just quieter. The guide's dashes
+  are longer (10/7, was 2/6) so it reads as a line, not a dotted one.
+
+- **Cursors say what a drag will do.** A corner handle shows *move*; the
+  pivot zones near an edge's ends show a rotate cursor (a drawn one — the
+  platform has none); the middle of an edge keeps *move*.
+
 ## [0.54.2] - 2026-09-13
 
 ### Fixed
