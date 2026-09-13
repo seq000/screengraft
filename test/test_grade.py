@@ -119,6 +119,29 @@ ok('it resolves continuously below 1.5 grey levels',
    len({round(v, 3) for v in low}) == 3 and low[0] < low[1] < low[2],
    ' < '.join('%.3f' % v for v in low))
 
+# --- the screen carries SCREEN_GRAIN_GAIN of the surround's floor -------------
+# Recording the gain and applying it are different contracts (the sidecar test
+# proves the first). This measures the second: the noise laid on the screen,
+# read back as the composite's deviation from the grain-free composite, must
+# scale with the gain -- and gain 1.0 must be the old output exactly.
+_noisy = flat(3.0, seed=7)
+_shot = np.full((300, 200, 3), 120, np.uint8)
+_c = [[180, 90], [420, 96], [416, 320], [176, 312]]
+_base = warp.compose(_noisy, _shot, _c, 6.0, grain=False)
+def _laid(gain):
+    g = warp.compose(_noisy, _shot, _c, 6.0, grain=True, grain_gain=gain)
+    d = (g.astype(np.float32) - _base.astype(np.float32))[:, :, 0]
+    inner = np.zeros(d.shape, bool); inner[120:300, 210:390] = True   # well inside the quad
+    return float(d[inner].std())
+_full, _shipped = _laid(1.0), _laid(grade.SCREEN_GRAIN_GAIN)
+ok('gain 1.0 lays the measured floor (within 15% of sigma 3.0)',
+   abs(_full - 3.0) / 3.0 < 0.15, 'laid %.3f' % _full)
+ok('SCREEN_GRAIN_GAIN scales what is laid, within 5%',
+   abs(_shipped / _full - grade.SCREEN_GRAIN_GAIN) < 0.05,
+   'ratio %.3f vs gain %.2f' % (_shipped / _full, grade.SCREEN_GRAIN_GAIN))
+ok('the shipped gain is a reduction, per the corpus and by eye',
+   0.5 <= grade.SCREEN_GRAIN_GAIN < 1.0, str(grade.SCREEN_GRAIN_GAIN))
+
 # A hard edge inside the sample ring must not be read as noise. Note WHY this
 # passes: a 3x3 median is edge-preserving, so a clean step leaves a residual of
 # exactly zero. It is not the statistic that saves this case.

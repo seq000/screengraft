@@ -131,6 +131,15 @@ def match_light(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
 
 
 GRAIN_GATE = 20.0        # grey levels: above this a residual is an edge, not grain
+# How much of the SURROUND's noise floor a lit screen should carry. The sigma is
+# measured on the ring around the screen -- bezel and body, usually the darkest
+# thing near it -- but the injected screen is usually the brightest thing in
+# the frame, and after the sRGB curve a highlight carries less noise in grey
+# levels than a shadow does. Measured on the 38-photo corpus (13 Sep 2026):
+# the 192-255 band's floor is a median 0.67x the 0-63 band's. A designer's
+# eye on a full-resolution save said the same thing first: "a bit smaller".
+# 1.0 is the pre-v0.55 behaviour and is what an old sidecar replays with.
+SCREEN_GRAIN_GAIN = 0.7
 _MEDIAN_HP_GAIN = 0.909  # a 3x3 median high-pass absorbs this much of iid noise
                          # (measured, 5 seeds x sigma 1-5, spread < 0.3%)
 

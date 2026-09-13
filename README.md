@@ -138,8 +138,10 @@ outside the screen mask. It never touches the pixels you designed.
    warp never area-averages, so warping a 1206×2622 screenshot into a 226×454
    quad without it turns body text into noise.
 3. **Realism pass** *(optional)* — white balance and exposure toward the
-   surrounding light, grain matched to the photo's own noise floor, real
-   speculars lifted from a screen-off reference.
+   surrounding light, grain measured from the photo's own noise floor and
+   laid on the screen at 0.7× of it (a lit screen sits in the highlights, where
+   8-bit noise is lower than on the body around it), real speculars lifted
+   from a screen-off reference.
 4. **Video**, when the source is a clip — everything a fixed photo and a fixed
    quad make constant is computed once, and only the frame changes. Three
    consequences worth naming, because each is a way video normally goes wrong:

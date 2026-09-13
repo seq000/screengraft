@@ -50,6 +50,7 @@ import detect as D  # noqa: E402
 import fitfile as FF  # noqa: E402
 import fits as FIT  # noqa: E402
 import dof as DOF   # noqa: E402
+import grade as _grade  # noqa: E402
 import scan as S  # noqa: E402
 import warp as W  # noqa: E402
 
@@ -578,7 +579,8 @@ PREVIEW_SECONDS = 6.0
 
 def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
                    blend="replace", reflection=None, result=None, kind="render",
-                   start_frame=0, max_frames=None, *, smoothing=0.0, dof=None):
+                   start_frame=0, max_frames=None, *, smoothing=0.0, dof=None,
+                   grain_gain=1.0):
     """Encode the clip, and only if that SUCCEEDS publish what it produced.
 
     `result` is the sidecar this render would write. It is handed to the worker
@@ -598,7 +600,7 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
     try:
         info = W.compose_video(photo, video_path, corners, dest,
                                corner_radius=radius_px, corner_smoothing=smoothing,
-                               grade=gr, grain=grain,
+                               grade=gr, grain=grain, grain_gain=grain_gain,
                                preset=preset, fit_frame=fit_frame, progress=progress,
                                blend=blend,
                                reflection=(W.DEFAULT_REFLECTION if reflection is None
@@ -664,6 +666,22 @@ def _blend_args(b):
     if r is None:
         return "replace", W.DEFAULT_REFLECTION
     return "emissive", float(max(0.0, min(1.0, float(r))))
+
+
+def _grain_gain(b) -> float:
+    """How much of the surround's noise floor the screen carries.
+
+    The page does not set this; fresh renders get grade.SCREEN_GRAIN_GAIN. It
+    is read from the body so a sidecar replayed through the API keeps its own
+    value -- a sidecar from before the gain existed carries none and passes
+    1.0 explicitly at the replay site, never here.
+    """
+    try:
+        g = float(b.get("grain_gain")) if b.get("grain_gain") is not None \
+            else _grade.SCREEN_GRAIN_GAIN
+    except (TypeError, ValueError):
+        g = _grade.SCREEN_GRAIN_GAIN
+    return float(min(max(g, 0.0), 2.0))
 
 
 def _dof_args(b):
@@ -1194,7 +1212,8 @@ class Handler(BaseHTTPRequestHandler):
                                            blend, reflection, None, "preview",
                                            fit_frame, max_frames),
                                      kwargs={"smoothing": _smoothing(b),
-                                             "dof": _dof_args(b)}).start()
+                                             "dof": _dof_args(b),
+                                             "grain_gain": _grain_gain(b)}).start()
                 except BaseException:
                     with RENDER_LOCK:
                         RENDER.update(state="error", message="could not start the preview")
@@ -1247,7 +1266,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = {"output": dest, "photo": ppath, "screenshot": spath,
                           "corners": corners, "radius_frac": frac, "radius_px": radius_px,
                           "device": b.get("device"), "corner_smoothing": _smoothing(b),
-                          "grade": gr, "grain": grain,
+                          "grade": gr, "grain": grain, "grain_gain": _grain_gain(b),
                           "video": True, "preset": preset, "fit_frame": fit_frame,
                           "blend": blend, "reflection": reflection,
                           "dof_angle": dof["dof_angle"], "dof_strength": dof["dof_strength"],
@@ -1280,7 +1299,8 @@ class Handler(BaseHTTPRequestHandler):
                                            gr, grain, preset, fit_frame,
                                            blend, reflection, result),
                                      kwargs={"smoothing": _smoothing(b),
-                                             "dof": dof}).start()
+                                             "dof": dof,
+                                             "grain_gain": result["grain_gain"]}).start()
                 except BaseException:
                     # If the thread cannot even be created, the flag must not
                     # outlive the request.
@@ -1304,9 +1324,11 @@ class Handler(BaseHTTPRequestHandler):
                 blend, reflection = _blend_args(b)
                 smoothing = _smoothing(b)
                 dof = _dof_args(b)
+                grain_gain = _grain_gain(b)
                 out = W.compose(photo, shot, corners, radius_px,
                                 corner_smoothing=smoothing,
                                 grade=gr, grain=bool(b.get("grain", gr > 0)),
+                                grain_gain=grain_gain,
                                 blend=blend, reflection=reflection, **dof)
                 SESSION.update(corners=corners, radius_frac=frac, device=b.get("device"),
                                grade=gr)
@@ -1342,6 +1364,7 @@ class Handler(BaseHTTPRequestHandler):
                           "radius_frac": frac, "radius_px": radius_px, "device": b.get("device"),
                           "corner_smoothing": smoothing,
                           "grade": gr, "grain": bool(b.get("grain", gr > 0)),
+                          "grain_gain": grain_gain,
                           "blend": blend, "reflection": reflection,
                           "dof_angle": dof["dof_angle"], "dof_strength": dof["dof_strength"],
                           "dof_start": dof["dof_start"], "dof_end": dof["dof_end"],

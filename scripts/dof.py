@@ -281,7 +281,7 @@ def measure(photo: np.ndarray, corners) -> dict:
         out.update({"angle": 0.0, "strength": 0.0, "flat": True})
         return out
     Amat = np.column_stack([mids[:, 0], mids[:, 1], np.ones(len(mids))])
-    (a, b, c), *_ = np.linalg.lstsq(Amat, sig, rcond=None)
+    (a, b, _c), *_ = np.linalg.lstsq(Amat, sig, rcond=None)
     angle = math.degrees(math.atan2(b, a)) % 360.0
     strength = float(np.clip((sig.max() - lo) / max(sigma_max(q, 1.0), 1e-6), 0.0, 1.0))
     out.update({"angle": round(angle, 1), "strength": round(strength, 3), "flat": False})

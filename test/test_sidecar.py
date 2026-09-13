@@ -108,20 +108,31 @@ photo = np.clip(photo + rng.normal(0, 2.0, photo.shape), 0, 255).astype(np.uint8
 shot = np.full((300, 200, 3), 235, np.uint8); shot[40:80, 20:180] = 30
 corners = [[180, 90], [420, 96], [416, 320], [176, 312]]
 
-for grade, grain, smooth in ((0.0, False, 0.0), (0.35, True, 0.0),
-                             (1.0, True, 0.0), (0.35, True, 0.6)):
+for grade, grain, smooth, gain in ((0.0, False, 0.0, 1.0), (0.35, True, 0.0, 1.0),
+                                   (1.0, True, 0.0, 1.0), (0.35, True, 0.6, 1.0),
+                                   (0.35, True, 0.6, 0.7)):
     frac = 0.14
     radius_px = frac * shot.shape[1]                 # unrounded, per an earlier finding
     saved = warp.compose(photo, shot, corners, radius_px, corner_smoothing=smooth,
-                         grade=grade, grain=grain)
+                         grade=grade, grain=grain, grain_gain=gain)
     sidecar = {"corners": corners, "radius_frac": frac, "radius_px": radius_px,
-               "corner_smoothing": smooth, "grade": grade, "grain": grain}
+               "corner_smoothing": smooth, "grade": grade, "grain": grain,
+               "grain_gain": gain}
     redone = warp.compose(photo, shot, sidecar["corners"], sidecar["radius_px"],
                           corner_smoothing=sidecar["corner_smoothing"],
-                          grade=sidecar["grade"], grain=sidecar["grain"])
+                          grade=sidecar["grade"], grain=sidecar["grain"],
+                          grain_gain=sidecar["grain_gain"])
     ok(f'sidecar reproduces its save byte-for-byte '
-       f'(grade={grade}, grain={grain}, smoothing={smooth})',
+       f'(grade={grade}, grain={grain}, smoothing={smooth}, gain={gain})',
        np.array_equal(saved, redone))
+
+# A sidecar written BEFORE grain_gain existed carries no such key. It must
+# replay as it was saved -- which is the compose() default, and this pins that
+# default at 1.0 rather than at whatever the UI now writes for fresh renders.
+_old = warp.compose(photo, shot, corners, 0.14 * shot.shape[1], grade=0.35, grain=True)
+_dflt = warp.compose(photo, shot, corners, 0.14 * shot.shape[1], grade=0.35, grain=True,
+                     grain_gain=1.0)
+ok('a pre-gain sidecar (no grain_gain key) replays at gain 1.0', np.array_equal(_old, _dflt))
 
 # Recording a parameter and APPLYING it are different contracts, and the key
 # check above only proves the first. This proves the second: smoothing has to

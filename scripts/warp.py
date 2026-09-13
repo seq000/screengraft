@@ -270,7 +270,8 @@ class Plan:
                  blend: str = "replace", reflection: float = DEFAULT_REFLECTION,
                  corner_smoothing: float = 0.0,
                  dof_angle: float = 0.0, dof_strength: float = 0.0, dof_start: float = 0.0,
-                 dof_end: float = 1.0, dof_space: str = "photo", dof_end2=None):
+                 dof_end: float = 1.0, dof_space: str = "photo", dof_end2=None,
+                 grain_gain: float = 1.0):
         dst_quad = np.array(corners, dtype=np.float32)
         if shoelace_area(dst_quad) < 1.0:
             raise ValueError("degenerate quad (near-zero area) — check corner order TL,TR,BR,BL")
@@ -310,8 +311,12 @@ class Plan:
                                 self.corner_smoothing)
         self.warped_mask = _warp_mask_antialiased(src_mask, self.H, pw, ph, dst_quad)
         self.mask3 = cv2.merge([self.warped_mask] * 3).astype(np.float32) / 255.0
+        # The floor is the surround's; the screen carries `grain_gain` of it
+        # (see grade.SCREEN_GRAIN_GAIN). Defaults to 1.0 so a sidecar written
+        # before the gain existed reproduces its save byte for byte.
+        self.grain_gain = float(max(grain_gain, 0.0))
         self.grain_sigma = (_grade.measure_grain(photo, _grade.surround_ring(self.warped_mask))
-                            if grain else 0.0)
+                            * self.grain_gain if grain else 0.0)
         self.grade_params = None
         # Integer bbox of the quad, clamped to the canvas and padded by a pixel
         # so the antialiased edge is never clipped.
@@ -444,7 +449,8 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
             reflection: float = DEFAULT_REFLECTION,
             dof_angle: float = 0.0, dof_strength: float = 0.0,
             dof_start: float = 0.0, dof_end: float = 1.0,
-            dof_space: str = "photo", dof_end2=None) -> np.ndarray:
+            dof_space: str = "photo", dof_end2=None,
+            grain_gain: float = 1.0) -> np.ndarray:
     """Warp `screenshot` into the quad `corners` (TL,TR,BR,BL, photo pixels) on `photo`.
 
     Single resampling pass at the photo's resolution; deterministic. This is the
@@ -459,7 +465,8 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
                 corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection,
                 dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start,
-                dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2)
+                dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2,
+                grain_gain=grain_gain)
     plan.bind_grade(screenshot, grade)
     return plan.render(screenshot, screen_off=screen_off, specular=specular)
 
@@ -549,7 +556,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                   start_frame: int = 0, max_frames: int = None,
                   dof_angle: float = 0.0, dof_strength: float = 0.0,
                   dof_start: float = 0.0, dof_end: float = 1.0,
-                  dof_space: str = "photo", dof_end2=None) -> dict:
+                  dof_space: str = "photo", dof_end2=None,
+                  grain_gain: float = 1.0) -> dict:
     """Inject a VIDEO into a still photo. The photo does not move, so there is
     exactly one homography and the whole of Plan is computed once.
 
@@ -578,7 +586,8 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                 corner_smoothing=corner_smoothing,
                 blend=blend, reflection=reflection,
                 dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start,
-                dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2)
+                dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2,
+                grain_gain=grain_gain)
     plan.bind_grade(first, grade)
 
     ph, pw = photo.shape[:2]

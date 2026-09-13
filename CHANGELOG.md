@@ -9,6 +9,27 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.55.0] - 2026-09-13
+
+### Changed
+
+- **The grain on the screen is 0.7× the photo's measured noise floor.** The
+  floor is measured on the ring around the screen — bezel and body, usually the
+  darkest thing near it — but a lit screen is usually the brightest thing in
+  the frame, and after the sRGB curve a highlight carries less noise in grey
+  levels than a shadow does. Measured across the 38-photo corpus: the 192–255
+  band's floor is a median **0.67×** the 0–63 band's. On the first judgement of
+  a full-resolution save by eye, the verdict was "a bit smaller"; this is the
+  derived version of that. `compose()` / `compose_video()` take `grain_gain`
+  (default **1.0**, the old behaviour), fresh renders from the UI pass
+  `grade.SCREEN_GRAIN_GAIN` = 0.7, and both sidecars record it — so a sidecar
+  written before the gain existed replays byte for byte, and one written now
+  reproduces the lighter grain. Verified on real fits: laid sigma 2.07 → 1.46,
+  1.82 → 1.29, ratio 0.71 on every photo with a measurable floor. A planted
+  ignore of the gain in `Plan` is caught by `test_grade.py`.
+- `dof.py`: an unused unpacked variable renamed for a lint rule the local ruff
+  now enforces. No behaviour change.
+
 ## [0.54.8] - 2026-09-13
 
 ### Added
