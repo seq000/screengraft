@@ -9,6 +9,14 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.6] - 2026-09-13
+
+### Changed
+
+- Overlay strokes 0.9px (was 0.8) on a +2px casing at 35% black (was +1.6
+  at 45%) — quad, guide and the depth-of-field gizmo alike. The gizmo no
+  longer fades when the pointer leaves the result pane.
+
 ## [0.54.5] - 2026-09-13
 
 ### Fixed

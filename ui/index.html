@@ -629,17 +629,16 @@
   #outWrap{overflow:auto;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
   /* The depth-of-field gizmo: an SVG laid exactly over the composite, drawn
      in PHOTO pixels (its viewBox is the photo) so every coordinate is the
-     engine's own. Faint until the pointer is over the pane, so it never sits
-     on the composite being judged; solid while a handle is being dragged. */
+     engine's own. Always at full opacity: the fade-when-idle was tried and
+     removed on request (13 Sep 2026). */
   #outWrap{position:relative}
-  #dofGizmo{position:absolute;pointer-events:none;opacity:.4;transition:opacity .15s;overflow:visible}
-  #outWrap:hover #dofGizmo,#dofGizmo.drag{opacity:1}
+  #dofGizmo{position:absolute;pointer-events:none;overflow:visible}
   /* Same rules as the fit overlay (v0.54.3): thin core, a light casing
-     underneath at 45% black, dashes 6/5. The casing is what survives a
+     underneath at 35% black, dashes 6/5. The casing is what survives a
      photograph; the thinness is the request. */
-  #dofGizmo .case{stroke:rgba(0,0,0,.45);fill:none;vector-effect:non-scaling-stroke}
+  #dofGizmo .case{stroke:rgba(0,0,0,.35);fill:none;vector-effect:non-scaling-stroke}
   #dofGizmo .focus{stroke:#f5623d;stroke-width:1;fill:none;vector-effect:non-scaling-stroke}
-  #dofGizmo .far{stroke:#f5623d;stroke-width:0.8;fill:none;vector-effect:non-scaling-stroke}
+  #dofGizmo .far{stroke:#f5623d;stroke-width:0.9;fill:none;vector-effect:non-scaling-stroke}
   #dofGizmo .far.out{opacity:.75}
   /* Dash lengths are set inline in photo px scaled by the zoom (SVG dashes
      are viewBox units; non-scaling-stroke does not cover them), so they read
@@ -1480,12 +1479,12 @@ const recall = (k,d) => { try{ const v = localStorage.getItem('sg.'+k); return v
    The dark casing underneath is NOT optional and stays: flat accent measures
    ~1.06:1 against mid-tone photography, which is the failure the casing was
    introduced to fix. CORE_IDLE stays white for the strip's idle rule. */
-const CASE_A = 'rgba(0,0,0,.45)', CORE_IDLE = 'rgba(255,255,255,.92)';
+const CASE_A = 'rgba(0,0,0,.35)', CORE_IDLE = 'rgba(255,255,255,.92)';
 const CORE_ACTIVE = '#f5623d';
 const CORE_QUAD = '#f23b0d';
 // Line weights for the fit overlay, in one place. Thinned 13 Sep 2026 on
 // request: quad 1 -> 0.8, active edge 2 -> 1.5, casing +2.5 -> +1.6 at 45%
-// black instead of 62%. The casing is still there -- it is the part that
+// black instead of 62%; then 0.9 / +2.0 at 35% on a second look. The casing is still there -- it is the part that
 // survives an arbitrary photograph -- just lighter.
 // There is no native rotate cursor; this is a 22px circular arrow, white
 // with a dark outline so it reads on any photograph, hotspot at its centre.
@@ -1496,7 +1495,7 @@ const ROTATE_CURSOR = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(
   '<path d="M15.6 2.6l0.4 4.2-4.2 0.3" fill="none" stroke="rgba(0,0,0,.85)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>' +
   '<path d="M15.6 2.6l0.4 4.2-4.2 0.3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
   '</svg>') + '") 11 11, crosshair';
-const QUAD_W = 0.8, QUAD_ACTIVE_W = 1.5, GUIDE_W = 0.8, CASE_PAD = 1.6;
+const QUAD_W = 0.9, QUAD_ACTIVE_W = 1.5, GUIDE_W = 0.9, CASE_PAD = 2.0;
 const GUIDE_DASH = [6, 5];
 function cased(c, path, coreW, coreColor, dash){
   c.save();
@@ -1511,8 +1510,8 @@ function cased(c, path, coreW, coreColor, dash){
    readability guarantee that makes markers survive an arbitrary photograph. */
 function casedDisc(c, x, y, r, coreColor){
   c.save();
-  c.strokeStyle = CASE_A; c.lineWidth = 1.8;
-  c.beginPath(); c.arc(x, y, r + 0.6, 0, Math.PI*2); c.stroke();
+  c.strokeStyle = CASE_A; c.lineWidth = 2.0;
+  c.beginPath(); c.arc(x, y, r + 0.7, 0, Math.PI*2); c.stroke();
   c.fillStyle = coreColor;
   c.beginPath(); c.arc(x, y, r, 0, Math.PI*2); c.fill();
   c.restore();
@@ -2737,9 +2736,9 @@ function paintGizmo(){
   const beyond = dofEnd > 1.0001;
   const beyond2 = two && dofEnd2 < -0.0001;
   gz.innerHTML =
-    L(a0, a1, 'case', 'stroke-width="2.6"') + L(a0, a1, 'focus') +
-    L(b0, b1, 'case', `stroke-width="2.4" ${dash(beyond)}`) + L(b0, b1, 'far' + (beyond ? ' out' : ''), dash(beyond)) +
-    (two ? L(c0, c1, 'case', `stroke-width="2.4" ${dash(beyond2)}`) + L(c0, c1, 'far' + (beyond2 ? ' out' : ''), dash(beyond2)) : '') +
+    L(a0, a1, 'case', 'stroke-width="3"') + L(a0, a1, 'focus') +
+    L(b0, b1, 'case', `stroke-width="2.9" ${dash(beyond)}`) + L(b0, b1, 'far' + (beyond ? ' out' : ''), dash(beyond)) +
+    (two ? L(c0, c1, 'case', `stroke-width="2.9" ${dash(beyond2)}`) + L(c0, c1, 'far' + (beyond2 ? ' out' : ''), dash(beyond2)) : '') +
     `<circle cx="${a0[0]}" cy="${a0[1]}" r="${rp}" class="h pip" data-h="rotA"/>` +
     `<circle cx="${a1[0]}" cy="${a1[1]}" r="${rp}" class="h pip" data-h="rotB"/>` +
     `<circle cx="${ac[0]}" cy="${ac[1]}" r="${r}" class="h" data-h="start"/>` +
