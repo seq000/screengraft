@@ -2789,7 +2789,7 @@ $('#dofMeasure').onclick = measureDof;
    on any steep fit (reported 13 Sep 2026). The SOLID line is where focus
    ends; the DASHED line is where the blur reaches its full amount, and it can
    sit anywhere on the screen or a little past it. Handles:
-     solid line centre  -- move focus (start)
+     solid line centre  -- move the plane of focus; the limits come with it
      dashed line centre -- move where the ramp ends (end); spacing = ramp length
      sharp line pips    -- turn all lines about the focus line (direction), ⇧ snaps to 15°
      second dashed line -- the NEAR limit, when "Both sides" is on: blur grows
@@ -2881,6 +2881,22 @@ function paintGizmo(){
     (two ? T([cc[0] - away[0]*off, cc[1] - away[1]*off], `σ ${sigma.toFixed(0)}px from here${beyond2 ? ' · past the screen' : ''}`, 4*k) : '') +
     T([th[0] + away[0]*off*1.6, th[1] + away[1]*off*1.6], `${Math.round(dofStr*100)}%`, 4*k);
 }
+// Moving the SHARP line moves the plane of focus -- and the limits go with
+// it, each keeping its distance, the way a tilt-shift band moves as one thing.
+// It used to stop at the far line (start <= end - 0.05), so with the dashed
+// line sitting on the phone's near edge the sharp line could not be placed
+// over the phone at all: it hit the dashed line and stayed (Darek's recording,
+// 14 Sep 2026). The dashed lines are what change the ramp's length; the sharp
+// line only ever changes where the ramp is. Reach: -0.5 .. 0.95 along the
+// screen, the same distance past the glass the far line has -- on a steep,
+// flat phone the plane of focus is on the table in front of the screen.
+function moveFocus(f){
+  const was = dofStart;
+  dofStart = Math.max(-0.5, Math.min(0.95, f));
+  const shift = dofStart - was;
+  dofEnd = Math.max(dofStart + 0.05, Math.min(1.5, dofEnd + shift));
+  if (dofEnd2 !== null) dofEnd2 = Math.max(-0.5, Math.min(dofStart - 0.05, dofEnd2 + shift));
+}
 // pointer position in SCREENSHOT pixels
 function gizmoPos(e, g){
   const rc = gz.getBoundingClientRect();
@@ -2913,10 +2929,7 @@ gz.addEventListener('pointermove', e => {
   const f = (p[0]*g.d[0] + p[1]*g.d[1] - g.lo) / (g.hi - g.lo);
   const q = (p[0]*g.u[0] + p[1]*g.u[1] - g.ulo) / (g.uhi - g.ulo);
   if (gzDrag.h === 'start'){
-    // -0.5 .. 0.95, the same reach past the screen the far line has: on a
-    // steep, flat phone the plane of focus is on the table in front of the
-    // glass, not on it (reported 14 Sep 2026 — "cannot place it on the photo").
-    dofStart = Math.max(dofEnd2 === null ? -0.5 : dofEnd2 + 0.05, Math.min(0.95, Math.min(f, dofEnd - 0.05)));
+    moveFocus(f);
   } else if (gzDrag.h === 'end'){
     dofEnd = Math.max(dofStart + 0.05, Math.min(1.5, f));
   } else if (gzDrag.h === 'end2'){

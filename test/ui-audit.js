@@ -277,6 +277,26 @@
     ok('every painted gizmo handle has an invisible hit disc', svg.hidden || hits === handles, `${hits} hit / ${handles} handles`);
   }
 
+  // Moving the sharp line carries the limits with it (14 Sep 2026): the plane
+  // of focus can be placed anywhere, and it is the dashed lines that set the
+  // ramp's length. Exercised on the page's own state and restored.
+  if (typeof moveFocus === 'function') {
+    const keep = { s: dofStart, e: dofEnd, e2: dofEnd2 };
+    dofStart = 0.2; dofEnd = 0.6; dofEnd2 = null;
+    moveFocus(0.5);
+    ok('moving the sharp line carries the far line with it',
+       Math.abs(dofStart - 0.5) < 1e-9 && Math.abs(dofEnd - 0.9) < 1e-9, `start ${dofStart} end ${dofEnd}`);
+    dofStart = 0.5; dofEnd = 1.0; dofEnd2 = 0.0;
+    moveFocus(0.7);
+    ok('...and the near limit too', Math.abs(dofEnd2 - 0.2) < 1e-9 && Math.abs(dofEnd - 1.2) < 1e-9, `end2 ${dofEnd2} end ${dofEnd}`);
+    dofStart = 0.2; dofEnd = 1.4; dofEnd2 = null;
+    moveFocus(0.9);
+    ok('a limit that hits its own reach stops there, the ramp shortens', dofStart === 0.9 && dofEnd === 1.5, `start ${dofStart} end ${dofEnd}`);
+    dofStart = keep.s; dofEnd = keep.e; dofEnd2 = keep.e2;
+  } else {
+    ok('moveFocus is present', false, 'not defined');
+  }
+
   // A corner under the pointer gets a magnified crop in the strip (v0.54.8);
   // an edge keeps the rectified band. Presence only — the picture needs an eye.
   ok('the strip can paint a corner loupe', typeof paintCorner === 'function');

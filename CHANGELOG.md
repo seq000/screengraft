@@ -9,6 +9,19 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.59.1] - 2026-09-14
+
+### Fixed
+
+- **The sharp line stopped at the dashed line.** `start` was held below
+  `end − 0.05`, so with the far line sitting on the phone's near edge the
+  plane of focus could not be dragged over the phone — it reached the dashed
+  line and stayed there (a screen recording, 14 Sep). Moving the sharp line
+  now moves the plane of focus and **carries both limits with it**, each
+  keeping its distance, the way a tilt-shift band moves as one thing; the
+  dashed lines alone change the ramp's length. A limit that reaches its own
+  end of travel stops there and the ramp shortens. Three UI-audit checks.
+
 ## [0.59.0] - 2026-09-14
 
 ### Fixed
