@@ -527,29 +527,58 @@
      min-width:0 lets the PANE shrink; it does nothing for the auto track
      inside it, which was still sizing to the header's min-content — 798px
      wide in a 398px column. */
-  .pane{min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);
+  /* One row: neither pane has a header any more (Figma 7:12 / 7:38, 13 Sep
+     2026). Everything that used to live in the header floats over the well as
+     a rail, so the picture gets the whole pane and the two wells line up. */
+  .pane{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr);
         grid-template-columns:minmax(0,1fr);
-        position:relative;   /* the frame the corner bar is anchored to */
+        position:relative;   /* the frame the rails are anchored to */
         border-right:1px solid var(--line)}
   .panehead{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);background:var(--card);
             box-shadow:inset 0 -1px 0 var(--line);font-size:12px;flex-wrap:wrap;min-height:48px}
-  /* The Fit header pads 12px vertically around 28px controls (Figma 7:13),
-     which makes it 52px — deliberately taller than the Result header's 48. */
-  /* nowrap matches the design, but a long detection message must not be able
-     to widen the grid column — that is the v0.3.1 blowout, where an
-     unconstrained child forced the fixed rail off-screen. The pill truncates
-     instead; min-width:0 is what actually lets it. */
-  .fit-head{justify-content:space-between;flex-wrap:nowrap}
-  /* Both pane headers are the same height: they sit side by side, and 4px of
-     difference reads as a misalignment rather than as a hierarchy. */
   .panehead{padding:var(--s3) var(--s4);min-height:52px}
-  .fit-head > .status{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
-                      display:inline-block;line-height:20px}
-  .fit-head > .status::before{margin-right:6px}
-  .ph-left{display:flex;align-items:center;gap:var(--s6);min-width:0}
-  .ph-left-1{display:flex;align-items:center;gap:var(--s4)}
-  .ph-left-2{display:flex;align-items:center;gap:var(--s2)}
-  .zoomval{color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums;min-width:38px}
+  /* The zoom readout has no place on the icon rail; it is kept for assistive
+     tech, announced on change. */
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+           clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+  /* ------------------------------------------------------------------
+     Rails over the well (Figma 7:12, Button Group 145:372, Segment Button
+     138:255). A rail is a Button Group: a 28px-wide column of 28px segment
+     buttons on the raised surface, one 0.5px translucent stroke and one
+     shadow around the whole group — the stroke is the only translucent one
+     in the system, because the group sits over a photograph of any tone.
+     Three groups on the left (zoom, fit, corners), three on the bottom, and
+     the status pill top-centre; the well underneath keeps every pixel.
+     ------------------------------------------------------------------ */
+  .bgroup{display:inline-flex;flex-direction:column;align-items:stretch;flex:none;
+          background:var(--raise);border:var(--bw) solid var(--group-edge);
+          border-radius:var(--r-xs);box-shadow:var(--group-shadow);overflow:hidden}
+  .segbtn,.segbtn:hover,.segbtn:active{border:0;border-radius:0;box-shadow:none;transform:none}
+  .segbtn{height:28px;min-width:28px;padding:0 6px;font-size:12px;color:var(--ink);
+          background:var(--raise);display:inline-flex;align-items:center;justify-content:center;gap:4px}
+  .segbtn:hover{background:var(--raise-mid)}
+  .segbtn:active{background:var(--raise-low)}
+  .segbtn.sel,.segbtn[aria-pressed="true"]{background:var(--raise-hi)}
+  .segbtn[disabled],.segbtn[disabled]:hover{background:var(--raise-low);color:var(--mute)}
+  .segbtn:focus-visible{outline-offset:-2px}
+  .segbtn svg{width:16px;height:16px;display:block;flex:none}
+  .segbtn svg text{font:600 8px/1 -apple-system,BlinkMacSystemFont,"SF Pro",system-ui,sans-serif;fill:var(--ink)}
+  .lrail{position:absolute;left:24px;top:48px;z-index:3;display:flex;flex-direction:column;gap:var(--s2)}
+  .lrail .corners{margin-top:var(--s3)}       /* 8 + 12 = the design's 20px */
+  .brail{position:absolute;left:0;right:0;bottom:12px;z-index:3;display:flex;justify-content:center;
+         align-items:center;gap:4px;pointer-events:none;flex-wrap:wrap;padding:0 var(--s4)}
+  .brail .bgroup{pointer-events:auto}
+  /* The status pill (Status pill 5:7 / 5:10): floats top-centre, its own
+     recessed surface and the group stroke, hidden while it has nothing to say.
+     Glyph + weight + luminance encoding unchanged (see .status.ok/.warn/.err). */
+  /* Keyed on the ids, not a class: the JS rewrites className on both pills. */
+  #detSt,#outSt{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:3;
+               height:22px;padding:0 10px;border-radius:999px;background:var(--inchip-empty);
+               border:1px solid var(--group-edge);box-shadow:var(--pill-shadow);
+               max-width:calc(100% - 96px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+               display:inline-flex;line-height:20px}
+  #detSt:empty,#outSt:empty{display:none}
   .lbl{color:var(--ink);text-transform:uppercase;letter-spacing:.06em;font-size:11px;font-weight:600}
   .scroller{overflow:auto;background:var(--well);display:grid;
             min-height:0;min-width:0;
@@ -1049,49 +1078,52 @@
            100%), with the status pill pushed to the far end by
            justify-between. Buttons are Md — the same size as every other
            button on screen, which is the point of the change. -->
-      <div class="panehead fit-head">
-        <div class="ph-left">
-          <div class="ph-left-1">
-            <span class="lbl">Fit</span>
-            <span class="stepper"><button id="czOut">&minus;</button><button id="czIn">+</button></span>
-            <span id="czSt" class="zoomval"></span>
-            <button class="info" type="button" aria-label="About canvas navigation"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Hold ⌘ and scroll to zoom to the pointer — the pixel under the cursor stays under the cursor, which is how you keep a corner in view while you magnify it. Hold space and drag to pan. Scrolling on its own pans too; the Result pane follows either way.</span></button>
-          </div>
-          <div class="ph-left-2">
-            <button id="czFit">Fit</button>
-            <button id="cz100">100%</button>
-          </div>
-        </div>
-        <span class="status" id="detSt"></span>
-      </div>
       <div class="scroller" id="scroller">
         <canvas id="c" tabindex="-1"></canvas>
+      </div>
+      <span class="status" id="detSt"></span>
+      <span id="czSt" class="sr-only" aria-live="polite"></span>
+      <!-- Left rail (Figma 137:4025): the zoom group, the fit button, then the
+           corner rail. Icon-only, so every button carries an aria-label. The
+           corner glyphs light the corner they name; the one currently picked
+           on the canvas is also raised (kept in step from draw()). -->
+      <div class="lrail" id="lrail">
+        <div class="bgroup" role="group" aria-label="Zoom">
+          <button class="segbtn" id="czIn" aria-label="Zoom in" title="Zoom in (⌘ + scroll zooms to the pointer)"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M8.5 7.5H12.5V8.5H8.5V12.5H7.5V8.5H3.5V7.5H7.5V3.5H8.5V7.5Z"/></svg></button>
+          <button class="segbtn" id="cz100" aria-label="Actual size, 100%" title="Actual size — one photo pixel per screen pixel"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2C1.48232 15 1.05621 14.6067 1.00488 14.1025L1 14V2C1 1.44772 1.44772 1 2 1H14L14.1025 1.00488ZM2 14H14V2H2V14Z"/><text x="8" y="10.8" text-anchor="middle">1x</text></svg></button>
+          <button class="segbtn" id="czOut" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M12.5 8.5H3.5V7.5H12.5V8.5Z"/></svg></button>
+        </div>
+        <div class="bgroup">
+          <button class="segbtn" id="czFit" aria-label="Fit the photo to the pane" title="Fit the whole photo in the pane"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="var(--mute)" d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2C1.48232 15 1.05621 14.6067 1.00488 14.1025L1 14V2C1 1.44772 1.44772 1 2 1H14L14.1025 1.00488ZM2 14H14V2H2V14Z"/><path stroke="var(--icon)" d="M7 11.5H4.5V9M4.5 11.5L7.5 8.5"/><path stroke="var(--icon)" d="M9 4.5H11.5V7M11.5 4.5L8.5 7.5"/></svg></button>
+        </div>
+        <div class="bgroup corners" role="group" aria-label="Select corner">
+          <button class="segbtn" data-jump="0" aria-label="Top-left corner" title="Jump to the top-left corner"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M2 13C2 13.5523 2.44772 14 3 14H6V15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V10H2V13ZM15 13C15 14.0357 14.2128 14.887 13.2041 14.9893L13 15H10V14H13C13.5523 14 14 13.5523 14 13V10H15V13ZM6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2ZM13 1C14.1046 1 15 1.89543 15 3V6H14V3C14 2.44772 13.5523 2 13 2H10V1H13Z"/><path fill="var(--acc-ink)" d="M6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2Z"/></svg></button>
+          <button class="segbtn" data-jump="1" aria-label="Top-right corner" title="Jump to the top-right corner"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M2 13C2 13.5523 2.44772 14 3 14H6V15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V10H2V13ZM15 13C15 14.0357 14.2128 14.887 13.2041 14.9893L13 15H10V14H13C13.5523 14 14 13.5523 14 13V10H15V13ZM6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2ZM13 1C14.1046 1 15 1.89543 15 3V6H14V3C14 2.44772 13.5523 2 13 2H10V1H13Z"/><path fill="var(--acc-ink)" d="M10 2H13C13.5523 2 14 2.44772 14 3V6H15V3C15 1.89543 14.1046 1 13 1H10V2Z"/></svg></button>
+          <button class="segbtn" data-jump="3" aria-label="Bottom-left corner" title="Jump to the bottom-left corner"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M2 13C2 13.5523 2.44772 14 3 14H6V15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V10H2V13ZM15 13C15 14.0357 14.2128 14.887 13.2041 14.9893L13 15H10V14H13C13.5523 14 14 13.5523 14 13V10H15V13ZM6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2ZM13 1C14.1046 1 15 1.89543 15 3V6H14V3C14 2.44772 13.5523 2 13 2H10V1H13Z"/><path fill="var(--acc-ink)" d="M6 14H3C2.44772 14 2 13.5523 2 13V10H1V13C1 14.1046 1.89543 15 3 15H6V14Z"/></svg></button>
+          <button class="segbtn" data-jump="2" aria-label="Bottom-right corner" title="Jump to the bottom-right corner"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M2 13C2 13.5523 2.44772 14 3 14H6V15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V10H2V13ZM15 13C15 14.0357 14.2128 14.887 13.2041 14.9893L13 15H10V14H13C13.5523 14 14 13.5523 14 13V10H15V13ZM6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2ZM13 1C14.1046 1 15 1.89543 15 3V6H14V3C14 2.44772 13.5523 2 13 2H10V1H13Z"/><path fill="var(--acc-ink)" d="M10 14H13C13.5523 14 14 13.5523 14 13V10H15V13C15 14.1046 14.1046 15 13 15H10V14Z"/></svg></button>
+        </div>
       </div>
       <!-- Corner jump. It is a SIBLING of the scroller, not a child: anything
            positioned inside a scroll container scrolls with the content, so
            when it lived over the canvas it slid out of view the moment you
            zoomed in. Anchored to the pane it stays put while the picture moves
            underneath, which is what a floating control should do. -->
-      <div class="cvbar" id="cvbar">
-        <span class="sm" style="color:var(--mute)">Select corner</span>
-        <span class="cvbar-actions">
-          <span class="stepper"><button class="sm" data-jump="0">TL</button><button class="sm" data-jump="1">TR</button><button class="sm" data-jump="2">BR</button><button class="sm" data-jump="3">BL</button></span>
-          <button class="sm" id="redetect">Re-detect</button>
-          <button class="sm" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button>
-          <button class="sm" id="rotatequad" title="Turn the screenshot inside the same four edges. The edges stay where they are; only which one is the top changes. A portrait screenshot fits a phone only two ways, so on a phone this is a half turn; a quarter turn where the screen is near-square or the screenshot fits the other way.">Rotate</button>
-          <button class="sm" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button>
-        </span>
+      <!-- Bottom rail (Figma 113:2851): the actions on the FIT as a whole, each
+           its own one-button group, centred. Corner selection moved to the left
+           rail — it is navigation, not an action on the fit. Rotate is not in
+           the design frame and is kept until it is ruled on. -->
+      <div class="brail" id="cvbar">
+        <div class="bgroup"><button class="segbtn" id="redetect">Re-detect</button></div>
+        <div class="bgroup"><button class="segbtn" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button></div>
+        <div class="bgroup"><button class="segbtn" id="rotatequad" title="Turn the screenshot inside the same four edges. The edges stay where they are; only which one is the top changes. A portrait screenshot fits a phone only two ways, so on a phone this is a half turn; a quarter turn where the screen is near-square or the screenshot fits the other way.">Rotate</button></div>
+        <div class="bgroup"><button class="segbtn" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button></div>
       </div>
     </section>
 
     <section class="pane" id="outPane">
-      <div class="panehead">
-        <span class="lbl">Result</span>
-        <span class="gap-3"></span>
-        <span class="sm" id="outSt" style="color:var(--mute)">Press Preview</span>
-        <span class="spacer"></span>
-        <span class="sm" style="color:var(--mute)">shares zoom &amp; pan</span>
-      </div>
+      <!-- No header (Figma 7:38): the well fills the pane so it lines up with
+           the fit well beside it, and the render state floats as a pill. -->
+      <span class="status" id="outSt">Press Preview</span>
       <div id="outWrap"><span class="empty" id="outEmpty">The composite appears here and updates as you drag.</span><img id="outImg" alt="" hidden><video id="outVid" hidden loop muted playsinline controls></video><svg id="dofGizmo" hidden aria-label="Depth of field: drag the solid line to place focus, its ends to turn it, the dashed line for strength"></svg><!--
         The live layer: the PHOTOGRAPH with the source clip warped onto the
         fitted quad by the browser. Not the composite — the composite already
@@ -2339,7 +2371,16 @@ $('#resetquad').onclick = () => {
   draw(); drawStrip(); autoPreview();
 };
 
+function syncCornerRail(){
+  const i = pick && pick.kind === 'corner' ? pick.i : -1;
+  document.querySelectorAll('#lrail [data-jump]').forEach(b => {
+    const on = +b.dataset.jump === i;
+    b.classList.toggle('sel', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
 function draw(){
+  syncCornerRail();
   // The clip follows the quad while it is being dragged: the live layer IS the
   // fit, so leaving it on the old corners would make the two panes disagree
   // mid-drag — which is the one thing the side-by-side exists to prevent.

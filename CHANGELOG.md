@@ -9,6 +9,29 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.58.0] - 2026-09-13
+
+### Changed
+
+- **The fit pane is rails over the well** (Figma 7:12, Button Group 145:372,
+  Segment Button 138:255, Status pill 5:10). Neither pane has a header any
+  more: the photograph gets the whole pane and the two wells line up. What the
+  header held now floats as Button Groups — 28px columns of 28px segment
+  buttons on the raised surface, one 0.5px translucent stroke and one shadow
+  around the group, so it reads on any photo tone. **Left rail:** the zoom
+  group (+ / 1x / −), a lone Fit button, then the **corner rail** (TL / TR /
+  BL / BR as the design's corner glyphs — the corner picked on the canvas is
+  raised, kept in step from `draw()`). **Bottom rail:** Re-detect, Point at
+  screen, Rotate and Reset, each its own one-button group, centred — the
+  actions on the fit as a whole; corner selection left it because it is
+  navigation. **Status pill** top-centre of each pane: the detection state on
+  the fit, the render state on the result; hidden while empty. The zoom
+  percentage readout is no longer on screen (the rail is icon-only, as
+  designed) but is kept for assistive tech as a live region; the canvas
+  navigation tip went with the header — the Keys section already says it.
+  Rotate is not in the design frame and is kept until ruled on. UI audit
+  36/36 at 1600 and at 742.
+
 ## [0.57.0] - 2026-09-13
 
 ### Changed
