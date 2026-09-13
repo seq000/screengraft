@@ -9,6 +9,13 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.59.2] - 2026-09-14
+
+### Fixed
+
+- A shipped comment carried a name; `check_leaks.py` caught it after the
+  v0.59.1 tag was already pushed. No code change.
+
 ## [0.59.1] - 2026-09-14
 
 ### Fixed
