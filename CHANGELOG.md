@@ -9,6 +9,31 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.59.0] - 2026-09-14
+
+### Fixed
+
+- **The depth-of-field handles could not be grabbed.** v0.54.7 made them
+  hollow rings, and an unfilled SVG shape under `pointer-events:auto` is hit
+  only on its stroke — the centre of every handle passed the pointer through
+  to the image underneath. On a steep, flat phone, where a third of the
+  screen's extent is nine pixels of mouse travel, that made the sharp line
+  immovable (reported on a real fit, 14 Sep). `pointer-events:all` on the
+  handles, and every handle now carries an invisible 10px-radius hit disc.
+  Two UI-audit checks pin it: a probe handle must compute to `all`, and every
+  painted handle must have its disc.
+
+### Changed
+
+- **The sharp line can sit in front of the glass.** `dof_start` reaches
+  −0.5, the same distance past the screen the far line already had past the
+  far edge, so the plane of focus can be on the table in front of a steep
+  phone rather than pinned to its near edge; the near edge is then already
+  part-way up the ramp. The gizmo labels it "sharp · in front of the screen".
+  Old sidecars are unaffected (none carries a negative start). Checked in
+  `test_warp.py`: start −0.5 / end 0.5 puts the near edge at exactly half
+  blur, and −5 clamps to −0.5.
+
 ## [0.58.0] - 2026-09-13
 
 ### Changed

@@ -711,7 +711,8 @@ def _dof_args(b):
     except (TypeError, ValueError):
         strength, angle, start, end = 0.0, 0.0, 0.0, 1.0
     space = "screen" if b.get("dof_space") == "screen" else "photo"
-    start = float(min(max(start, 0.0), 0.95))
+    # -0.5 lets the plane of focus sit in front of the glass (14 Sep 2026).
+    start = float(min(max(start, -0.5), 0.95))
     # The near limit is optional: absent or null means one-sided.
     end2 = b.get("dof_end2")
     try:

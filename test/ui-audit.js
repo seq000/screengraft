@@ -263,6 +263,20 @@
     ok('swingText is present', false, 'not defined');
   }
 
+  // Hollow handles must still be grabbable across their whole disc. Under
+  // pointer-events:auto an unfilled SVG circle is hit only on its stroke, and
+  // every gizmo handle passed the pointer through to the image (14 Sep 2026).
+  // Checked on a probe circle, so it runs whether or not the gizmo is showing.
+  {
+    const svg = document.getElementById('dofGizmo');
+    const probe = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    probe.setAttribute('class', 'h'); svg.appendChild(probe);
+    const pe = getComputedStyle(probe).pointerEvents; probe.remove();
+    ok('gizmo handles are hit across their interior, not only on the stroke', pe === 'all', `pointer-events: ${pe}`);
+    const hits = svg.querySelectorAll('.hit').length, handles = svg.querySelectorAll('.h[data-h]').length;
+    ok('every painted gizmo handle has an invisible hit disc', svg.hidden || hits === handles, `${hits} hit / ${handles} handles`);
+  }
+
   // A corner under the pointer gets a magnified crop in the strip (v0.54.8);
   // an edge keeps the rectified band. Presence only — the picture needs an eye.
   ok('the strip can paint a corner loupe', typeof paintCorner === 'function');

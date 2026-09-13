@@ -107,7 +107,10 @@ def screen_ramp(src_w: int, src_h: int, angle_deg: float, start: float, end: flo
     q = np.array([[0, 0], [src_w, 0], [src_w, src_h], [0, src_h]], dtype=np.float64)
     proj = q @ d
     lo, hi = float(proj.min()), float(proj.max())
-    start = float(np.clip(start, 0.0, 0.95))
+    # start may be negative: the plane of focus in FRONT of the screen, so the
+    # near edge is already part-way up the ramp. Same reach past the screen as
+    # `end` has on the far side.
+    start = float(np.clip(start, -0.5, 0.95))
     end = float(np.clip(end, start + 0.05, 1.5))
     s0, s1 = lo + start * (hi - lo), lo + end * (hi - lo)
     xs = np.arange(src_w, dtype=np.float64)[None, :] + 0.5

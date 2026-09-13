@@ -320,6 +320,18 @@ def main():
                           f"40% band: plain {mid_plain:.0f}, start 0 -> {mid_default:.0f}, start 0.5 -> {mid_half:.0f}")
     failures += not check("...and start 0 is what every earlier sidecar meant",
                           np.array_equal(down, W.compose(tex, shot, quad, 24, dof_angle=90, dof_strength=0.6, dof_start=0.0)))
+    # The plane of focus may sit IN FRONT of the glass (start < 0): the near
+    # edge is then already part-way up the ramp. Same reach past the screen as
+    # the far line has. In the screen-space ramp, start -0.5 / end 0.5 puts
+    # the near edge at exactly half blur, and the near band is softer than
+    # with start 0 -- which is what a steep, flat phone on a table needs.
+    r_neg = DOF.screen_ramp(200, 400, 90.0, -0.5, 0.5)
+    failures += not check("a negative dof_start puts the near edge part-way up the ramp",
+                          abs(float(r_neg[0, 100]) - 0.5) < 0.02 and float(r_neg[-1, 100]) == 1.0,
+                          f"near edge {float(r_neg[0, 100]):.3f} (want 0.5), far edge {float(r_neg[-1, 100]):.3f}")
+    r_clamp = DOF.screen_ramp(200, 400, 90.0, -5.0, 0.5)
+    failures += not check("...and it is clamped at -0.5, not open-ended",
+                          np.array_equal(r_clamp, r_neg))
 
     # The ramp lives in the SCREEN's plane: a screenshot point gets the blur of
     # its screenshot position, whatever the perspective did to it in the photo.
