@@ -49,7 +49,11 @@
        accent at 85%, not solid — solid is the hover state. */
     /* accent/acc + accent/acc_btn_rest re-picked in Figma 5 Sep:
        #ec4c13 -> #f23b0d. --acc-soft is derived from the accent, so it follows. */
-    --acc:#f23b0d; --acc-btn-rest:rgba(242,59,13,.85); --acc-press:#bb2b00;
+    /* Primary at REST is the solid accent — re-read from Button 4:14 on
+       13 Sep 2026: container/default and container/hover are both #f23b0d, so
+       the 85% rest that used to sit under hover is gone. Hover feedback on the
+       primary button is therefore the cursor and the press, as designed. */
+    --acc:#f23b0d; --acc-btn-rest:#f23b0d; --acc-press:#bb2b00;
     --acc-stroke:#ff6833; --acc-ink:#fbf9f9; --acc-soft:rgba(242,59,13,.14);
     /* Neutral button hover/pressed are explicit surfaces in Figma, not a
        brightness filter on the rest state. Re-picked 11 Sep 2026 against the
@@ -60,7 +64,31 @@
     --btn-press:#1c1c20; --btn-press-edge:#3a3b41;
     /* Accent disabled keeps the label READABLE rather than fading the whole
        button — the Button component in Figma says so explicitly. */
-    --acc-dis:#bb2b00b2; --acc-dis-edge:#ff6833b2; --acc-dis-ink:#fbf9f966;
+    /* Re-read 13 Sep 2026: primary/container/disabled is the SOLID press
+       colour with the solid stroke and the solid label — the design fades
+       nothing here, it recesses. Was three alpha variants. */
+    --acc-dis:#bb2b00; --acc-dis-edge:#ff6833; --acc-dis-ink:#fbf9f9;
+    /* Strokes are 0.5px throughout the component sets (button, chip, input
+       chip, segmented, switch, button group). A half pixel snaps to one device
+       pixel on any screen, so it never vanishes; on a Retina Mac it is the
+       hairline the design shows. Colour contrast of the stroke is unchanged. */
+    --bw:.5px;
+    /* radius/xs — the segment button and the segmented thumb. */
+    --r-xs:4px;
+    /* color/foreground/icon-construction — the 16px icon glyph in a segment
+       button; quieter than --ink on purpose. */
+    --icon:#d9d9d9;
+    /* input-chip/unselected/label — the empty chip's label sits between
+       --ink and --mute. input-chip/unselected/container/default shares
+       neutral/cool/650 with border/line; it gets its own name here so a line
+       colour change cannot silently repaint a surface. */
+    --inchip-ink:#c2c3cb; --inchip-empty:#1d1e20;
+    /* button-group/default/border — a 20% cool grey, the ONLY translucent
+       stroke in the system; it sits over the photograph, so it has to read on
+       any tone. The two shadows are the Button Group's and the Status pill's. */
+    --group-edge:rgba(194,195,203,.2);
+    --group-shadow:0 2px 4px rgba(0,0,0,.03), 0 3px 10px rgba(0,0,0,.08), 0 4px 24px rgba(0,0,0,.25);
+    --pill-shadow:0 2px 2px rgba(0,0,0,.03), 0 3px 5px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.25);
 
     --warn:#f0c375;
     /* --ok is status/ok, re-picked in the design file (#8fe3c0 -> #4fbf8b).
@@ -170,12 +198,10 @@
      filter over the rest state — a filter shifts hue and cannot be measured
      against a token.
      ------------------------------------------------------------------ */
-  /* Md is radius/md, Sm is radius/sm — one rule, both variants. Md had been
-     6px here while Primary/Md was 8px, so the neutral and accent buttons beside
-     each other in the top bar were not the same shape. Settled in Figma
-     11 Sep 2026: Md = 8, Sm = 6. */
+  /* Both sizes are radius/sm (6px) — re-read from Button 4:14 on 13 Sep 2026,
+     where every variant carries the same radius. Md had been 8 since 11 Sep. */
   button{font:inherit;color:var(--ink);background:var(--raise);
-         border:1px solid var(--edge);border-radius:var(--r-md);
+         border:var(--bw) solid var(--edge);border-radius:var(--r-sm);
          padding:0 var(--s3);height:28px;font-size:13px;cursor:pointer;box-shadow:var(--hi);
          transition:var(--t-all), transform var(--t)}
   button:hover{background:var(--btn-hover);border-color:var(--btn-hover-edge)}
@@ -198,7 +224,7 @@
      dimmest text in the tool. The description wins until that is
      settled in the file. */
   button[disabled]{background:var(--raise-low);border-color:var(--edge-low);
-                   color:var(--faint);cursor:default;font-weight:400;
+                   color:var(--mute);cursor:default;font-weight:400;
                    box-shadow:none;transform:none}
   button[disabled]:hover{background:var(--raise-low);border-color:var(--edge-low)}
   button.sm{height:24px;padding:0 9px;font-size:12px;border-radius:var(--r-sm)}
@@ -357,14 +383,18 @@
      the stepper was 24px against 28px neighbours), so the thumb is 22px here so the track lands on 28px exactly. Everything else
      — padding, gap, border, both radii — is as drawn.
      ------------------------------------------------------------------ */
+  /* Segmented control 84:177, re-read 13 Sep 2026: the track is
+     surface/raise-low (not --sunk) inside a 6px radius with a 0.5px stroke;
+     the thumb is 24px tall at radius/xs. Hover lifts the thumb to raise-hi
+     and the track's stroke to edge-mid; pressed drops the thumb to raise-mid. */
   .seg{display:inline-flex;align-items:center;gap:2px;padding:2px;
-       background:var(--sunk);border:1px solid var(--edge);
-       border-radius:var(--r-md);transition:var(--t-all)}
+       background:var(--raise-low);border:var(--bw) solid var(--edge);
+       border-radius:var(--r-sm);transition:var(--t-all)}
   .seg:hover{border-color:var(--edge-mid)}
   .seg:active{border-color:var(--edge-mid)}
   /* The track carries the border and the elevation, so a segment is a label
      until it is selected: no border, no shadow, no lift on press. */
-  .seg button{height:22px;padding:0 11px;font-size:12px;border-radius:var(--r-sm);
+  .seg button{height:24px;padding:0 11px;font-size:12px;border-radius:var(--r-xs);
               background:transparent;border:0;box-shadow:none;color:var(--mute);
               font-weight:400;display:inline-flex;flex-direction:column;
               align-items:center;justify-content:center}
@@ -382,8 +412,8 @@
      point of the component: one raised thing, behaving like every other raised
      thing on the page. */
   .seg button.sel{background:var(--raise);color:var(--ink);font-weight:600}
-  .seg button.sel:hover{background:var(--raise-mid)}
-  .seg button.sel:active{background:var(--raise-low);transform:none}
+  .seg button.sel:hover{background:var(--raise-hi)}
+  .seg button.sel:active{background:var(--raise-mid);transform:none}
   /* A toggle in the strip head. On = the raised surface every selected thing
      on this page has (the segmented thumb, the device chip), off = a label. */
   .striphead button[aria-pressed],#dofBoth[aria-pressed]{background:transparent;border-color:transparent;box-shadow:none;color:var(--mute)}
@@ -395,17 +425,30 @@
    NOTE the modifier is `is-empty`, not `empty`: `.empty` is already the
    centred placeholder-paragraph class (padding:24px), and the chip was
    silently inheriting it and rendering 50px tall instead of 32. */
+  /* Input chip 159:4117, re-read 13 Sep 2026. Filled = the SELECTED chip's
+     surfaces (raise-hi / edge-hi, hover raise-highest, pressed raise-mid): a
+     chosen source reads as a selection. Empty = its own recessed, dashed
+     surface with a mid-grey label. Active = a file is being dragged OVER the
+     chip: accent stroke and label on the empty one, accent fill on the filled. */
   .inputchip{display:inline-flex;align-items:center;gap:var(--s2);max-width:220px;
-             height:32px;padding:0 12px 0 6px;border-radius:999px;
-             background:var(--raise);border:1px solid var(--edge);box-shadow:var(--hi)}
+             height:32px;padding:0 12px 0 6px;border-radius:999px;color:var(--ink);
+             background:var(--raise-hi);border:var(--bw) solid var(--edge-hi);box-shadow:var(--hi)}
+  .inputchip:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
+  .inputchip:active{background:var(--raise-mid);border-color:var(--edge-hi)}
+  .inputchip.over,.inputchip.over:hover{background:var(--acc);border-color:var(--acc-stroke);
+                                        color:var(--acc-ink)}
   .inputchip .sw{width:22px;height:22px;border-radius:999px;flex:none;
                  background:var(--sunk);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
   .inputchip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
   /* Empty is the SAME box as filled — 32px tall, same padding, same 22px
      avatar. Only the surface, border style and label colour change. It was
      reading oversized because it had no surface to sit in. */
-  .inputchip.is-empty{background:var(--card);border-style:dashed;
-                   color:var(--mute);box-shadow:none}
+  .inputchip.is-empty{background:var(--inchip-empty);border-style:dashed;
+                   border-color:var(--edge);color:var(--inchip-ink);box-shadow:none}
+  .inputchip.is-empty:hover{background:var(--float);border-color:var(--edge-mid)}
+  .inputchip.is-empty:active{background:var(--raise-low);border-color:var(--edge-mid)}
+  .inputchip.is-empty.over,.inputchip.is-empty.over:hover{background:var(--float);
+                   border-color:var(--acc-stroke);color:var(--acc-stroke)}
   .inputchip.is-empty .sw{box-shadow:inset 0 0 0 1px var(--line)}
   /* The clear control is a SIBLING of the chip in the markup, not a child:
      the chip is one <button>, and a button inside a button is invalid HTML
@@ -587,30 +630,30 @@
   /* Track 48×20 inside a 48×28 hit area (Figma 17:61): the button keeps the
      full 28px for the pointer, the drawn track is 20px. Was 22px. */
   .sw-track{position:relative;display:block;width:48px;height:20px;border-radius:6px;
-            background:var(--bg);border:1px solid var(--edge);
+            background:var(--bg);border:var(--bw) solid var(--edge);
             transition:var(--t-all), box-shadow var(--t)}
-  .sw-handle{position:absolute;top:1px;bottom:1px;left:1px;width:24px;border-radius:4px;
+  .sw-handle{position:absolute;top:1.5px;bottom:1.5px;left:1.5px;width:24px;border-radius:4px;
              background:var(--raise-hi);
              transition:left var(--t), right var(--t), width var(--t), background-color var(--t), opacity var(--t)}
   .sw-grip{position:absolute;border-radius:1px;background:var(--sunk);
-           left:11px;width:4px;top:7px;bottom:7px;
+           left:11.5px;width:4px;top:8.5px;bottom:8.5px;
            transition:left var(--t), width var(--t), top var(--t), bottom var(--t), background-color var(--t)}
 
   /* --- OFF ------------------------------------------------------------- */
-  button.switch:hover .sw-handle{background:var(--float)}
+  button.switch:hover .sw-handle{background:var(--raise-mid)}
   button.switch:active .sw-handle{width:26px;background:var(--raise-hi)}
-  button.switch:active .sw-grip{left:12px}
+  button.switch:active .sw-grip{left:12.5px}
 
   /* --- ON -------------------------------------------------------------- */
   button.switch[aria-checked="true"] .sw-track{background:var(--acc-btn-rest);border-color:var(--acc-stroke)}
-  button.switch[aria-checked="true"] .sw-handle{left:auto;right:1px;background:var(--acc-ink)}
-  button.switch[aria-checked="true"] .sw-grip{left:32px;width:2px;top:4px;bottom:4px;
+  button.switch[aria-checked="true"] .sw-handle{left:auto;right:1.5px;background:var(--acc-ink)}
+  button.switch[aria-checked="true"] .sw-grip{left:32.5px;width:2px;top:5.5px;bottom:5.5px;
                                               background:var(--acc-btn-rest)}
   button.switch[aria-checked="true"]:hover .sw-track{background:var(--acc);border-color:var(--acc-stroke)}
   button.switch[aria-checked="true"]:hover .sw-grip{background:var(--acc)}
   button.switch[aria-checked="true"]:active .sw-track{background:var(--acc-press);border-color:var(--acc-stroke)}
   button.switch[aria-checked="true"]:active .sw-handle{width:26px;opacity:.8}
-  button.switch[aria-checked="true"]:active .sw-grip{left:31px;background:var(--acc-press)}
+  button.switch[aria-checked="true"]:active .sw-grip{left:31.5px;background:var(--acc-press)}
 
   /* --- disabled --------------------------------------------------------
      The component uses opacity here, against the project's usual rule. Kept as
@@ -1735,6 +1778,13 @@ for (const [n, role] of [[1,'photo'],[2,'screenshot']]){
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) upload(role, f); };
   $('#chip'+n).onclick = () => openPop(n);
+  // The chip itself takes a drop (Input chip's Active state): drag a file
+  // onto "Choose a photo" and it lands in that role without opening the
+  // popover. Same upload path as the popover's drop zone.
+  const chip = $('#chip'+n);
+  chip.ondragover = e => { if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); chip.classList.add('over'); } };
+  chip.ondragleave = () => chip.classList.remove('over');
+  chip.ondrop = e => { e.preventDefault(); chip.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) upload(role, f); };
 }
 /* One popover mechanic for every popover: anchor it under whatever opened it,
    clamped into the viewport. The pickers and the preview both use it. */

@@ -9,6 +9,31 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.57.0] - 2026-09-13
+
+### Changed
+
+- **Controls re-read from the Figma component sets** (Button 4:14, Chip 5:6,
+  Input chip 159:4117, Segmented 84:177, Switch 17:61, every variant) and the
+  variable collection, and brought back into line where the port had drifted:
+  strokes are **0.5px** throughout (they were 1px); both button sizes are
+  **radius 6** (Md had been 8); the primary button's rest is the **solid
+  accent** — the design's rest and hover containers are the same colour — and
+  its disabled state is the solid press colour with a solid label, not three
+  alpha variants; the disabled neutral label is `text/mute`, not `text/faint`;
+  the segmented control's track is `surface/raise-low` in a 6px radius with a
+  24px thumb at radius 4, hover lifting the thumb to `raise-hi`; the input
+  chip has its own surfaces — filled is the selected chip's, empty is a
+  recessed dashed pill with a `#c2c3cb` label — and gains the design's
+  **Active** state: drag a file onto the chip itself and it takes the drop for
+  that role (accent stroke and label on an empty chip, accent fill on a filled
+  one); the switch's thumb and grip sit at the design's half-pixel insets.
+  New tokens: `--bw`, `--r-xs`, `--icon`, `--inchip-ink`, `--inchip-empty`,
+  `--group-edge`, `--group-shadow`, `--pill-shadow` (the last three for the
+  floating rails that follow). Contrast audit: the primary label at rest now
+  measures the 3.70:1 already accepted for hover — the same surface — and is
+  accepted with it; nothing else moved. UI audit 36/36.
+
 ## [0.56.1] - 2026-09-13
 
 ### Fixed

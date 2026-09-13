@@ -87,7 +87,11 @@ def solid(name, backdrop='card'):
 # is still printed every run — a decision stays visible, and a REGRESSION in an
 # accepted item still shows up as a changed figure.
 ACCEPTED = {
-    'accent label · hover':      'hover only. Rest/pressed pass; he does not want the accent muted to chase it.',
+    'accent label · rest':       'the design (Button 4:14, 13 Sep 2026) makes rest the SOLID accent, the same '
+                                 'surface as hover, so this is the hover shortfall already accepted, now at rest '
+                                 'too: 3.70:1 for a 13px/600 label. The accent is not to be muted to chase it; '
+                                 'pressed (#bb2b00) passes.',
+    'accent label · hover':      'same surface as rest now; accepted with it.',
     'accent label · disabled':   'WCAG exempts disabled controls (1.4.3). Kept legible rather than faded.',
     'neutral label · disabled':  'same exemption.',
     'control edge vs card':      '1.4.11 wants 3:1. Lightened twice; going further greys out the whole UI.',
