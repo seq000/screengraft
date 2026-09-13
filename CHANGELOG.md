@@ -9,6 +9,15 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.4] - 2026-09-13
+
+### Changed
+
+- Guide dashes 6/5 (10/7 was too long). The depth-of-field gizmo follows the
+  fit overlay's rules: 1px focus line, 0.8px limits, casing +1.6px at 45%
+  black, dashes 6/5, move cursor on handles, rotate cursor on the pips, a
+  resize cursor on the strength thumb.
+
 ## [0.54.3] - 2026-09-13
 
 ### Changed

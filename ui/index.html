@@ -634,11 +634,16 @@
   #outWrap{position:relative}
   #dofGizmo{position:absolute;pointer-events:none;opacity:.4;transition:opacity .15s;overflow:visible}
   #outWrap:hover #dofGizmo,#dofGizmo.drag{opacity:1}
-  #dofGizmo .case{stroke:rgba(0,0,0,.6);fill:none;vector-effect:non-scaling-stroke}
-  #dofGizmo .focus{stroke:#f5623d;stroke-width:1.5;fill:none;vector-effect:non-scaling-stroke}
-  #dofGizmo .far{stroke:#f5623d;stroke-width:1.25;stroke-dasharray:6 6;fill:none;vector-effect:non-scaling-stroke}
-  #dofGizmo .far.out{stroke-dasharray:3 7;opacity:.75}
-  #dofGizmo .h{fill:#f5623d;stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:auto;cursor:grab}
+  /* Same rules as the fit overlay (v0.54.3): thin core, a light casing
+     underneath at 45% black, dashes 6/5. The casing is what survives a
+     photograph; the thinness is the request. */
+  #dofGizmo .case{stroke:rgba(0,0,0,.45);fill:none;vector-effect:non-scaling-stroke}
+  #dofGizmo .focus{stroke:#f5623d;stroke-width:1;fill:none;vector-effect:non-scaling-stroke}
+  #dofGizmo .far{stroke:#f5623d;stroke-width:0.8;stroke-dasharray:6 5;fill:none;vector-effect:non-scaling-stroke}
+  #dofGizmo .far.out{stroke-dasharray:3 6;opacity:.75}
+  #dofGizmo .h{fill:#f5623d;stroke:#fff;stroke-width:1.2;vector-effect:non-scaling-stroke;pointer-events:auto;cursor:move}
+  #dofGizmo .h.pip{cursor:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M17.5 11a6.5 6.5 0 1 1-2.2-4.9' fill='none' stroke='rgba(0,0,0,.85)' stroke-width='4.2' stroke-linecap='round'/%3E%3Cpath d='M17.5 11a6.5 6.5 0 1 1-2.2-4.9' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M15.6 2.6l0.4 4.2-4.2 0.3' fill='none' stroke='rgba(0,0,0,.85)' stroke-width='4.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M15.6 2.6l0.4 4.2-4.2 0.3' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 11 11, crosshair}
+  #dofGizmo .h.thumb{cursor:ew-resize}
   #dofGizmo .h.hollow{fill:#1a1a1a}
   #dofGizmo .h.pip{fill:#f5623d}
   #dofGizmo .h.thumb{fill:#fff;stroke:#f5623d;stroke-width:2}
@@ -1489,7 +1494,7 @@ const ROTATE_CURSOR = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(
   '<path d="M15.6 2.6l0.4 4.2-4.2 0.3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
   '</svg>') + '") 11 11, crosshair';
 const QUAD_W = 0.8, QUAD_ACTIVE_W = 1.5, GUIDE_W = 0.8, CASE_PAD = 1.6;
-const GUIDE_DASH = [10, 7];
+const GUIDE_DASH = [6, 5];
 function cased(c, path, coreW, coreColor, dash){
   c.save();
   if (dash) c.setLineDash(dash);
@@ -2727,9 +2732,9 @@ function paintGizmo(){
   const beyond = dofEnd > 1.0001;
   const beyond2 = two && dofEnd2 < -0.0001;
   gz.innerHTML =
-    L(a0, a1, 'case', 'stroke-width="4"') + L(a0, a1, 'focus') +
-    L(b0, b1, 'case', 'stroke-width="3.5"') + L(b0, b1, 'far' + (beyond ? ' out' : '')) +
-    (two ? L(c0, c1, 'case', 'stroke-width="3.5"') + L(c0, c1, 'far' + (beyond2 ? ' out' : '')) : '') +
+    L(a0, a1, 'case', 'stroke-width="2.6"') + L(a0, a1, 'focus') +
+    L(b0, b1, 'case', 'stroke-width="2.4"') + L(b0, b1, 'far' + (beyond ? ' out' : '')) +
+    (two ? L(c0, c1, 'case', 'stroke-width="2.4"') + L(c0, c1, 'far' + (beyond2 ? ' out' : '')) : '') +
     `<circle cx="${a0[0]}" cy="${a0[1]}" r="${rp}" class="h pip" data-h="rotA"/>` +
     `<circle cx="${a1[0]}" cy="${a1[1]}" r="${rp}" class="h pip" data-h="rotB"/>` +
     `<circle cx="${ac[0]}" cy="${ac[1]}" r="${r}" class="h" data-h="start"/>` +
