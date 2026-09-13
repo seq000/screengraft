@@ -9,6 +9,16 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.54.7] - 2026-09-13
+
+### Changed
+
+- **Handles are hollow rings.** 8px circle, 2px stroke, nothing inside, so
+  the pixel under the handle stays visible; the casing sits outside the ring.
+  Every line breaks 1px short of the ring — the quad's edges at the corners,
+  the depth-of-field lines at their handles — so it reads as a handle beside
+  a line, not a bead on it. Pivot pips stay small and filled.
+
 ## [0.54.6] - 2026-09-13
 
 ### Changed
