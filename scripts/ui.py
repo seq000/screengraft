@@ -50,6 +50,7 @@ import numpy as np  # noqa: E402
 import detect as D  # noqa: E402
 import fitfile as FF  # noqa: E402
 import fits as FIT  # noqa: E402
+import recents as RECENT  # noqa: E402
 import dof as DOF   # noqa: E402
 import grade as _grade  # noqa: E402
 import scan as S  # noqa: E402
@@ -727,6 +728,25 @@ def _dof_args(b):
 ROLES = ("photo", "screenshot")
 
 
+def _thumb_for(item):
+    """A thumbnail for a recent: scan.thumb for stills; the first frame for a clip."""
+    out_dir = os.path.join(SESSION.dir, "thumbs")
+    if item.get("ext") in VIDEO_EXT:
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, f"{abs(hash(item['path']))}_{int(item.get('mtime') or 0)}_clip.jpg")
+        if not os.path.exists(out):
+            try:
+                fr = W.read_frame_at(item["path"], 0)
+                h, w = fr.shape[:2]
+                sc = 320 / max(h, w)
+                fr = cv2.resize(fr, (max(1, int(w * sc)), max(1, int(h * sc))), interpolation=cv2.INTER_AREA)
+                cv2.imwrite(out, fr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            except Exception:
+                return None
+        return out
+    return S.thumb(item, out_dir)
+
+
 def _adopt(role, path):
     """Make a chosen source the session's, and answer what the page needs.
 
@@ -751,6 +771,7 @@ def _adopt(role, path):
         im, real = _read_image(path)
         meta = {"video": False}
     SESSION.update(**{role: real})
+    RECENT.record(role, real)
     if role == "photo":
         # The quad is a property of the PHOTOGRAPH, so a fit saved on an earlier
         # run is a better starting position than any detector -- and a stronger
@@ -956,10 +977,15 @@ class Handler(BaseHTTPRequestHandler):
                                    "home": HOME, "presets": PRESETS, "version": VERSION,
                                    "build": BUILD})
             if u.path == "/api/recent":
-                items = S.scan(days=int(q.get("days", ["14"])[0]), limit=int(q.get("limit", ["40"])[0]))
+                # What was USED, per role -- not what is newest in two folders.
+                # The folder scan (scan.py) still exists for the CLI and for a
+                # first run with nothing used yet; ?role= selects the list.
+                role = (q.get("role") or ["photo"])[0]
+                limit = int(q.get("limit", ["40"])[0])
+                items = RECENT.items(role, limit)
                 for it in items:
-                    it["thumb"] = S.thumb(it, os.path.join(SESSION.dir, "thumbs"))
-                return self._json({"items": items})
+                    it["thumb"] = _thumb_for(it)
+                return self._json({"items": items, "role": role})
             if u.path == "/file":
                 return self._file(_safe_local_path(q["path"][0]))
             if u.path == "/api/job":

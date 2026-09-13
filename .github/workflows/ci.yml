@@ -46,6 +46,8 @@ jobs:
       # own check. Still path only, so it never depends on ffmpeg.
       - name: Remembered fits
         run: python test/test_fits.py
+      - name: Recents store
+        run: python test/test_recents.py
       # The contract that keeps the still and video paths from drifting: frame 0
       # of a render must equal the still composite byte for byte. It shares
       # Plan with compose(), and a refactor that split them would pass every

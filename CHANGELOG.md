@@ -9,6 +9,25 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.61.0] - 2026-09-14
+
+### Changed
+
+- **The picker lists what you have used, not what is newest in two folders.**
+  Every source that reaches the session — picked by path, dropped, browsed,
+  imported — is recorded per role in `~/.screengraft/recents.json`, and the
+  photo popover and the screenshot popover each list their own, newest-used
+  first, with when and from where ("2 min ago · ~/Downloads"). Files that
+  have since gone are dropped. First run seeds the list from the sessions
+  that already exist. A dropped file stays recent for as long as its session
+  copy does. A clip gets its first frame as a thumbnail. The Desktop/Downloads
+  scan (`scan.py`) remains for the CLI.
+- **Picker popover, on request:** the preview slot is as tall as the list
+  beside it and no longer stroked; the drop zone is 32px taller; a list item
+  at rest has no fill and no stroke — picture, name, and a second line for
+  when it was used — hover raises it, the chosen one is the raised neutral
+  every selected control uses.
+
 ## [0.60.0] - 2026-09-14
 
 ### Changed
