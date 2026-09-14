@@ -558,6 +558,11 @@
   .pane{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr);
         grid-template-columns:minmax(0,1fr);
         position:relative;   /* the frame the rails are anchored to */
+        /* An isolated group: the blend rings on the rails and pills composite
+           against THIS pane's content -- the well, the canvas, the result
+           image -- as one unit, rather than against whatever layer the
+           compositor happened to have on hand at first paint. */
+        isolation:isolate;
         border-right:1px solid var(--line)}
   .panehead{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s4);background:var(--card);
             box-shadow:inset 0 -1px 0 var(--line);font-size:12px;flex-wrap:wrap;min-height:48px}
@@ -2121,6 +2126,7 @@ async function maybeStart(){
   const ready = !!st.shot;           // the screenshot gates the fit, not the photo
   img.onload = () => {
     computeFit(); setCanvasZoom(fitScale);
+    refreshRings();
     if (!ready){
       // Photo only: show it immediately so choosing one visibly does
       // something. No quad yet — there is nothing to fit into it.
@@ -2502,6 +2508,20 @@ $('#resetquad').onclick = () => {
   draw(); drawStrip(); autoPreview();
 };
 
+// The blend rings on the rails and pills are painted against what is under
+// them at the time; when a NEW picture lands in the canvas or the result pane
+// they can keep a result blended against the empty well until something else
+// invalidates them (reported 14 Sep 2026: the stroke appeared only after the
+// picture was moved). Toggling display forces a fresh paint of each ring.
+function refreshRings(){
+  document.querySelectorAll('.bgroup > .ring, .pillwrap > .ring').forEach(r => {
+    r.style.display = 'none'; void r.offsetHeight; r.style.display = '';
+  });
+  // ::before / ::after rings ride on the group; nudge the group itself.
+  document.querySelectorAll('.bgroup').forEach(g => {
+    g.style.willChange = 'transform'; void g.offsetHeight; g.style.willChange = '';
+  });
+}
 function syncCornerRail(){
   const i = pick && pick.kind === 'corner' ? pick.i : -1;
   document.querySelectorAll('#lrail [data-jump]').forEach(b => {
@@ -3598,6 +3618,7 @@ async function renderPreview(){
     const im = $('#outImg');
     im.onload = () => {
       outNat = im.naturalWidth;
+      refreshRings();
       // autoPreview runs on every drag, and it must not yank the pane away from
       // a clip that is playing. The still is still rendered and waiting behind.
       if ($('#liveWrap').hidden) showResult('still');

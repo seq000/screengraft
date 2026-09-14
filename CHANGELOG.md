@@ -9,6 +9,18 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.5] - 2026-09-14
+
+### Fixed
+
+- **The blended stroke did not show until the picture was moved.** At first
+  paint the rings were composited against the empty well and cached; the
+  photograph landed in the canvas afterwards and nothing invalidated them.
+  Each pane is an isolated group now (`isolation: isolate`), so the rings
+  always composite against the pane's own content, and the rings are
+  repainted whenever a new picture is drawn on the fit canvas or lands in
+  the result pane.
+
 ## [0.63.4] - 2026-09-14
 
 ### Changed
