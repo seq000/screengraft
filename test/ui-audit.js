@@ -301,6 +301,15 @@
   // an edge keeps the rectified band. Presence only — the picture needs an eye.
   ok('the strip can paint a corner loupe', typeof paintCorner === 'function');
 
+  // A trackpad pinch is zoomed on, but macOS still rubber-bands the well past
+  // the picture's bottom edge while the fingers move — seen as the photo
+  // "cropped at the bottom on zoom", in both panes (14 Sep 2026). The wells
+  // must opt out of the bounce.
+  const wells = ['#scroller', '#outWrap'].map(s => document.querySelector(s)).filter(Boolean);
+  ok('both wells opt out of the overscroll bounce',
+     wells.length === 2 && wells.every(w => /none|contain/.test(getComputedStyle(w).overscrollBehaviorY)),
+     wells.map(w => w.id + ':' + getComputedStyle(w).overscrollBehaviorY).join(' '));
+
   const fail = R.filter(r => !r.pass);
   return { pass: R.length - fail.length, fail: fail.length,
            failures: fail, checks: R.map(r => (r.pass ? '  ok   ' : '  FAIL ') + r.name + (r.extra ? '   ' + r.extra : '')) };

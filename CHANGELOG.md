@@ -9,6 +9,15 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.8] - 2026-09-14
+
+### Fixed
+
+- Zooming with a trackpad pinch let macOS rubber-band the well past the
+  picture's bottom edge, so the last rows of the photo sat under a band of well
+  for the length of the gesture — in both panes. Both wells now set
+  `overscroll-behavior: none`.
+
 ## [0.63.7] - 2026-09-14
 
 ### Fixed

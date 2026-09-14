@@ -667,8 +667,15 @@
                display:inline-flex;line-height:20px}
   #detSt:empty,#outSt:empty{display:none}
   .lbl{color:var(--ink);text-transform:uppercase;letter-spacing:.06em;font-size:11px;font-weight:600}
+  /* overscroll-behavior:none on both wells (14 Sep 2026): a trackpad pinch is a
+     wheel event we zoom on, but macOS still owns the gesture's elastic bounce.
+     While the fingers were moving the browser let the well rubber-band past
+     the picture's bottom edge, so the last rows of the photo sat under a band
+     of well for as long as the gesture lasted -- the "photo cropped at the
+     bottom on zoom" report of 14 Sep 2026, seen in both panes. Not
+     reproducible from script, because scripted scrolls clamp. */
   .scroller{overflow:auto;background:var(--well);display:grid;
-            min-height:0;min-width:0;
+            min-height:0;min-width:0;overscroll-behavior:none;
             box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
   /* tabindex -1, not 0: the canvas is not a tab stop — it takes focus only when
      you actually click it, which is what makes space mean PAN rather than
@@ -785,7 +792,7 @@
   button.switch:focus-visible .sw-track{box-shadow:0 0 0 3px var(--acc-soft);border-color:var(--acc)}
 
   #outPane{display:grid}
-  #outWrap{overflow:auto;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+  #outWrap{overflow:auto;overscroll-behavior:none;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
   /* The depth-of-field gizmo: an SVG laid exactly over the composite, drawn
      in PHOTO pixels (its viewBox is the photo) so every coordinate is the
      engine's own. Always at full opacity: the fade-when-idle was tried and
