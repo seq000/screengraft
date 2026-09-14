@@ -9,6 +9,25 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.2] - 2026-09-14
+
+### Changed
+
+- **The group and pill strokes are the design's three blended paints.** Read
+  from the nodes themselves (the code export had flattened them to one colour
+  twice): a half-pixel stroke *outside* the box made of `#0F6BFF` at 20% in
+  *saturation*, `#FF4646` at 15% in *luminosity* and `#7E7E7E` at 20% in *hue*
+  — a hairline that takes its look from the photograph under it, lighter on a
+  dark backdrop and darker on a light one. Drawn as three rings with
+  `mix-blend-mode` (two pseudo-elements and a `<i class="ring">`) a half pixel
+  outside each Button Group; the rails no longer carry a `z-index`, because a
+  stacking context between the rings and the photograph would have left them
+  blending against nothing. The status pills get the same at 1px: the
+  luminosity paint as a real blend ring, the two 20% paints as plain rings
+  (a pill's `::before` is its status glyph and its text is rewritten by the
+  script), and they centre with auto margins instead of a transform for the
+  same stacking reason.
+
 ## [0.63.1] - 2026-09-14
 
 ### Changed
