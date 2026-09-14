@@ -89,7 +89,7 @@
        stroke in the system; it sits over the photograph, so it has to read on
        any tone. The two shadows are the Button Group's and the Status pill's. */
     /* Button Group 145:372, read from the node's own paints on 14 Sep 2026:
-       the stroke is THREE paints, 0.5px OUTSIDE the box, each with a blend
+       the stroke is four paints, 0.75px OUTSIDE the box, each with a blend
        mode, so the hairline takes its look from the photograph under it —
        lighter on a dark backdrop, darker on a light one, a touch desaturated.
        The MCP's code export had flattened it to one colour twice over.
@@ -105,6 +105,8 @@
     --group-edge-lum:rgba(255,70,70,.15);
     --group-edge-hue:rgba(126,126,126,.2);
     --group-edge-lift:rgba(255,255,255,.4);
+    /* The Button Group's stroke weight (0.75, set 14 Sep); the pills keep 1px. */
+    --group-bw:.75px;
     --group-shadow:0 2px 4px rgba(0,0,0,.08), 0 3px 10px rgba(0,0,0,.12), 0 4px 24px rgba(0,0,0,.25);
     --pill-shadow:0 2px 2px rgba(0,0,0,.03), 0 3px 5px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.25);
 
@@ -587,13 +589,17 @@
   .bgroup{position:relative;display:inline-flex;flex-direction:column;align-items:stretch;flex:none;
           background:var(--raise);border:0;
           border-radius:var(--r-sm);box-shadow:var(--group-shadow)}
-  .bgroup::before,.bgroup::after,.bgroup > .ring{content:"";position:absolute;
-          inset:calc(-1 * var(--bw));border:var(--bw) solid;
-          border-radius:calc(var(--r-sm) + var(--bw));pointer-events:none}
-  .bgroup::before{border-color:var(--group-edge-sat);mix-blend-mode:saturation;z-index:1}
-  .bgroup::after{border-color:var(--group-edge-lum);mix-blend-mode:luminosity;z-index:2}
-  .bgroup > .ring{border-color:var(--group-edge-hue);mix-blend-mode:hue;z-index:3}
-  .bgroup > .ring.lift{border-color:var(--group-edge-lift);mix-blend-mode:soft-light;z-index:4}
+  /* A ring is a SPREAD SHADOW, not a border: Chrome snaps a border to whole
+     device pixels, so 0.75px painted as 0.5 (one of two); a shadow's spread is
+     antialiased and renders the true 1.5 device pixels. Same outside-the-box
+     placement, the ring's colour is the shadow's. */
+  .bgroup::before,.bgroup::after,.bgroup > .ring{content:"";position:absolute;inset:0;
+          border-radius:var(--r-sm);pointer-events:none;
+          box-shadow:0 0 0 var(--group-bw) var(--ring)}
+  .bgroup::before{--ring:var(--group-edge-sat);mix-blend-mode:saturation;z-index:1}
+  .bgroup::after{--ring:var(--group-edge-lum);mix-blend-mode:luminosity;z-index:2}
+  .bgroup > .ring{--ring:var(--group-edge-hue);mix-blend-mode:hue;z-index:3}
+  .bgroup > .ring.lift{--ring:var(--group-edge-lift);mix-blend-mode:soft-light;z-index:4}
   .bgroup.row{flex-direction:row}
   .bgroup > .segbtn:first-of-type{border-top-left-radius:var(--r-sm);border-top-right-radius:var(--r-sm)}
   .bgroup > .segbtn:last-of-type{border-bottom-left-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}

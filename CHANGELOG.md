@@ -9,6 +9,15 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.4] - 2026-09-14
+
+### Changed
+
+- **Button Group stroke 0.75px** (set in the file; the pills stay at 1px). A
+  CSS border of 0.75px snaps to whole device pixels and painted as 0.5, so
+  the four blend rings are spread shadows now, which antialias to the true
+  weight.
+
 ## [0.63.3] - 2026-09-14
 
 ### Changed
