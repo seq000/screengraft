@@ -9,6 +9,13 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.62.4] - 2026-09-14
+
+### Changed
+
+- The 1x icon has no frame — the design is the glyph alone; the box was
+  carried over from the earlier read by mistake.
+
 ## [0.62.3] - 2026-09-14
 
 ### Changed
