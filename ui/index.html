@@ -3084,7 +3084,11 @@ function paintGizmo(){
   const show = dofOn && st.corners && st.shotSize && !im.hidden && im.naturalWidth && $('#liveWrap').hidden;
   gz.toggleAttribute('hidden', !show);
   if (!show) return;
-  const W = im.naturalWidth, Hh = im.naturalHeight;
+  // PHOTO pixels, not the preview's: the corners and every gizmo coordinate
+  // are in the photograph's own pixels, and the preview is a resample of the
+  // whole photograph at <=1600px wide. Sizing the viewBox to the preview put
+  // the lines off the picture on any photo wider than 1600px (14 Sep 2026).
+  const W = img.naturalWidth, Hh = img.naturalHeight;
   gz.setAttribute('viewBox', `0 0 ${W} ${Hh}`);
   gz.style.left = im.offsetLeft + 'px'; gz.style.top = im.offsetTop + 'px';
   gz.style.width = im.clientWidth + 'px'; gz.style.height = im.clientHeight + 'px';
@@ -3146,7 +3150,7 @@ function moveFocus(f){
 // pointer position in SCREENSHOT pixels
 function gizmoPos(e, g){
   const rc = gz.getBoundingClientRect();
-  const W = $('#outImg').naturalWidth, Hh = $('#outImg').naturalHeight;
+  const W = img.naturalWidth, Hh = img.naturalHeight;   // photo pixels, as above
   const photo = [(e.clientX - rc.left) * W / rc.width, (e.clientY - rc.top) * Hh / rc.height];
   return applyH(g.Hi, photo);
 }

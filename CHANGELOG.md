@@ -9,6 +9,15 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.10] - 2026-09-14
+
+### Fixed
+
+- The depth-of-field lines sat off the picture on any photo wider than 1600px.
+  The gizmo was drawn in the preview's pixels; the preview is resampled to
+  1600px wide while the corners and lines are in the photo's own pixels. The
+  gizmo (and its pointer maths) now use the photo's size.
+
 ## [0.63.9] - 2026-09-14
 
 ### Fixed

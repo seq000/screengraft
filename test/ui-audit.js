@@ -301,6 +301,19 @@
   // an edge keeps the rectified band. Presence only — the picture needs an eye.
   ok('the strip can paint a corner loupe', typeof paintCorner === 'function');
 
+  // The DoF gizmo's viewBox must be the PHOTO's size, never the preview's: the
+  // preview is resampled to <=1600px and the corners are photo pixels. Checked
+  // whenever a photo and a preview are both up.
+  {
+    const gzEl = document.getElementById('dofGizmo'), oi = document.getElementById('outImg');
+    if (gzEl && !gzEl.hidden && typeof img !== 'undefined' && img.naturalWidth && oi && oi.naturalWidth){
+      const vb = (gzEl.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+      ok('the DoF gizmo is drawn in photo pixels, not preview pixels',
+         vb[2] === img.naturalWidth && vb[3] === img.naturalHeight,
+         `viewBox ${vb[2]}x${vb[3]} photo ${img.naturalWidth}x${img.naturalHeight} preview ${oi.naturalWidth}x${oi.naturalHeight}`);
+    }
+  }
+
   // A trackpad pinch is zoomed on, but macOS still rubber-bands the well past
   // the picture's bottom edge while the fingers move — seen as the photo
   // "cropped at the bottom on zoom", in both panes (14 Sep 2026). The wells
