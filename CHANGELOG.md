@@ -9,6 +9,19 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.0] - 2026-09-14
+
+### Changed
+
+- **Rails re-read from the Canvas well frame (7:36).** The bottom rail is one
+  horizontal Button Group of four segments — Re-detect · Point at screen ·
+  Rotate · Reset — centred 20px off the bottom edge, not four separate
+  groups; the left rail sits at x=16 (was 24); every group's stroke is a 55%
+  mid grey (`rgba(139,139,139,.55)`, was a 20% cool grey) and its shadow is
+  the frame's (`.08 / .12 / .25`). Measured in the page: left rail groups
+  33×97 / 33×33 / 33×129 at (16, 48) with 8px and 32px gaps, the bottom
+  group centred to the pixel.
+
 ## [0.62.4] - 2026-09-14
 
 ### Changed

@@ -88,8 +88,10 @@
     /* button-group/default/border — a 20% cool grey, the ONLY translucent
        stroke in the system; it sits over the photograph, so it has to read on
        any tone. The two shadows are the Button Group's and the Status pill's. */
-    --group-edge:rgba(194,195,203,.2);
-    --group-shadow:0 2px 4px rgba(0,0,0,.03), 0 3px 10px rgba(0,0,0,.08), 0 4px 24px rgba(0,0,0,.25);
+    /* Re-read from the Canvas well frame (7:36) on 14 Sep 2026: a 55% mid
+       grey stroke and a slightly heavier shadow than the first read. */
+    --group-edge:rgba(139,139,139,.55);
+    --group-shadow:0 2px 4px rgba(0,0,0,.08), 0 3px 10px rgba(0,0,0,.12), 0 4px 24px rgba(0,0,0,.25);
     --pill-shadow:0 2px 2px rgba(0,0,0,.03), 0 3px 5px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.25);
 
     --warn:#f0c375;
@@ -561,6 +563,7 @@
   .bgroup{display:inline-flex;flex-direction:column;align-items:stretch;flex:none;
           background:var(--raise);border:var(--bw) solid var(--group-edge);
           border-radius:var(--r-xs);box-shadow:var(--group-shadow);overflow:hidden}
+  .bgroup.row{flex-direction:row}
   .segbtn,.segbtn:hover,.segbtn:active{border:0;border-radius:0;box-shadow:none;transform:none}
   /* Segment Button re-read 14 Sep 2026: 32px tall, 32px minimum, 8px side
      padding; a text label sits in its own 6px-padded box, so a text button
@@ -574,10 +577,11 @@
   .segbtn[disabled],.segbtn[disabled]:hover{background:var(--raise-low);color:var(--mute)}
   .segbtn:focus-visible{outline-offset:-2px}
   .segbtn svg{width:16px;height:16px;display:block;flex:none}
-  .lrail{position:absolute;left:24px;top:48px;z-index:3;display:flex;flex-direction:column;gap:var(--s2)}
+  .lrail{position:absolute;left:16px;top:48px;z-index:3;display:flex;flex-direction:column;gap:var(--s2)}
   .lrail .corners{margin-top:var(--s6)}       /* 8 + 24 = the design's 32px between rails */
-  .brail{position:absolute;left:0;right:0;bottom:8px;z-index:3;display:flex;justify-content:center;
-         align-items:center;gap:4px;pointer-events:none;flex-wrap:wrap;padding:0 var(--s4)}
+  /* One horizontal group, centred, 20px off the bottom edge (7:36, 14 Sep). */
+  .brail{position:absolute;left:0;right:0;bottom:20px;z-index:3;display:flex;justify-content:center;
+         align-items:center;pointer-events:none;padding:0 var(--s4)}
   .brail .bgroup{pointer-events:auto}
   /* The status pill (Status pill 5:7 / 5:10): floats top-centre, its own
      recessed surface and the group stroke, hidden while it has nothing to say.
@@ -1154,15 +1158,18 @@
            when it lived over the canvas it slid out of view the moment you
            zoomed in. Anchored to the pane it stays put while the picture moves
            underneath, which is what a floating control should do. -->
-      <!-- Bottom rail (Figma 113:2851): the actions on the FIT as a whole, each
-           its own one-button group, centred. Corner selection moved to the left
-           rail — it is navigation, not an action on the fit. Rotate is not in
-           the design frame and is kept until it is ruled on. -->
+      <!-- Bottom rail (Figma 7:36, 14 Sep): the actions on the FIT as a whole
+           as ONE horizontal Button Group of four segments, centred 20px off the
+           bottom. Corner selection lives on the left rail — it is navigation,
+           not an action on the fit. The frame's last two segments are
+           placeholders; Rotate and Reset fill them (SG103). -->
       <div class="brail" id="cvbar">
-        <div class="bgroup"><button class="segbtn txt" id="redetect">Re-detect</button></div>
-        <div class="bgroup"><button class="segbtn txt" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button></div>
-        <div class="bgroup"><button class="segbtn txt" id="rotatequad" title="Turn the screenshot inside the same four edges. The edges stay where they are; only which one is the top changes. A portrait screenshot fits a phone only two ways, so on a phone this is a half turn; a quarter turn where the screen is near-square or the screenshot fits the other way.">Rotate</button></div>
-        <div class="bgroup"><button class="segbtn txt" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button></div>
+        <div class="bgroup row" role="group" aria-label="Fit actions">
+          <button class="segbtn txt" id="redetect">Re-detect</button>
+          <button class="segbtn txt" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button>
+          <button class="segbtn txt" id="rotatequad" title="Turn the screenshot inside the same four edges. The edges stay where they are; only which one is the top changes. A portrait screenshot fits a phone only two ways, so on a phone this is a half turn; a quarter turn where the screen is near-square or the screenshot fits the other way.">Rotate</button>
+          <button class="segbtn txt" id="resetquad" title="Put the four edges back to a rectangle in the middle of the photo. Use this if a corner has ended up off the picture where you cannot grab it.">Reset</button>
+        </div>
       </div>
     </section>
 
