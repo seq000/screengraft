@@ -9,6 +9,18 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.1] - 2026-09-14
+
+### Changed
+
+- **Segment Button and Button Group have an Orientation variant** (138:255,
+  145:372, re-read 14 Sep): a vertical group rounds its first segment's top
+  corners and its last segment's bottom corners, a horizontal group the left
+  and right ones, a solo segment all four — at **radius 6** (radius/sm, was
+  4). The group's stroke is **`rgba(255,255,255,.32)`** in both orientations
+  (the frame instances still carried the older 55% grey), the shadow
+  unchanged. Verified per corner in the page.
+
 ## [0.63.0] - 2026-09-14
 
 ### Changed

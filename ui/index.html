@@ -88,9 +88,10 @@
     /* button-group/default/border — a 20% cool grey, the ONLY translucent
        stroke in the system; it sits over the photograph, so it has to read on
        any tone. The two shadows are the Button Group's and the Status pill's. */
-    /* Re-read from the Canvas well frame (7:36) on 14 Sep 2026: a 55% mid
-       grey stroke and a slightly heavier shadow than the first read. */
-    --group-edge:rgba(139,139,139,.55);
+    /* Button Group 145:372, re-read 14 Sep 2026 after the horizontal variants
+       landed: a 32% white stroke (the frame instances still carried the older
+       55% grey), radius/sm, and this shadow — the same in both orientations. */
+    --group-edge:rgba(255,255,255,.32);
     --group-shadow:0 2px 4px rgba(0,0,0,.08), 0 3px 10px rgba(0,0,0,.12), 0 4px 24px rgba(0,0,0,.25);
     --pill-shadow:0 2px 2px rgba(0,0,0,.03), 0 3px 5px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.25);
 
@@ -560,11 +561,22 @@
      Three groups on the left (zoom, fit, corners), three on the bottom, and
      the status pill top-centre; the well underneath keeps every pixel.
      ------------------------------------------------------------------ */
+  /* Orientation is a variant of both components now (Segment Button 138:255,
+     Button Group 145:372): Vertical rounds a segment's top or bottom corners,
+     Horizontal its left or right, Solo all four, at radius/sm. The group clips
+     to the same radius, so the end segments' own radii are what a hover or
+     press fill shows at the group's corners. */
   .bgroup{display:inline-flex;flex-direction:column;align-items:stretch;flex:none;
           background:var(--raise);border:var(--bw) solid var(--group-edge);
-          border-radius:var(--r-xs);box-shadow:var(--group-shadow);overflow:hidden}
+          border-radius:var(--r-sm);box-shadow:var(--group-shadow);overflow:hidden}
   .bgroup.row{flex-direction:row}
-  .segbtn,.segbtn:hover,.segbtn:active{border:0;border-radius:0;box-shadow:none;transform:none}
+  .bgroup > .segbtn:first-child{border-top-left-radius:var(--r-sm);border-top-right-radius:var(--r-sm)}
+  .bgroup > .segbtn:last-child{border-bottom-left-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
+  .bgroup.row > .segbtn:first-child{border-radius:var(--r-sm) 0 0 var(--r-sm)}
+  .bgroup.row > .segbtn:last-child{border-radius:0 var(--r-sm) var(--r-sm) 0}
+  .bgroup > .segbtn:only-child{border-radius:var(--r-sm)}
+  .segbtn,.segbtn:hover,.segbtn:active{border:0;box-shadow:none;transform:none}
+  .segbtn{border-radius:0}
   /* Segment Button re-read 14 Sep 2026: 32px tall, 32px minimum, 8px side
      padding; a text label sits in its own 6px-padded box, so a text button
      pads 14px. Was 28 / 6. */
