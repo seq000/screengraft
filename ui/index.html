@@ -605,6 +605,17 @@
   .bgroup::after{--ring:var(--group-edge-lum);mix-blend-mode:luminosity;z-index:2}
   .bgroup > .ring{--ring:var(--group-edge-hue);mix-blend-mode:hue;z-index:3}
   .bgroup > .ring.lift{--ring:var(--group-edge-lift);mix-blend-mode:soft-light;z-index:4}
+  /* WebKit does not blend against an accelerated <canvas> (or, reliably, an
+     <img>), so under html.noblend the four rings collapse to ONE plain ring
+     whose four side colours are computed in JS from the pixels under each
+     edge, through the same four blends (paintRingsFallback). Chrome keeps
+     the live per-pixel blend. */
+  .noblend .bgroup::before,.noblend .bgroup::after,.noblend .bgroup > .ring:not(.lift),
+  .noblend .pillwrap > .ring:not(.lift){display:none}
+  .noblend .bgroup > .ring.lift{box-shadow:none;mix-blend-mode:normal;
+          inset:calc(-1 * var(--group-bw));border:var(--group-bw) solid transparent;
+          border-radius:calc(var(--r-sm) + var(--group-bw))}
+  .noblend .pillwrap > .ring.lift{mix-blend-mode:normal;border-color:transparent}
   .bgroup.row{flex-direction:row}
   .bgroup > .segbtn:first-of-type{border-top-left-radius:var(--r-sm);border-top-right-radius:var(--r-sm)}
   .bgroup > .segbtn:last-of-type{border-bottom-left-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
@@ -2514,12 +2525,81 @@ $('#resetquad').onclick = () => {
 // invalidates them (reported 14 Sep 2026: the stroke appeared only after the
 // picture was moved). Toggling display forces a fresh paint of each ring.
 function refreshRings(){
+  paintRingsFallback();
   document.querySelectorAll('.bgroup > .ring, .pillwrap > .ring').forEach(r => {
     r.style.display = 'none'; void r.offsetHeight; r.style.display = '';
   });
   // ::before / ::after rings ride on the group; nudge the group itself.
   document.querySelectorAll('.bgroup').forEach(g => {
     g.style.willChange = 'transform'; void g.offsetHeight; g.style.willChange = '';
+  });
+}
+// ---- WebKit fallback for the blended strokes -------------------------------
+// The W3C compositing blends (the same maths mix-blend-mode uses), applied in
+// JS to the average backdrop under each side of a group, so Safari shows the
+// same adaptive hairline Chrome gets from the compositor. Paints are
+// [colour, opacity, mode] bottom to top, as in the design file.
+const IS_WEBKIT = /AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|CriOS|Edg/.test(navigator.userAgent);
+if (IS_WEBKIT) document.documentElement.classList.add('noblend');
+const RING_PAINTS = [[[15,107,255],.2,'saturation'],[[255,70,70],.15,'luminosity'],[[126,126,126],.2,'hue'],[[255,255,255],.4,'soft-light']];
+const _lum = c => .3*c[0] + .59*c[1] + .11*c[2];
+function _clipColor(c){ const l = _lum(c), n = Math.min(...c), x = Math.max(...c);
+  if (n < 0) c = c.map(v => l + (v - l) * l / (l - n));
+  if (x > 1) c = c.map(v => l + (v - l) * (1 - l) / (x - l)); return c; }
+const _setLum = (c, l) => { const d = l - _lum(c); return _clipColor(c.map(v => v + d)); };
+const _sat = c => Math.max(...c) - Math.min(...c);
+function _setSat(c, s){ const i = [0,1,2].sort((a,b) => c[a]-c[b]); const [mn, md, mx] = i; const o = [0,0,0];
+  if (c[mx] > c[mn]){ o[md] = (c[md]-c[mn]) * s / (c[mx]-c[mn]); o[mx] = s; } return o; }
+function _blend(mode, b, s){
+  if (mode === 'saturation') return _setLum(_setSat(b, _sat(s)), _lum(b));
+  if (mode === 'luminosity') return _setLum(b, _lum(s));
+  if (mode === 'hue') return _setLum(_setSat(s, _sat(b)), _lum(b));
+  if (mode === 'soft-light') return b.map((cb, i) => { const cs = s[i];
+    if (cs <= .5) return cb - (1 - 2*cs) * cb * (1 - cb);
+    const d = cb <= .25 ? ((16*cb - 12) * cb + 4) * cb : Math.sqrt(cb);
+    return cb + (2*cs - 1) * (d - cb); });
+  return s;
+}
+function ringColour(rgb){ let b = rgb.map(v => v/255);
+  for (const [col, a, mode] of RING_PAINTS){ const s = col.map(v => v/255); const r = _blend(mode, b, s); b = b.map((v, i) => v*(1-a) + r[i]*a); }
+  return 'rgb(' + b.map(v => Math.round(Math.max(0, Math.min(1, v))*255)).join(',') + ')'; }
+// One small copy of each pane's picture to sample from (a readback per draw,
+// not per pixel). Fit pane: the canvas; result pane: the composite <img>.
+const _sampleCv = document.createElement('canvas'), _sampleCx = _sampleCv.getContext('2d', {willReadFrequently: true});
+function _backdropSampler(source, rect){
+  const W = 256, H = Math.max(1, Math.round(256 * rect.height / Math.max(rect.width, 1)));
+  _sampleCv.width = W; _sampleCv.height = H;
+  try { _sampleCx.drawImage(source, 0, 0, W, H); } catch (e) { return null; }
+  const data = _sampleCx.getImageData(0, 0, W, H).data;
+  return (x, y) => { const px = Math.max(0, Math.min(W-1, Math.round((x - rect.left) * W / rect.width)));
+    const py = Math.max(0, Math.min(H-1, Math.round((y - rect.top) * H / rect.height)));
+    const i = (py*W + px) * 4; return data[i+3] ? [data[i], data[i+1], data[i+2]] : null; };
+}
+function _sideColours(sample, r, out){
+  const N = 9, sides = {top: [], right: [], bottom: [], left: []};
+  for (let k = 0; k < N; k++){ const t = (k + .5) / N;
+    sides.top.push(sample(r.left + r.width*t, r.top - 1)); sides.bottom.push(sample(r.left + r.width*t, r.bottom + 1));
+    sides.left.push(sample(r.left - 1, r.top + r.height*t)); sides.right.push(sample(r.right + 1, r.top + r.height*t)); }
+  for (const [side, pts] of Object.entries(sides)){ const ok = pts.filter(Boolean);
+    const avg = ok.length ? [0,1,2].map(i => ok.reduce((a, p) => a + p[i], 0) / ok.length) : [11,11,11];
+    out.style['border' + side[0].toUpperCase() + side.slice(1) + 'Color'] = ringColour(avg); }
+}
+let _ringsQueued = false;
+function paintRingsFallback(){
+  if (!IS_WEBKIT || _ringsQueued) return;
+  _ringsQueued = true;
+  requestAnimationFrame(() => { _ringsQueued = false;
+    const panes = [[$('#c'), $('.pane')], [$('#outImg'), $('#outPane')]];
+    for (const [src, pane] of panes){
+      if (!src || !pane) continue;
+      const ok = src.tagName === 'CANVAS' ? src.width > 0 : (!src.hidden && src.naturalWidth > 0);
+      const rect = src.getBoundingClientRect();
+      const sample = ok && rect.width > 0 ? _backdropSampler(src, rect) : null;
+      pane.querySelectorAll('.bgroup > .ring.lift, .pillwrap > .ring.lift').forEach(ring => {
+        const r = ring.parentElement.getBoundingClientRect();
+        if (sample) _sideColours(sample, r, ring); else ['Top','Right','Bottom','Left'].forEach(sd => ring.style['border' + sd + 'Color'] = ringColour([11,11,11]));
+      });
+    }
   });
 }
 function syncCornerRail(){
@@ -2532,6 +2612,7 @@ function syncCornerRail(){
 }
 function draw(){
   syncCornerRail();
+  paintRingsFallback();
   // The clip follows the quad while it is being dragged: the live layer IS the
   // fit, so leaving it on the old corners would make the two panes disagree
   // mid-drag — which is the one thing the side-by-side exists to prevent.
@@ -3343,6 +3424,7 @@ function markStale(){
   $('#imp').classList.remove('primary');
 }
 function syncOut(){
+  paintRingsFallback();
   // The live layer is a photo plus a transformed video, so it re-places rather
   // than being resized: the transform is computed FROM the zoom, and a stale
   // matrix puts the clip somewhere the fit is not.
@@ -3366,6 +3448,7 @@ function syncOut(){
   paintGizmo();
 }
 $('#scroller').addEventListener('scroll', () => {
+  paintRingsFallback();
   syncOut();
 });
 function autoPreview(){
@@ -3619,6 +3702,7 @@ async function renderPreview(){
     im.onload = () => {
       outNat = im.naturalWidth;
       refreshRings();
+      paintRingsFallback();
       // autoPreview runs on every drag, and it must not yank the pane away from
       // a clip that is playing. The still is still rendered and waiting behind.
       if ($('#liveWrap').hidden) showResult('still');

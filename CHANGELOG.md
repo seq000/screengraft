@@ -9,6 +9,19 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.6] - 2026-09-14
+
+### Fixed
+
+- **The blended stroke in Safari.** WebKit does not blend `mix-blend-mode`
+  elements against an accelerated `<canvas>`, so the rails and pills showed
+  no stroke there. Under WebKit the four rings collapse to one plain ring
+  whose four side colours are computed in JavaScript from the pixels under
+  each edge, through the same four blends (the W3C formulas; checked against
+  Chrome's compositor to within one level on five backdrops), refreshed on
+  every draw, scroll and result update from a small sampled copy of the
+  picture. Chrome keeps the live per-pixel blend.
+
 ## [0.63.5] - 2026-09-14
 
 ### Fixed
