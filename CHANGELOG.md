@@ -9,6 +9,14 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.62.3] - 2026-09-14
+
+### Changed
+
+- The 1x zoom icon is the design's own glyph (icons / 1x, 137:3649): the
+  label is an outlined vector at the frame's offset, not rendered text, so it
+  is identical on every machine and font.
+
 ## [0.62.2] - 2026-09-14
 
 ### Fixed
