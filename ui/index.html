@@ -96,10 +96,15 @@
          [0] #0F6BFF at 20%  saturation
          [1] #FF4646 at 15%  luminosity
          [2] #7E7E7E at 20%  hue
-       Drawn as three rings (see .bgroup::before / ::after / > .ring). */
+         [3] #FFFFFF at 40%  soft light   -- added 14 Sep: the three above
+             cancel on mid-tones (an orange table moved the edge 1 level);
+             soft light lifts mid-tones and does nothing at white, so the
+             line reads on wood and marble too (+20..+36 vs 16/-18 before).
+       Drawn as four rings (see .bgroup::before / ::after / > .ring). */
     --group-edge-sat:rgba(15,107,255,.2);
     --group-edge-lum:rgba(255,70,70,.15);
     --group-edge-hue:rgba(126,126,126,.2);
+    --group-edge-lift:rgba(255,255,255,.4);
     --group-shadow:0 2px 4px rgba(0,0,0,.08), 0 3px 10px rgba(0,0,0,.12), 0 4px 24px rgba(0,0,0,.25);
     --pill-shadow:0 2px 2px rgba(0,0,0,.03), 0 3px 5px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.25);
 
@@ -588,6 +593,7 @@
   .bgroup::before{border-color:var(--group-edge-sat);mix-blend-mode:saturation;z-index:1}
   .bgroup::after{border-color:var(--group-edge-lum);mix-blend-mode:luminosity;z-index:2}
   .bgroup > .ring{border-color:var(--group-edge-hue);mix-blend-mode:hue;z-index:3}
+  .bgroup > .ring.lift{border-color:var(--group-edge-lift);mix-blend-mode:soft-light;z-index:4}
   .bgroup.row{flex-direction:row}
   .bgroup > .segbtn:first-of-type{border-top-left-radius:var(--r-sm);border-top-right-radius:var(--r-sm)}
   .bgroup > .segbtn:last-of-type{border-bottom-left-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
@@ -618,23 +624,26 @@
      recessed surface and the group stroke, hidden while it has nothing to say.
      Glyph + weight + luminance encoding unchanged (see .status.ok/.warn/.err). */
   /* Keyed on the ids, not a class: the JS rewrites className on both pills. */
-  /* Status pill 5:7 / 5:10: the same three blend-mode paints as the Button
-     Group, 1px OUTSIDE. A pill is a <span> whose text the JS rewrites (no
-     child ring possible) and whose ::before is the status glyph — so only the
-     LUMINOSITY paint, the one that carries the adaptive contrast, is a real
-     blend ring (::after); the two 20% paints are plain rings under it.
-     No z-index, for the same reason as the rails: the rings blend against the
-     photograph only if nothing between them and it opens a stacking context.
-     #outSt sits AFTER #outWrap in the markup so it paints over it. */
-  #detSt,#outSt{position:absolute;top:12px;left:0;right:0;width:fit-content;margin:0 auto;
-               height:22px;padding:0 10px;border-radius:999px;background:var(--inchip-empty);
-               border:0;box-shadow:var(--pill-shadow), 0 0 0 1px var(--group-edge-hue), 0 0 0 1px var(--group-edge-sat);
-               max-width:calc(100% - 96px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  /* Status pill 5:7 / 5:10: the same four blend-mode paints as the Button
+     Group, 1px OUTSIDE. The pill's text (#detSt / #outSt) is rewritten by the
+     script and its ::before is the status glyph, so the box and the four rings
+     live on a .pillwrap around it. No z-index anywhere in the chain, for the
+     same reason as the rails: the rings blend against the photograph only if
+     nothing between them and it opens a stacking context. The result pill sits
+     AFTER #outWrap in the markup so it paints over it. */
+  .pillwrap{position:absolute;top:12px;left:0;right:0;width:fit-content;margin:0 auto;
+            height:22px;border-radius:999px;background:var(--inchip-empty);
+            box-shadow:var(--pill-shadow);max-width:calc(100% - 96px);display:block}
+  .pillwrap:has(> .status:empty){display:none}
+  .pillwrap > .ring{position:absolute;inset:-1px;border:1px solid;border-radius:999px;pointer-events:none}
+  .pillwrap > .ring.sat{border-color:var(--group-edge-sat);mix-blend-mode:saturation;z-index:1}
+  .pillwrap > .ring.lum{border-color:var(--group-edge-lum);mix-blend-mode:luminosity;z-index:2}
+  .pillwrap > .ring.hue{border-color:var(--group-edge-hue);mix-blend-mode:hue;z-index:3}
+  .pillwrap > .ring.lift{border-color:var(--group-edge-lift);mix-blend-mode:soft-light;z-index:4}
+  #detSt,#outSt{position:relative;height:22px;padding:0 10px;border-radius:999px;
+               max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
                display:inline-flex;line-height:20px}
   #detSt:empty,#outSt:empty{display:none}
-  #detSt::after,#outSt::after{content:"";position:absolute;inset:-1px;
-               border:1px solid var(--group-edge-lum);border-radius:999px;pointer-events:none;
-               mix-blend-mode:luminosity}
   .lbl{color:var(--ink);text-transform:uppercase;letter-spacing:.06em;font-size:11px;font-weight:600}
   .scroller{overflow:auto;background:var(--well);display:grid;
             min-height:0;min-width:0;
@@ -1173,22 +1182,22 @@
       <div class="scroller" id="scroller">
         <canvas id="c" tabindex="-1"></canvas>
       </div>
-      <span class="status" id="detSt"></span>
+      <span class="pillwrap"><i class="ring sat" aria-hidden="true"></i><i class="ring lum" aria-hidden="true"></i><i class="ring hue" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i><span class="status" id="detSt"></span></span>
       <span id="czSt" class="sr-only" aria-live="polite"></span>
       <!-- Left rail (Figma 137:4025): the zoom group, the fit button, then the
            corner rail. Icon-only, so every button carries an aria-label. The
            corner glyphs light the corner they name; the one currently picked
            on the canvas is also raised (kept in step from draw()). -->
       <div class="lrail" id="lrail">
-        <div class="bgroup" role="group" aria-label="Zoom"><i class="ring" aria-hidden="true"></i>
+        <div class="bgroup" role="group" aria-label="Zoom"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
           <button class="segbtn" id="czIn" aria-label="Zoom in" title="Zoom in (⌘ + scroll zooms to the pointer)"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M8.5 7.5H12.5V8.5H8.5V12.5H7.5V8.5H3.5V7.5H7.5V3.5H8.5V7.5Z"/></svg></button>
           <button class="segbtn" id="cz100" aria-label="Actual size, 100%" title="Actual size — one photo pixel per screen pixel"><svg viewBox="0 0 16 16" aria-hidden="true"><g transform="translate(2.77 4.245)" fill="var(--ink)"><path d="M4.80713 7.75049L6.78906 4.85547L4.78564 1.96045H5.88672L7.26172 4.11426H7.34766L8.70654 1.96045H9.75391L7.78809 4.81787L9.78076 7.75049H8.68506L7.31543 5.56445H7.22949L5.85449 7.75049H4.80713Z"/><path d="M2.05713 7.75049V1.07422H1.97119L0 2.50293V1.48242L2.0625 0H3.02393V7.75049H2.05713Z"/></g></svg></button>
           <button class="segbtn" id="czOut" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M12.5 8.5H3.5V7.5H12.5V8.5Z"/></svg></button>
         </div>
-        <div class="bgroup"><i class="ring" aria-hidden="true"></i>
+        <div class="bgroup"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
           <button class="segbtn" id="czFit" aria-label="Fit the photo to the pane" title="Fit the whole photo in the pane"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="var(--mute)" d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2C1.48232 15 1.05621 14.6067 1.00488 14.1025L1 14V2C1 1.44772 1.44772 1 2 1H14L14.1025 1.00488ZM2 14H14V2H2V14Z"/><path stroke="var(--icon)" d="M7 11.5H4.5V9M4.5 11.5L7.5 8.5"/><path stroke="var(--icon)" d="M9 4.5H11.5V7M11.5 4.5L8.5 7.5"/></svg></button>
         </div>
-        <div class="bgroup corners" role="group" aria-label="Select corner"><i class="ring" aria-hidden="true"></i>
+        <div class="bgroup corners" role="group" aria-label="Select corner"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
           <button class="segbtn" data-jump="0" aria-label="Top-left corner" title="Jump to the top-left corner"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M2 13C2 13.5523 2.44772 14 3 14H6V15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V10H2V13ZM15 13C15 14.0357 14.2128 14.887 13.2041 14.9893L13 15H10V14H13C13.5523 14 14 13.5523 14 13V10H15V13ZM6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2ZM13 1C14.1046 1 15 1.89543 15 3V6H14V3C14 2.44772 13.5523 2 13 2H10V1H13Z"/><path fill="var(--acc-ink)" d="M6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2Z"/></svg></button>
           <button class="segbtn" data-jump="1" aria-label="Top-right corner" title="Jump to the top-right corner"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M2 13C2 13.5523 2.44772 14 3 14H6V15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V10H2V13ZM15 13C15 14.0357 14.2128 14.887 13.2041 14.9893L13 15H10V14H13C13.5523 14 14 13.5523 14 13V10H15V13ZM6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2ZM13 1C14.1046 1 15 1.89543 15 3V6H14V3C14 2.44772 13.5523 2 13 2H10V1H13Z"/><path fill="var(--acc-ink)" d="M10 2H13C13.5523 2 14 2.44772 14 3V6H15V3C15 1.89543 14.1046 1 13 1H10V2Z"/></svg></button>
           <button class="segbtn" data-jump="3" aria-label="Bottom-left corner" title="Jump to the bottom-left corner"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M2 13C2 13.5523 2.44772 14 3 14H6V15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V10H2V13ZM15 13C15 14.0357 14.2128 14.887 13.2041 14.9893L13 15H10V14H13C13.5523 14 14 13.5523 14 13V10H15V13ZM6 2H3C2.44772 2 2 2.44772 2 3V6H1V3C1 1.89543 1.89543 1 3 1H6V2ZM13 1C14.1046 1 15 1.89543 15 3V6H14V3C14 2.44772 13.5523 2 13 2H10V1H13Z"/><path fill="var(--acc-ink)" d="M6 14H3C2.44772 14 2 13.5523 2 13V10H1V13C1 14.1046 1.89543 15 3 15H6V14Z"/></svg></button>
@@ -1206,7 +1215,7 @@
            not an action on the fit. The frame's last two segments are
            placeholders; Rotate and Reset fill them. -->
       <div class="brail" id="cvbar">
-        <div class="bgroup row" role="group" aria-label="Fit actions"><i class="ring" aria-hidden="true"></i>
+        <div class="bgroup row" role="group" aria-label="Fit actions"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
           <button class="segbtn txt" id="redetect">Re-detect</button>
           <button class="segbtn txt" id="pointat" title="Click once inside the screen and the detector will use that point. The detectors usually do find the screen — they just cannot tell which region IS one, and that is the part you can answer instantly.">Point at screen</button>
           <button class="segbtn txt" id="rotatequad" title="Turn the screenshot inside the same four edges. The edges stay where they are; only which one is the top changes. A portrait screenshot fits a phone only two ways, so on a phone this is a half turn; a quarter turn where the screen is near-square or the screenshot fits the other way.">Rotate</button>
@@ -1223,7 +1232,7 @@
         fitted quad by the browser. Not the composite — the composite already
         has a frame burned into it, so playing over that would show two screens.
       --><div id="liveWrap" hidden><img id="liveBg" alt=""><video id="liveVid" loop muted playsinline></video></div></div>
-      <span class="status" id="outSt">Press Preview</span>
+      <span class="pillwrap"><i class="ring sat" aria-hidden="true"></i><i class="ring lum" aria-hidden="true"></i><i class="ring hue" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i><span class="status" id="outSt">Press Preview</span></span>
       <!-- Video controls. Hidden entirely for a still source: a scrubber over a
            screenshot is a control that can only confuse. The fit itself is
            unchanged — you match the edges on one frame and every frame gets the

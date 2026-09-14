@@ -9,6 +9,22 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.3] - 2026-09-14
+
+### Changed
+
+- **A fourth stroke paint: white at 40% in soft light**, on top of the three
+  blended ones, added to the Button Group and Status pill components in the
+  design file and ported. The three alone cancel on mid-tones — over an
+  orange table the edge moved one level — because their luminosity target
+  sits at the orange's own luminance. Soft light lifts mid-tones and does
+  nothing at white, so the hairline now reads on wood, marble and orange
+  (+20 to +36 levels) while black (+36) and white (−13) keep their
+  character; measured with the browser's own blend maths across six
+  backdrops. The status pills now carry all four paints as real blend rings:
+  the box and rings moved to a `.pillwrap` around the text the script
+  rewrites, hidden with `:has(> .status:empty)`.
+
 ## [0.63.2] - 2026-09-14
 
 ### Changed
