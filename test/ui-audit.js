@@ -306,6 +306,9 @@
   // "cropped at the bottom on zoom", in both panes (14 Sep 2026). The wells
   // must opt out of the bounce.
   const wells = ['#scroller', '#outWrap'].map(s => document.querySelector(s)).filter(Boolean);
+  ok('neither well shows a native scrollbar (classic bars ate 17px of the photo)',
+     wells.length === 2 && wells.every(w => w.offsetHeight === w.clientHeight && w.offsetWidth === w.clientWidth),
+     wells.map(w => w.id + ':' + (w.offsetHeight - w.clientHeight) + '/' + (w.offsetWidth - w.clientWidth)).join(' '));
   ok('both wells opt out of the overscroll bounce',
      wells.length === 2 && wells.every(w => /none|contain/.test(getComputedStyle(w).overscrollBehaviorY)),
      wells.map(w => w.id + ':' + getComputedStyle(w).overscrollBehaviorY).join(' '));

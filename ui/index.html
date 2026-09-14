@@ -792,6 +792,17 @@
   button.switch:focus-visible .sw-track{box-shadow:0 0 0 3px var(--acc-soft);border-color:var(--acc)}
 
   #outPane{display:grid}
+  /* No native scrollbars on either well (14 Sep 2026). With a mouse attached
+     macOS draws CLASSIC scrollbars, always visible, and each well then gives
+     up 17px at the bottom and the right to the track; in Safari's dark theme
+     the horizontal track is a black band with the photo stopping above it --
+     "the photo is cropped a bit at the bottom", both panes, every zoom route.
+     Measured in that Safari: offsetHeight 824, clientHeight 807, scrollHeight
+     nine more than the canvas; with the bars hidden all three agree. The
+     design's well has no scrollbar; panning is the wheel, cmd+wheel and
+     space-drag, and the result pane mirrors this one. */
+  #scroller,#outWrap{scrollbar-width:none}
+  #scroller::-webkit-scrollbar,#outWrap::-webkit-scrollbar{display:none}
   #outWrap{overflow:auto;overscroll-behavior:none;background:var(--well);display:grid;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
   /* The depth-of-field gizmo: an SVG laid exactly over the composite, drawn
      in PHOTO pixels (its viewBox is the photo) so every coordinate is the

@@ -9,6 +9,16 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.9] - 2026-09-14
+
+### Fixed
+
+- The photo stopped short of the bottom of the well — a black band, both
+  panes, at every zoom. With a mouse attached macOS draws classic, always-on
+  scrollbars, and each well was giving 17px at the bottom and right to the
+  track. Both wells now hide their native scrollbars; panning is unchanged
+  (wheel, ⌘-wheel to zoom, space-drag).
+
 ## [0.63.8] - 2026-09-14
 
 ### Fixed
