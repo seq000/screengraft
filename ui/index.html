@@ -2565,15 +2565,20 @@ function ringColour(rgb){ let b = rgb.map(v => v/255);
   return 'rgb(' + b.map(v => Math.round(Math.max(0, Math.min(1, v))*255)).join(',') + ')'; }
 // One small copy of each pane's picture to sample from (a readback per draw,
 // not per pixel). Fit pane: the canvas; result pane: the composite <img>.
+const WELL_RGB = [10,10,11];   // --well, what is under a rail that is not over the picture
 const _sampleCv = document.createElement('canvas'), _sampleCx = _sampleCv.getContext('2d', {willReadFrequently: true});
 function _backdropSampler(source, rect){
   const W = 256, H = Math.max(1, Math.round(256 * rect.height / Math.max(rect.width, 1)));
   _sampleCv.width = W; _sampleCv.height = H;
   try { _sampleCx.drawImage(source, 0, 0, W, H); } catch (e) { return null; }
   const data = _sampleCx.getImageData(0, 0, W, H).data;
-  return (x, y) => { const px = Math.max(0, Math.min(W-1, Math.round((x - rect.left) * W / rect.width)));
-    const py = Math.max(0, Math.min(H-1, Math.round((y - rect.top) * H / rect.height)));
-    const i = (py*W + px) * 4; return data[i+3] ? [data[i], data[i+1], data[i+2]] : null; };
+  // A point outside the picture is over the well, not over the picture's
+  // nearest edge -- clamping put the left rail on the photo's bright edge
+  // column and painted it light (Safari, 14 Sep 2026).
+  return (x, y) => { if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return WELL_RGB;
+    const px = Math.max(0, Math.min(W-1, Math.floor((x - rect.left) * W / rect.width)));
+    const py = Math.max(0, Math.min(H-1, Math.floor((y - rect.top) * H / rect.height)));
+    const i = (py*W + px) * 4; return data[i+3] ? [data[i], data[i+1], data[i+2]] : WELL_RGB; };
 }
 function _sideColours(sample, r, out){
   const N = 9, sides = {top: [], right: [], bottom: [], left: []};
@@ -2581,7 +2586,7 @@ function _sideColours(sample, r, out){
     sides.top.push(sample(r.left + r.width*t, r.top - 1)); sides.bottom.push(sample(r.left + r.width*t, r.bottom + 1));
     sides.left.push(sample(r.left - 1, r.top + r.height*t)); sides.right.push(sample(r.right + 1, r.top + r.height*t)); }
   for (const [side, pts] of Object.entries(sides)){ const ok = pts.filter(Boolean);
-    const avg = ok.length ? [0,1,2].map(i => ok.reduce((a, p) => a + p[i], 0) / ok.length) : [11,11,11];
+    const avg = ok.length ? [0,1,2].map(i => ok.reduce((a, p) => a + p[i], 0) / ok.length) : WELL_RGB;
     out.style['border' + side[0].toUpperCase() + side.slice(1) + 'Color'] = ringColour(avg); }
 }
 let _ringsQueued = false;
@@ -2597,7 +2602,7 @@ function paintRingsFallback(){
       const sample = ok && rect.width > 0 ? _backdropSampler(src, rect) : null;
       pane.querySelectorAll('.bgroup > .ring.lift, .pillwrap > .ring.lift').forEach(ring => {
         const r = ring.parentElement.getBoundingClientRect();
-        if (sample) _sideColours(sample, r, ring); else ['Top','Right','Bottom','Left'].forEach(sd => ring.style['border' + sd + 'Color'] = ringColour([11,11,11]));
+        if (sample) _sideColours(sample, r, ring); else ['Top','Right','Bottom','Left'].forEach(sd => ring.style['border' + sd + 'Color'] = ringColour(WELL_RGB));
       });
     }
   });

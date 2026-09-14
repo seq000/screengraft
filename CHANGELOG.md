@@ -9,6 +9,14 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.63.7] - 2026-09-14
+
+### Fixed
+
+- Safari fallback: a rail outside the picture — the left rail over the well —
+  sampled the picture's nearest edge column and came out light. Points outside
+  the picture now take the well's colour.
+
 ## [0.63.6] - 2026-09-14
 
 ### Fixed
