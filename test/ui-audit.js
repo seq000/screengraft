@@ -301,6 +301,16 @@
   // an edge keeps the rectified band. Presence only — the picture needs an eye.
   ok('the strip can paint a corner loupe', typeof paintCorner === 'function');
 
+  // The fit canvas backs its store at devicePixelRatio (14 Sep 2026): a CSS-
+  // sized store was upsampled and every overlay line was softer than the
+  // gizmo's next door.
+  if (typeof cv !== 'undefined' && typeof cvW !== 'undefined' && cv.width > 0){
+    const dpr = Math.max(1, devicePixelRatio || 1);
+    ok('the fit canvas store is devicePixelRatio times its CSS size',
+       Math.abs(cv.width - Math.round(cvW * dpr)) <= 1 && Math.abs(cv.getBoundingClientRect().width - cvW) <= 1,
+       `store ${cv.width} css ${cvW} dpr ${dpr}`);
+  }
+
   // Gizmo strokes are screen px * --gk, never vector-effect: WebKit scales a
   // non-scaling-stroke's dash pattern too, so dashes grew on zoom out (14 Sep).
   {

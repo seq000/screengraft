@@ -9,6 +9,17 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.64.1] - 2026-09-14
+
+### Fixed
+
+- The fit overlay was softer than the result pane's gizmo on a Retina display:
+  the canvas store was sized in CSS pixels and upsampled. It is now sized at
+  the device pixel ratio, so the photo and every line are drawn sharp.
+- The dashed guide read as ~9/2 instead of 6/5: round caps were extending
+  every dash by the line width. Dashed strokes use butt caps, matching the
+  depth-of-field lines.
+
 ## [0.64.0] - 2026-09-14
 
 ### Changed

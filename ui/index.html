@@ -1747,7 +1747,10 @@ const GUIDE_DASH = [6, 5];
 function cased(c, path, coreW, coreColor, dash){
   c.save();
   if (dash) c.setLineDash(dash);
-  c.lineCap = 'round'; c.lineJoin = 'round';
+  // Butt caps on a dashed stroke: a round cap grows every dash by the line
+  // width at both ends, so the 6/5 guide read as ~9/2 under its 2.9px casing
+  // while the gizmo (SVG, butt caps) showed a true 6/5 (14 Sep 2026).
+  c.lineCap = dash ? 'butt' : 'round'; c.lineJoin = 'round';
   c.strokeStyle = CASE_A; c.lineWidth = coreW + CASE_PAD; path(); c.stroke();
   c.strokeStyle = coreColor; c.lineWidth = coreW; path(); c.stroke();
   c.restore();
@@ -2148,6 +2151,7 @@ $('#figmaBtn').onclick = async () => {
    with the two UNCHANGED adjacent lines. Corner handles stay for edges that
    run off-frame or sit behind an occluder. */
 const cv = $('#c'), ctx = cv.getContext('2d');
+let cvW = 0, cvH = 0, cvDpr = 1;   // the canvas's CSS size and the device-pixel factor of its store
 const strip = $('#strip'), sctx = strip.getContext('2d');
 const stripF = $('#stripF'), fctx = stripF.getContext('2d');
 const img = new Image();
@@ -2223,8 +2227,17 @@ function computeFit(){
 function setCanvasZoom(z, focus){
   const prev = scale;
   scale = Math.max(0.05, Math.min(4, z));
-  cv.width = Math.round(img.naturalWidth * scale);
-  cv.height = Math.round(img.naturalHeight * scale);
+  // The backing store is sized in DEVICE pixels and the element in CSS pixels,
+  // so on a Retina display the photo and the overlay are drawn at 2x and the
+  // overlay's 1px lines are as sharp as the SVG gizmo's in the result pane.
+  // Until 14 Sep 2026 the store was CSS-sized and the browser upsampled it --
+  // every line in the fit pane was softer than the same line one pane over.
+  // draw() undoes the factor with setTransform, so everything below still
+  // thinks in CSS px: cvW/cvH are the CSS size, cv.width/height the store.
+  cvW = Math.round(img.naturalWidth * scale); cvH = Math.round(img.naturalHeight * scale);
+  cvDpr = Math.max(1, window.devicePixelRatio || 1);
+  cv.width = Math.round(cvW * cvDpr); cv.height = Math.round(cvH * cvDpr);
+  cv.style.width = cvW + 'px'; cv.style.height = cvH + 'px';
   $('#czSt').textContent = Math.round(scale*100) + '%';
   draw();
   const sc = $('#scroller');
@@ -2264,8 +2277,8 @@ function zoomAt(z, clientX, clientY){
   const before = pos({clientX, clientY});
   setCanvasZoom(z);
   const sc = $('#scroller'), r = cv.getBoundingClientRect();
-  sc.scrollLeft += r.left + before[0] * scale * (r.width / cv.width) - clientX;
-  sc.scrollTop  += r.top  + before[1] * scale * (r.height / cv.height) - clientY;
+  sc.scrollLeft += r.left + before[0] * scale * (r.width / cvW) - clientX;
+  sc.scrollTop  += r.top  + before[1] * scale * (r.height / cvH) - clientY;
 }
 
 /* A trackpad pinch arrives as a wheel event with ctrlKey synthesised true, and
@@ -2661,9 +2674,10 @@ function draw(){
   // fit, so leaving it on the old corners would make the two panes disagree
   // mid-drag — which is the one thing the side-by-side exists to prevent.
   if (!$('#liveWrap').hidden) placeLiveVideo();
-  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0);          // CSS px from here on; the store is cvDpr times larger
+  ctx.clearRect(0,0,cvW,cvH);
   if (!img.naturalWidth) return;
-  ctx.drawImage(img, 0,0, cv.width, cv.height);
+  ctx.drawImage(img, 0,0, cvW, cvH);
   if (!st.corners) return;
   const P = st.corners.map(([x,y]) => [x*scale, y*scale]);
   const active = drag || hover || pick;
@@ -2742,7 +2756,7 @@ function draw(){
 
 function pos(e){
   const r = cv.getBoundingClientRect();
-  return [(e.clientX-r.left)*cv.width/r.width/scale, (e.clientY-r.top)*cv.height/r.height/scale];
+  return [(e.clientX-r.left)*cvW/r.width/scale, (e.clientY-r.top)*cvH/r.height/scale];
 }
 function hitTest(p){
   if (!st.corners) return null;
