@@ -9,6 +9,14 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.64.2] - 2026-09-14
+
+### Changed
+
+- Every orange line in the fit overlay is 1px — the quad, the active edge
+  (was 1.5) and the dashed guide — matching the depth-of-field lines.
+  Handle rings keep their 2px stroke.
+
 ## [0.64.1] - 2026-09-14
 
 ### Fixed

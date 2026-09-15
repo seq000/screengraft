@@ -1742,7 +1742,7 @@ const ROTATE_CURSOR = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(
   '<path d="M15.6 2.6l0.4 4.2-4.2 0.3" fill="none" stroke="rgba(0,0,0,.85)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>' +
   '<path d="M15.6 2.6l0.4 4.2-4.2 0.3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
   '</svg>') + '") 11 11, crosshair';
-const QUAD_W = 0.9, QUAD_ACTIVE_W = 1.5, GUIDE_W = 0.9, CASE_PAD = 2.0;
+const QUAD_W = 1, QUAD_ACTIVE_W = 1, GUIDE_W = 1, CASE_PAD = 2.0;   // every line 1px, 14 Sep 2026 — the active edge no longer thickens
 const GUIDE_DASH = [6, 5];
 function cased(c, path, coreW, coreColor, dash){
   c.save();
