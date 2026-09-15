@@ -301,6 +301,21 @@
   // an edge keeps the rectified band. Presence only — the picture needs an eye.
   ok('the strip can paint a corner loupe', typeof paintCorner === 'function');
 
+  // Gizmo strokes are screen px * --gk, never vector-effect: WebKit scales a
+  // non-scaling-stroke's dash pattern too, so dashes grew on zoom out (14 Sep).
+  {
+    const gzEl = document.getElementById('dofGizmo');
+    const rules = [...document.styleSheets].flatMap(ss => { try { return [...ss.cssRules]; } catch (e) { return []; } })
+      .filter(r => r.selectorText && r.selectorText.startsWith('#dofGizmo'));
+    ok('no gizmo rule relies on vector-effect', rules.every(r => !/vector-effect/.test(r.cssText)));
+    if (gzEl && !gzEl.hidden){
+      const k = parseFloat(gzEl.style.getPropertyValue('--gk')) || 0;
+      const f = gzEl.querySelector('.focus');
+      ok('the sharp line is 1 screen px at this zoom', f && k > 0 && Math.abs(parseFloat(getComputedStyle(f).strokeWidth) / k - 1) < 0.02,
+         f ? `${(parseFloat(getComputedStyle(f).strokeWidth) / k).toFixed(2)}px` : 'no line');
+    }
+  }
+
   // The DoF gizmo's viewBox must be the PHOTO's size, never the preview's: the
   // preview is resampled to <=1600px and the corners are photo pixels. Checked
   // whenever a photo and a preview are both up.

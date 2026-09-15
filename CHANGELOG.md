@@ -9,6 +9,17 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.64.0] - 2026-09-14
+
+### Changed
+
+- Depth-of-field lines are 1px (the far lines were 0.9), and every gizmo
+  stroke and dash is now sized in screen pixels at every zoom. In Safari the
+  dashes used to grow as you zoomed out.
+- Experiment: a white casing under the overlay instead of black — add
+  `&case=light` to the page URL. One token (`--overlay-case`) drives the quad,
+  the guides, the handles and the DoF gizmo alike. Off by default.
+
 ## [0.63.10] - 2026-09-14
 
 ### Fixed

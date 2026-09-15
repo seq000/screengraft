@@ -813,12 +813,25 @@
   /* Same rules as the fit overlay (v0.54.3): thin core, a light casing
      underneath at 35% black, dashes 6/5. The casing is what survives a
      photograph; the thinness is the request. */
-  #dofGizmo .case{stroke:rgba(0,0,0,.35);fill:none;vector-effect:non-scaling-stroke}
-  #dofGizmo .focus{stroke:#f5623d;stroke-width:1;fill:none;vector-effect:non-scaling-stroke}
-  #dofGizmo .far{stroke:#f5623d;stroke-width:0.9;fill:none;vector-effect:non-scaling-stroke}
+  /* The casing colour is one token so the canvas overlay and the SVG gizmo
+     agree. `html.lightcase` is an EXPERIMENT (14 Sep 2026): a white casing
+     instead of black, to be judged on real photographs. Flip it with
+     ?case=light in the URL or the toggle in Overlay; nothing else changes. */
+  :root{--overlay-case:rgba(0,0,0,.35)}
+  html.lightcase{--overlay-case:rgba(255,255,255,.55)}
+  /* Every gizmo width is a SCREEN px times --gk (photo px per screen px, set
+     by paintGizmo on each zoom) -- not vector-effect:non-scaling-stroke. WebKit
+     applies non-scaling-stroke to the dash pattern as well as the width, so
+     dashes set in photo px came out scaled twice and grew with every zoom out
+     (reported 14 Sep 2026); Chrome scaled only the width. Doing the maths
+     ourselves makes the two agree, and matches the canvas overlay, which has
+     always drawn in screen px. Lines are 1px, casings +2px, as on the canvas. */
+  #dofGizmo{--gk:1}
+  #dofGizmo .case{stroke:var(--overlay-case);fill:none;stroke-width:calc(3px * var(--gk))}
+  #dofGizmo .focus{stroke:#f5623d;stroke-width:calc(1px * var(--gk));fill:none}
+  #dofGizmo .far{stroke:#f5623d;stroke-width:calc(1px * var(--gk));fill:none}
   #dofGizmo .far.out{opacity:.75}
-  /* Dash lengths are set inline in photo px scaled by the zoom (SVG dashes
-     are viewBox units; non-scaling-stroke does not cover them), so they read
+  /* Dash lengths are set inline in photo px scaled by the zoom, so they read
      as 6/5 on screen at any zoom -- the fit overlay's GUIDE_DASH. */
   /* pointer-events:ALL, not auto: the rings are hollow (v0.54.7), and an
      unfilled SVG shape under `auto` is hit only on its stroke — the centre of
@@ -826,17 +839,17 @@
      could not be grabbed at all on a steep fit (reported 14 Sep 2026). `all`
      hits the interior whatever the fill. Each handle also carries a .hit disc,
      a 10px-radius invisible target, because a 4px ring is not a grab area. */
-  #dofGizmo .h{fill:none;stroke:#f5623d;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:all;cursor:move}
+  #dofGizmo .h{fill:none;stroke:#f5623d;stroke-width:calc(2px * var(--gk));pointer-events:all;cursor:move}
   #dofGizmo .hit{fill:transparent;stroke:none;pointer-events:all;cursor:move}
   #dofGizmo .hit.pipHit{cursor:inherit}
   #dofGizmo .hit[data-h="str"]{cursor:ew-resize}
-  #dofGizmo .hcase{fill:none;stroke:rgba(0,0,0,.35);stroke-width:4;vector-effect:non-scaling-stroke;pointer-events:none}
+  #dofGizmo .hcase{fill:none;stroke:var(--overlay-case);stroke-width:calc(4px * var(--gk));pointer-events:none}
   #dofGizmo .h.pip{cursor:url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M17.5 11a6.5 6.5 0 1 1-2.2-4.9' fill='none' stroke='rgba(0,0,0,.85)' stroke-width='4.2' stroke-linecap='round'/%3E%3Cpath d='M17.5 11a6.5 6.5 0 1 1-2.2-4.9' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M15.6 2.6l0.4 4.2-4.2 0.3' fill='none' stroke='rgba(0,0,0,.85)' stroke-width='4.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M15.6 2.6l0.4 4.2-4.2 0.3' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 11 11, crosshair}
   #dofGizmo .h.thumb{cursor:ew-resize}
-  #dofGizmo .h.pip{fill:#f5623d;stroke:#fff;stroke-width:1.2}
-  #dofGizmo .h.thumb{fill:#fff;stroke:#f5623d;stroke-width:2}
+  #dofGizmo .h.pip{fill:#f5623d;stroke:#fff;stroke-width:calc(1.2px * var(--gk))}
+  #dofGizmo .h.thumb{fill:#fff;stroke:#f5623d;stroke-width:calc(2px * var(--gk))}
   #dofGizmo .h:active{cursor:grabbing}
-  #dofGizmo text{font:600 11px system-ui,-apple-system,sans-serif;fill:#fff;paint-order:stroke;stroke:rgba(0,0,0,.75);stroke-width:3px;stroke-linejoin:round;pointer-events:none}
+  #dofGizmo text{font:600 11px system-ui,-apple-system,sans-serif;fill:#fff;paint-order:stroke;stroke:rgba(0,0,0,.75);stroke-width:calc(3px * var(--gk));stroke-linejoin:round;pointer-events:none}
   #outImg,#outVid{display:block;margin:auto}
   /* The live layer stacks the clip on the photo. `position:relative` on the
      wrapper and `transform-origin:0 0` on the video are what make the matrix3d
@@ -1705,7 +1718,15 @@ const recall = (k,d) => { try{ const v = localStorage.getItem('sg.'+k); return v
    The dark casing underneath is NOT optional and stays: flat accent measures
    ~1.06:1 against mid-tone photography, which is the failure the casing was
    introduced to fix. CORE_IDLE stays white for the strip's idle rule. */
-const CASE_A = 'rgba(0,0,0,.35)', CORE_IDLE = 'rgba(255,255,255,.92)';
+let CASE_A = 'rgba(0,0,0,.35)'; const CORE_IDLE = 'rgba(255,255,255,.92)';
+// Casing follows the --overlay-case token (see the CSS), so the light-casing
+// experiment reaches the canvas overlay too. Read once per toggle, not per draw.
+function setLightCase(on){
+  document.documentElement.classList.toggle('lightcase', !!on);
+  CASE_A = getComputedStyle(document.documentElement).getPropertyValue('--overlay-case').trim() || CASE_A;
+  try { if (img.naturalWidth) draw(); } catch (e) {}   // before the image exists there is nothing to redraw
+}
+addEventListener('DOMContentLoaded', () => { if (new URLSearchParams(location.search).get('case') === 'light') setLightCase(true); });
 const CORE_ACTIVE = '#f5623d';
 const CORE_QUAD = '#f23b0d';
 // Line weights for the fit overlay, in one place. Thinned 13 Sep 2026 on
@@ -3093,6 +3114,7 @@ function paintGizmo(){
   gz.style.left = im.offsetLeft + 'px'; gz.style.top = im.offsetTop + 'px';
   gz.style.width = im.clientWidth + 'px'; gz.style.height = im.clientHeight + 'px';
   const k = W / Math.max(im.clientWidth, 1);           // photo px per screen px
+  gz.style.setProperty('--gk', k);                     // every stroke width in the CSS is screen px * this
   const g = gizmoGeom(); if (!g.H || !g.Hi) return;
   const P = (f, q) => applyH(g.H, gzPt(g, f, q));
   const a0 = P(dofStart, -0.06), a1 = P(dofStart, 1.06), ac = P(dofStart, dofK);
@@ -3119,9 +3141,9 @@ function paintGizmo(){
   const split = (p0, p1, h) => { const v = unit(sub(p1, p0)); return [[p0, sub(h, mul(v, brk))], [add(h, mul(v, brk)), p1]]; };
   const LL = (p0, p1, h, cls, extra='') => split(p0, p1, h).map(([x, y]) => L(x, y, cls, extra)).join('');
   gz.innerHTML =
-    LL(a0, a1, ac, 'case', 'stroke-width="3"') + LL(a0, a1, ac, 'focus') +
-    LL(b0, b1, bc, 'case', `stroke-width="2.9" ${dash(beyond)}`) + LL(b0, b1, bc, 'far' + (beyond ? ' out' : ''), dash(beyond)) +
-    (two ? LL(c0, c1, cc, 'case', `stroke-width="2.9" ${dash(beyond2)}`) + LL(c0, c1, cc, 'far' + (beyond2 ? ' out' : ''), dash(beyond2)) : '') +
+    LL(a0, a1, ac, 'case') + LL(a0, a1, ac, 'focus') +
+    LL(b0, b1, bc, 'case', dash(beyond)) + LL(b0, b1, bc, 'far' + (beyond ? ' out' : ''), dash(beyond)) +
+    (two ? LL(c0, c1, cc, 'case', dash(beyond2)) + LL(c0, c1, cc, 'far' + (beyond2 ? ' out' : ''), dash(beyond2)) : '') +
     hit(a0, 'rotA', 'pipHit') + `<circle cx="${a0[0]}" cy="${a0[1]}" r="${rp}" class="h pip" data-h="rotA"/>` +
     hit(a1, 'rotB', 'pipHit') + `<circle cx="${a1[0]}" cy="${a1[1]}" r="${rp}" class="h pip" data-h="rotB"/>` +
     ring(ac, 'start') + ring(bc, 'end') + (two ? ring(cc, 'end2') : '') +
