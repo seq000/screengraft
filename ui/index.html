@@ -744,9 +744,19 @@
      push the bar outside the frame it is anchored to. */
   /* Positioning only -- the look (background, the four-blend-ring stroke,
      radius, shadow) now comes from the .bgroup.row inside it, same split as
-     .brail/.bgroup on the fit pane. */
-  .cvbar{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;z-index:3;
-         max-width:calc(100% - 32px);overflow-x:auto;white-space:nowrap}
+     .brail/.bgroup on the fit pane. Centred with left:0/right:0 + justify-
+     content:center, NOT left:50%+transform: a transform (like the z-index
+     this replaced) opens its own stacking context, and mix-blend-mode cannot
+     cross a stacking-context boundary -- the group's four rings would blend
+     against .cvbar's own (empty) background instead of the video/photo
+     behind it. Exactly the gotcha .brail was already written to avoid;
+     .cvbar just hadn't been, since it predates the group being inside it.
+     pointer-events follows .brail's pattern for the same reason: the bar
+     now spans the full width, so clicks on the canvas either side of the
+     group must still pass through. */
+  .cvbar{position:absolute;left:0;right:0;bottom:16px;display:flex;justify-content:center;
+         padding:0 var(--s4);pointer-events:none;overflow-x:auto;white-space:nowrap}
+  .cvbar .bgroup{pointer-events:auto}
   /* The slider cell: label, track, frame counter, in the Segment Button's own
      32px height and 12px side padding (227:5326). Same background as the
      group it sits in, so it needs no radius of its own to look seamless at
