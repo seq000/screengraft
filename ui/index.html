@@ -633,7 +633,18 @@
           inset:calc(-1 * var(--group-bw));border:var(--group-bw) solid transparent;
           border-radius:calc(var(--r-sm) + var(--group-bw))}
   .noblend .pillwrap > .ring.lift{mix-blend-mode:normal;border-color:transparent}
-  .bgroup.row{flex-direction:row}
+  /* flex-wrap:nowrap and align-items:stretch are declared here, not just on
+     .bgroup, because a generic .row utility (line ~908, unrelated -- it wraps
+     chip lists in the sidebar) happens to share this class name and sets
+     flex-wrap:wrap/align-items:center at the same specificity as .bgroup's
+     own base rule. .bgroup.row's two classes outrank the generic one-class
+     .row, so declaring them here wins outright rather than depending on
+     which rule the cascade happens to read last. Latent since the class was
+     first reused for orientation (11 Sep) -- every existing horizontal group
+     happened to fit its container without wrapping, so nothing ever forced
+     it to matter until the video bar's Button Group (16 Sep, 7:38) hit a
+     narrower parent and visibly split into two rows. */
+  .bgroup.row{flex-direction:row;flex-wrap:nowrap;align-items:stretch}
   .bgroup > .segbtn:first-of-type{border-top-left-radius:var(--r-sm);border-top-right-radius:var(--r-sm)}
   .bgroup > .segbtn:last-of-type{border-bottom-left-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
   .bgroup.row > .segbtn:first-of-type{border-radius:var(--r-sm) 0 0 var(--r-sm)}
@@ -652,8 +663,17 @@
   /* Segment Button re-read 14 Sep 2026: 32px tall, 32px minimum, 8px side
      padding; a text label sits in its own 6px-padded box, so a text button
      pads 14px. Was 28 / 6. */
+  /* flex-shrink:0 -- min-width:32px above is a floor for an ICON button's
+     square, not a licence to crush a text button's label below readable
+     width. A .segbtn's min-width:auto default (content-based) would already
+     have protected text buttons in a flex row; setting an explicit min-width
+     removes that protection, so it has to come back explicitly. Surfaced by
+     the video bar's Button Group (16 Sep, 7:38): "Preview" shrank to a single
+     "P" in a narrow pane before this. The slider's own input keeps its
+     min-width:140 floor and is what gives way first (see #vframe below). */
   .segbtn{height:32px;min-width:32px;padding:0 8px;font-size:12px;color:var(--ink);
-          background:var(--raise);display:inline-flex;align-items:center;justify-content:center;gap:4px}
+          background:var(--raise);display:inline-flex;align-items:center;justify-content:center;gap:4px;
+          flex-shrink:0}
   .segbtn.txt{padding:0 14px}
   .segbtn:hover{background:var(--raise-mid)}
   .segbtn:active{background:var(--raise-low)}
@@ -713,21 +733,27 @@
      keeps it where the eye expects while the picture moves under it. */
   /* max-width so a narrow pane (compare view on a small window) can never
      push the bar outside the frame it is anchored to. */
+  /* Positioning only -- the look (background, the four-blend-ring stroke,
+     radius, shadow) now comes from the .bgroup.row inside it, same split as
+     .brail/.bgroup on the fit pane. */
   .cvbar{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;z-index:3;
-         max-width:calc(100% - 32px);overflow-x:auto;
-         display:flex;align-items:center;gap:var(--s6);
-         padding:var(--s2) var(--s2) var(--s2) var(--s3);
-         background:var(--overlay);backdrop-filter:blur(5px);
-         -webkit-backdrop-filter:blur(5px);
-         border-radius:var(--r-lg);box-shadow:var(--shadow)}
-  .cvbar-actions{display:flex;align-items:center;gap:var(--s2);flex-wrap:nowrap}
+         max-width:calc(100% - 32px);overflow-x:auto;white-space:nowrap}
+  /* The slider cell: label, track, frame counter, in the Segment Button's own
+     32px height and 12px side padding (227:5326). Same background as the
+     group it sits in, so it needs no radius of its own to look seamless at
+     rest -- given one anyway, for the corner .bgroup itself doesn't clip. */
+  .cvslider{display:flex;align-items:center;gap:var(--s2);height:32px;box-sizing:border-box;
+            padding:0 12px;background:var(--raise);border-radius:var(--r-sm) 0 0 var(--r-sm)}
+  /* .bgroup.row > .segbtn:first-of-type rounds the first BUTTON's left
+     corners -- wrong here, since the slider cell (a <div>, not a .segbtn) is
+     what actually sits leftmost. Cancelled by ID specificity. */
+  #vidbar .bgroup > .segbtn:first-of-type{border-radius:0}
   /* The scrubber needs a floor, or the bar "fits" by crushing it. Moving the
      format control out stopped the bar overflowing at 742px — and the space it
      freed went to the other controls while the slider collapsed to FOUR pixels,
-     measured. The bar may scroll (it has overflow-x:auto by design); the one
+     measured. The bar may scroll (.cvbar keeps overflow-x:auto); the one
      control that is useless when small must not be the one that gives way. */
   #vframe{min-width:140px;flex:1 1 180px}
-  .cvbar{white-space:nowrap}
   /* `hidden` is a UA display:none, which any explicit display beats — and
      .cvbar sets display:flex. Without this the bar stays visible while the
      photo is chosen but the screenshot is not, offering corners to fit
@@ -888,15 +914,9 @@
      reason a true-black UI stops reading as a hole. It is NOT the same maths as
      compose()'s emissive, and the page says so. */
   #liveVid.emissive{mix-blend-mode:screen}
-  /* An icon button is square and centres its glyph; everything else about it —
-     height, border, the raise ladder — stays whatever .sm already is, so the bar
-     keeps one button shape. */
-  /* `flex:none` and a min-width, not just a width: the bar is a nowrap flex row
-     that overflows at narrow widths, and a flex item with a width will happily
-     shrink to its content. Measured at 742px before this: the button was 13px
-     wide — the glyph and its border — which is a target nobody can hit. */
-  .sm.icon{display:inline-flex;align-items:center;justify-content:center;
-           flex:none;width:28px;min-width:28px;padding:0}
+  /* .sm.icon (the square icon-only small button) is gone -- #playlive is a
+     .segbtn now, part of the video bar's Button Group (7:38, 16 Sep), and
+     nothing else used the class. */
   .empty{color:var(--mute);font-size:12px;padding:24px;text-align:center;align-self:center;justify-self:center;max-width:320px}
 
   .rail{min-width:0;overflow:auto;padding:0;display:grid;align-content:start;background:var(--card)}
@@ -1362,28 +1382,37 @@
            unchanged — you match the edges on one frame and every frame gets the
            same geometry, because the photo does not move. -->
       <div class="cvbar" id="vidbar" hidden>
-        <!-- What is left in this bar is only what the RESULT pane is for:
-             which moment of the clip you are looking at, and the two ways of
-             looking at it. The output format left for the top bar, beside
-             Render, because deciding how a file is written is not judging a
-             fit — and as the fifth control here it was squeezing the scrubber
-             to nothing at 742px. -->
-        <span class="sm" style="color:var(--mute)">Fit on frame</span>
-        <span class="cvbar-actions">
-          <input type="range" id="vframe" min="0" max="0" value="0" step="1"
-                 aria-label="Which frame of the clip to match the edges on">
-          <span class="sm" id="vframeLbl" style="color:var(--mute);min-width:9ch">0</span>
+        <!-- Ported from Figma 7:38 (16 Sep): the bar is now one Button Group
+             (solid --raise, the same four-blend-ring stroke every other rail
+             uses), not a frosted floating pill — the slider and the two
+             actions read as one joined control instead of a popover sitting
+             over the video. .cvbar itself keeps only the positioning
+             (centred, 16px off the bottom, scrolls if it doesn't fit) — same
+             split as .brail/.bgroup on the fit pane. -->
+        <div class="bgroup row"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
+          <!-- What is left in this bar is only what the RESULT pane is for:
+               which moment of the clip you are looking at, and the two ways of
+               looking at it. The output format left for the top bar, beside
+               Render, because deciding how a file is written is not judging a
+               fit — and as the fifth control here it was squeezing the scrubber
+               to nothing at 742px. -->
+          <div class="cvslider">
+            <span class="sm" style="color:var(--mute)">Fit on frame</span>
+            <input type="range" id="vframe" min="0" max="0" value="0" step="1"
+                   aria-label="Which frame of the clip to match the edges on">
+            <span class="sm" id="vframeLbl" style="color:var(--mute);min-width:9ch">0</span>
+          </div>
           <!-- Viewing controls sit with the scrubber, which is the other viewing
                control; the format stepper is about the OUTPUT and stays at the
                end. Icon-only, so each carries an aria-label — a title alone
                names it for a mouse and not for a screen reader. -->
-          <button class="sm icon" id="playlive" aria-label="Play the clip on the photo"
+          <button class="segbtn" id="playlive" aria-label="Play the clip on the photo"
                   title="Play the clip on the photo, right now. The browser applies the same four corners and corner radius, and approximates emissive with screen blending; the colour grade, grain and depth of field are not in this view.">
-            <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true" focusable="false"><path d="M3 1.5 10 6 3 10.5Z" fill="currentColor"/></svg>
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3.5 12.5 8 5 12.5Z" fill="currentColor"/></svg>
           </button>
-          <button class="sm" id="playclip"
+          <button class="segbtn txt" id="playclip"
                   title="Composite a few seconds from the fitted frame through the real pipeline and play that. Slower — it is a render — but it is the only view with the grade, the grain and the true emissive blend.">Preview</button>
-        </span>
+        </div>
       </div>
     </section>
 
