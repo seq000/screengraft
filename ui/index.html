@@ -644,7 +644,12 @@
      happened to fit its container without wrapping, so nothing ever forced
      it to matter until the video bar's Button Group (16 Sep, 7:38) hit a
      narrower parent and visibly split into two rows. */
-  .bgroup.row{flex-direction:row;flex-wrap:nowrap;align-items:stretch}
+  /* gap:0 for the same reason as the two properties above: the generic .row
+     utility sets gap:8px (line ~908), and .bgroup never declared its own, so
+     it leaked in here too -- found 16 Sep when Play and Preview turned out to
+     have an 8px gap between them that the file doesn't show (they're meant
+     to touch; the divider is the only separation). */
+  .bgroup.row{flex-direction:row;flex-wrap:nowrap;align-items:stretch;gap:0}
   .bgroup > .segbtn:first-of-type{border-top-left-radius:var(--r-sm);border-top-right-radius:var(--r-sm)}
   .bgroup > .segbtn:last-of-type{border-bottom-left-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
   .bgroup.row > .segbtn:first-of-type{border-radius:var(--r-sm) 0 0 var(--r-sm)}
@@ -658,8 +663,12 @@
      .row (horizontal) groups get it, matching the file: Vertical's variants
      carry no divider prop at all. :last-of-type is the "off where needed" --
      the last segment has nothing to its right to divide from. */
+  /* Height corrected 16 Sep: the file's own Divider node (226:5252) measures
+     1x20 at y=6 inside a 32-tall button -- a 6px inset top and bottom, not
+     the button's full height. First pass used top:0/bottom:0 (32px) without
+     checking the node's own geometry. */
   .bgroup.row > .segbtn:not(:last-of-type)::after{content:"";position:absolute;
-        top:0;right:0;bottom:0;width:1px;background:var(--seg-divider);pointer-events:none}
+        top:6px;bottom:6px;right:0;width:1px;background:var(--seg-divider);pointer-events:none}
   /* Segment Button re-read 14 Sep 2026: 32px tall, 32px minimum, 8px side
      padding; a text label sits in its own 6px-padded box, so a text button
      pads 14px. Was 28 / 6. */
@@ -742,8 +751,14 @@
      32px height and 12px side padding (227:5326). Same background as the
      group it sits in, so it needs no radius of its own to look seamless at
      rest -- given one anyway, for the corner .bgroup itself doesn't clip. */
+  /* Right padding 8px, not the symmetric 12 the Figma frame's own Slider
+     wrapper carries: with .bgroup.row's gap now 0, the space from the frame
+     count to the play icon is this padding PLUS .segbtn's own 8px left
+     padding, and 12+8=20 read too wide against the group's own -- 8+8=16
+     matches --s4 and the file's row of Play/Preview. Left padding (before
+     "Fit on frame") is unaffected. */
   .cvslider{display:flex;align-items:center;gap:var(--s2);height:32px;box-sizing:border-box;
-            padding:0 12px;background:var(--raise);border-radius:var(--r-sm) 0 0 var(--r-sm)}
+            padding:0 8px 0 12px;background:var(--raise);border-radius:var(--r-sm) 0 0 var(--r-sm)}
   /* .bgroup.row > .segbtn:first-of-type rounds the first BUTTON's left
      corners -- wrong here, since the slider cell (a <div>, not a .segbtn) is
      what actually sits leftmost. Cancelled by ID specificity. */
