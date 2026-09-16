@@ -754,8 +754,21 @@
      pointer-events follows .brail's pattern for the same reason: the bar
      now spans the full width, so clicks on the canvas either side of the
      group must still pass through. */
+  /* overflow-x:auto is gone -- CSS forces the OTHER axis to compute as
+     'auto' too whenever one of overflow-x/overflow-y is non-visible (you
+     cannot actually get overflow-x:auto with a truly visible overflow-y),
+     so it was clipping .bgroup's own drop shadow and the top/bottom of its
+     blend rings to exactly the bar's 32px height -- invisible instead of a
+     shadow, and the ring only partly there. Found by comparing this rail to
+     .brail (fit pane), which has never set any overflow and shows both
+     fully. .brail also never needed to scroll: it doesn't set overflow at
+     all and simply lets its content overflow visibly, so a narrow pane's
+     residual clipping (rare -- a normal window is comfortably wider than
+     either rail) now happens at #outWrap's own overflow:auto instead of a
+     dedicated scrollbar on the bar itself. Trading a rare, already-degraded
+     edge case for a shadow and stroke that are always correct. */
   .cvbar{position:absolute;left:0;right:0;bottom:16px;display:flex;justify-content:center;
-         padding:0 var(--s4);pointer-events:none;overflow-x:auto;white-space:nowrap}
+         padding:0 var(--s4);pointer-events:none;white-space:nowrap}
   .cvbar .bgroup{pointer-events:auto}
   /* The slider cell: label, track, frame counter, in the Segment Button's own
      32px height and 12px side padding (227:5326). Same background as the
