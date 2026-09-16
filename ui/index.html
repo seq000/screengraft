@@ -57,6 +57,10 @@
        primary button is therefore the cursor and the press, as designed. */
     --acc:#f23b0d; --acc-btn-rest:#f23b0d; --acc-press:#bb2b00;
     --acc-stroke:#ff6833; --acc-ink:#fbf9f9; --acc-soft:rgba(242,59,13,.14);
+    /* slider/handle/ring/focus, read as a solid at 40% over the card in
+       Figma's Focus state (216:470) -- rgba(255,104,51,.4) is --acc-stroke's
+       own channels, not a separate pick. */
+    --acc-glow:rgba(255,104,51,.4);
     /* Neutral button hover/pressed are explicit surfaces in Figma, not a
        brightness filter on the rest state. Re-picked 11 Sep 2026 against the
        polished Button matrix (4:14): hover's border is border/edge-mid, and
@@ -975,15 +979,61 @@
      land, since the thumb travels inside the track's content box. */
   input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;
         margin:0;padding-inline:2px;background:transparent;box-sizing:border-box}
+  /* Ported from Figma 216:470 (16 Sep). Rail is surface/float, not --sunk --
+     the two read identically at a glance but are different tokens (the old
+     port had borrowed --sunk). Thumb is a squircle-radius square (r 3px),
+     not a pill -- the one visible shape change from the previous slider. */
   input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:999px;transition:var(--t-all);
-        background:linear-gradient(to right, var(--acc) 0 calc(var(--p,0) * 100%), var(--sunk) calc(var(--p,0) * 100%) 100%);
+        background:linear-gradient(to right, var(--acc) 0 calc(var(--p,0) * 100%), var(--float) calc(var(--p,0) * 100%) 100%);
         box-shadow:inset 0 0 0 1px var(--line)}
+  /* slider/track/pressed is a darker accent (--acc-press), not the rest
+     colour dimmed -- the fill itself recedes while the thumb comes forward. */
+  input[type=range]:active::-webkit-slider-runnable-track{
+        background:linear-gradient(to right, var(--acc-press) 0 calc(var(--p,0) * 100%), var(--float) calc(var(--p,0) * 100%) 100%)}
+  /* All five states in the file carry a crisp 1px --card ring around the
+     handle, sampled at (22,22,24) on every one of them (default, disabled,
+     hover, pressed) -- not just where the glow needed it. It is the casing
+     that separates the handle from whatever is under the rail, same idea as
+     the corner-loupe / quad-overlay casing elsewhere in this file. State
+     changes use their own 150ms transition rather than --t-all's 180ms --
+     the handle is dragged continuously, so it reads better a touch snappier
+     than a click target does. */
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;
-        margin-top:-5px;border-radius:999px;background:var(--raise);border:1px solid var(--edge-hi);
-        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4);transition:var(--t-all)}
-  input[type=range]:hover::-webkit-slider-thumb{border-color:var(--acc)}
+        margin-top:-5px;border-radius:3px;background:var(--raise);border:1px solid var(--edge-hi);
+        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card);
+        transition:background-color .15s cubic-bezier(.2,0,0,1), border-color .15s cubic-bezier(.2,0,0,1),
+                   box-shadow .15s cubic-bezier(.2,0,0,1)}
+  /* Hover/Pressed in the file are rasterised because the ring carries a soft
+     outer glow (blur), which Figma exports as an image rather than a
+     translatable box-shadow. The glow's own blur radius is judged against
+     the two PNGs' bounding boxes (44px/52px tall on a 26px track --
+     symmetric ~9px/~13px halos) rather than measured to the pixel. */
+  input[type=range]:hover::-webkit-slider-thumb{background:var(--raise-mid);border-color:var(--acc-stroke);
+        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card), 0 0 6px 1px var(--acc-glow)}
+  input[type=range]:active::-webkit-slider-thumb{background:var(--acc);border-color:var(--acc-stroke);
+        box-shadow:0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card), 0 0 9px 2px rgba(255,104,51,.6)}
+  /* Focus keeps the default handle colours and adds a second, wider ring
+     (the same --card gap, at 1.5px so it clears the thicker glow) plus the
+     accent glow, same language as the switch's focus ring (line ~792) --
+     not a browser outline. */
   input[type=range]:focus-visible{outline:none}
-  input[type=range]:focus-visible::-webkit-slider-thumb{outline:2px solid var(--acc);outline-offset:2px}
+  input[type=range]:focus-visible::-webkit-slider-thumb{
+        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4), 0 0 0 1.5px var(--card), 0 0 0 3px var(--acc-glow)}
+  /* Disabled reads as the handle's own colours at roughly 50% opacity over
+     --card in the file (sampled fill ~(33,33,36), which is --raise blended
+     ~52% over --card, and the track's ~(105,33,12) is --acc-dis at the same
+     ~50%) -- Figma's own Disabled variants are usually built as a group
+     opacity rather than a recolour. Kept as solid tokens instead: the rest
+     of this system deliberately does NOT fade disabled controls (see the
+     accent-disabled note above --acc-dis) so it can stay readable, and a
+     lone opacity-faded slider would be the one control that fades. The ring
+     stays -- it is the one thing every state agrees on. */
+  input[type=range][disabled]{cursor:not-allowed}
+  input[type=range][disabled]::-webkit-slider-runnable-track{
+        background:linear-gradient(to right, var(--acc-dis) 0 calc(var(--p,0) * 100%), var(--raise-low) calc(var(--p,0) * 100%) 100%);
+        box-shadow:inset 0 0 0 1px var(--line)}
+  input[type=range][disabled]::-webkit-slider-thumb{background:var(--raise);border-color:var(--edge-low);
+        box-shadow:0 0 0 1px var(--card)}
   /* Captions are text/faint in Figma. The port had quietly used --mute
      instead; now they follow the token as designed. At the brightened
      #8f939ab2 that measures 3.48:1 on card — up from 2.42:1, still under the
