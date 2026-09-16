@@ -9,10 +9,12 @@
      SURFACES STEP: well (recessed) < bg < sunk < card < raise < float. The
      previous build used one tone for the top bar, rail, dock, popovers AND
      buttons, so nothing read as a control sitting on a panel — it read as
-     regions of one sheet divided by lines. Depth now comes from tone steps
-     plus a 1px top inner highlight (--hi), which is what actually separates
-     a raised control from a div in a dark UI; shadow is reserved for things
-     that genuinely float.
+     regions of one sheet divided by lines. Depth comes from tone steps alone
+     now; the 1px top inner highlight (--hi) that visual-language.md documents
+     as load-bearing for reading a raised control apart from a div was
+     removed app-wide by request, 16 Sep 2026 — a deliberate departure
+     from that doc, not a regression. Shadow is reserved for things that
+     genuinely float.
      Status colours keep three distinct LUMINANCE steps, not three hues —
      measured, --ok and --warn once differed by 1.01:1, invisible in greyscale
      and to red-green colour blindness. --line divides; --edge bounds anything
@@ -140,7 +142,11 @@
        Don't "fix" either by moving --ok back; that reopens the pair that counts. */
     --ok:#4fbf8b; --err:#e5534b;
 
-    --hi:inset 0 1px 0 rgba(255,255,255,.06);
+    /* --hi (inset 0 1px 0 rgba(255,255,255,.06), the top inner highlight on
+       every raised control) removed by request, 16 Sep 2026 -- was
+       documented in visual-language.md as deliberate ('most of the distance
+       between div and control'). Left here as the reason it is gone, not
+       just that it is. */
     --shadow:0 16px 40px rgba(0,0,0,.55), 0 3px 10px rgba(0,0,0,.4);
     --r-sm:6px; --r-md:8px; --r-lg:12px;
     --s2:8px; --s3:12px; --s4:16px; --s6:24px; --s9:48px;
@@ -226,7 +232,7 @@
      where every variant carries the same radius. Md had been 8 since 11 Sep. */
   button{font:inherit;color:var(--ink);background:var(--raise);
          border:var(--bw) solid var(--edge);border-radius:var(--r-sm);
-         padding:0 var(--s3);height:28px;font-size:13px;cursor:pointer;box-shadow:var(--hi);
+         padding:0 var(--s3);height:28px;font-size:13px;cursor:pointer;
          transition:var(--t-all), transform var(--t)}
   button:hover{background:var(--btn-hover);border-color:var(--btn-hover-edge)}
   button:active{background:var(--btn-press);border-color:var(--btn-press-edge);
@@ -264,7 +270,7 @@
      as an ordinary neutral control. */
   button.accent:not(:disabled):not(.primary){
     background:var(--raise); color:var(--ink); border-color:var(--edge);
-    font-weight:400; box-shadow:var(--hi)}
+    font-weight:400}
   /* Radius is deliberately NOT restated in these three rules any more. It is the
      base button's, so .sm keeps winning on size — an accent .sm button used to
      be handed --r-md by specificity alone. */
@@ -335,7 +341,7 @@
      for the next action. The old accent ring is gone for that reason.
      ------------------------------------------------------------------ */
   .chip{border-radius:999px;padding:0 var(--s3);height:28px;font-size:12px;
-        background:var(--raise);border-color:var(--edge);box-shadow:var(--hi)}
+        background:var(--raise);border-color:var(--edge)}
   /* Chip state matrix, ported from the Chip component set. Every state now
      steps in the direction it should: hover UP from rest, pressed DOWN from it,
      and selected-hover up again from selected-rest. Before the new tokens
@@ -344,7 +350,7 @@
   .chip:hover{background:var(--raise-mid);border-color:var(--edge-mid)}
   .chip:active{background:var(--raise);border-color:var(--edge-mid)}
   .chip.on{background:var(--raise-hi);border-color:var(--edge-hi);
-           color:var(--ink);font-weight:600;box-shadow:var(--hi)}
+           color:var(--ink);font-weight:600}
   .chip.on:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .chip.on:active{background:var(--raise-mid);border-color:var(--edge-hi)}
   .chip[disabled]{opacity:.5;color:var(--mute);background:var(--raise);border-color:var(--edge)}
@@ -456,7 +462,7 @@
      chip: accent stroke and label on the empty one, accent fill on the filled. */
   .inputchip{display:inline-flex;align-items:center;gap:var(--s2);max-width:220px;
              height:32px;padding:0 12px 0 6px;border-radius:999px;color:var(--ink);
-             background:var(--raise-hi);border:var(--bw) solid var(--edge-hi);box-shadow:var(--hi)}
+             background:var(--raise-hi);border:var(--bw) solid var(--edge-hi)}
   .inputchip:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .inputchip:active{background:var(--raise-mid);border-color:var(--edge-hi)}
   .inputchip.over,.inputchip.over:hover{background:var(--acc);border-color:var(--acc-stroke);
@@ -940,7 +946,7 @@
   .tip{position:fixed;width:264px;max-width:calc(100vw - 32px);
        padding:8px 10px;border-radius:var(--r-md);
        background:var(--float);border:1px solid var(--edge);
-       box-shadow:var(--shadow), var(--hi);
+       box-shadow:var(--shadow);
        color:var(--ink);font-size:12px;font-weight:400;line-height:1.45;
        letter-spacing:normal;text-transform:none;text-align:left;white-space:normal;
        z-index:70;opacity:0;visibility:hidden;pointer-events:none;
@@ -1000,7 +1006,7 @@
      than a click target does. */
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;
         margin-top:-5px;border-radius:3px;background:var(--raise);border:1px solid var(--edge-hi);
-        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card);
+        box-shadow:0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card);
         transition:background-color .15s cubic-bezier(.2,0,0,1), border-color .15s cubic-bezier(.2,0,0,1),
                    box-shadow .15s cubic-bezier(.2,0,0,1)}
   /* Hover/Pressed in the file are rasterised because the ring carries a soft
@@ -1009,7 +1015,7 @@
      the two PNGs' bounding boxes (44px/52px tall on a 26px track --
      symmetric ~9px/~13px halos) rather than measured to the pixel. */
   input[type=range]:hover::-webkit-slider-thumb{background:var(--raise-mid);border-color:var(--acc-stroke);
-        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card), 0 0 6px 1px var(--acc-glow)}
+        box-shadow:0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card), 0 0 6px 1px var(--acc-glow)}
   input[type=range]:active::-webkit-slider-thumb{background:var(--acc);border-color:var(--acc-stroke);
         box-shadow:0 1px 3px rgba(0,0,0,.4), 0 0 0 1px var(--card), 0 0 9px 2px rgba(255,104,51,.6)}
   /* Focus keeps the default handle colours and adds a second, wider ring
@@ -1018,7 +1024,7 @@
      not a browser outline. */
   input[type=range]:focus-visible{outline:none}
   input[type=range]:focus-visible::-webkit-slider-thumb{
-        box-shadow:var(--hi), 0 1px 3px rgba(0,0,0,.4), 0 0 0 1.5px var(--card), 0 0 0 3px var(--acc-glow)}
+        box-shadow:0 1px 3px rgba(0,0,0,.4), 0 0 0 1.5px var(--card), 0 0 0 3px var(--acc-glow)}
   /* Disabled reads as the handle's own colours at roughly 50% opacity over
      --card in the file (sampled fill ~(33,33,36), which is --raise blended
      ~52% over --card, and the track's ~(105,33,12) is --acc-dis at the same
@@ -1084,7 +1090,7 @@
         background:var(--well);box-shadow:inset 0 0 0 1px var(--line), inset 0 1px 3px rgba(0,0,0,.5)}
   /* Floating mode: the loupe follows the edge instead of taking a permanent band. */
   .floatloupe{position:fixed;z-index:40;display:none;padding:8px;border-radius:var(--r-lg);
-              background:var(--float);border:1px solid var(--edge);box-shadow:var(--shadow), var(--hi)}
+              background:var(--float);border:1px solid var(--edge);box-shadow:var(--shadow)}
   .floatloupe.on{display:block}
   .floatloupe canvas{display:block;width:340px;height:104px;border-radius:var(--r-sm);
         background:var(--well);box-shadow:inset 0 0 0 1px var(--line)}
@@ -1113,7 +1119,7 @@
   .toast{position:absolute;left:0;top:0;width:100%;box-sizing:border-box;
          display:flex;align-items:flex-start;gap:8px;padding:10px 12px;
          border-radius:var(--r-md);background:var(--float);
-         border:1px solid var(--edge);box-shadow:var(--shadow), var(--hi);
+         border:1px solid var(--edge);box-shadow:var(--shadow);
          font-size:13px;line-height:1.45;color:var(--ink);
          pointer-events:auto;touch-action:none;transform-origin:50% 0;
          will-change:transform,opacity;
@@ -1177,7 +1183,7 @@
   .pop{position:fixed;z-index:51;width:640px;max-width:calc(100vw - 24px);
        max-height:78vh;overflow:auto;background:var(--float-glass);border:var(--bw) solid var(--edge);
        backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
-       border-radius:var(--r-lg);box-shadow:var(--shadow), var(--hi);padding:16px;
+       border-radius:var(--r-lg);box-shadow:var(--shadow);padding:16px;
        opacity:0;visibility:hidden;transform:translateY(6px) scale(.985);
        transform-origin:50% 0;
        transition:opacity var(--t-pop), transform var(--t-pop),
