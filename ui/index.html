@@ -113,6 +113,13 @@
     --group-edge-lift:rgba(255,255,255,.4);
     /* The Button Group's stroke weight (0.75, set 14 Sep); the pills keep 1px. */
     --group-bw:.75px;
+    /* Segment Button 138:255, re-read 16 Sep 2026: a horizontal group now
+       carries its own divider between segments (button/secondary/label/default
+       at 10% -- exactly --ink at 10%), a real element in the file, on by
+       default and turned off per-instance where it isn't wanted (the last
+       segment, mainly -- there's nothing after it to divide from). Vertical
+       groups still have no divider variant in the file; not added here. */
+    --seg-divider:rgba(233,236,241,.1);
     --group-shadow:0 2px 4px rgba(0,0,0,.08), 0 3px 10px rgba(0,0,0,.12), 0 4px 24px rgba(0,0,0,.25);
     --pill-shadow:0 2px 2px rgba(0,0,0,.03), 0 3px 5px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.25);
 
@@ -633,7 +640,15 @@
   .bgroup.row > .segbtn:last-of-type{border-radius:0 var(--r-sm) var(--r-sm) 0}
   .bgroup > .segbtn:only-of-type{border-radius:var(--r-sm)}
   .segbtn,.segbtn:hover,.segbtn:active{border:0;box-shadow:none;transform:none}
-  .segbtn{border-radius:0}
+  .segbtn{border-radius:0;position:relative}
+  /* The divider is an absolutely-positioned 1px slice, not a border -- a
+     border would add a device pixel to the segment's own measured width
+     (this file keeps those to the pixel against the Figma frame). Only
+     .row (horizontal) groups get it, matching the file: Vertical's variants
+     carry no divider prop at all. :last-of-type is the "off where needed" --
+     the last segment has nothing to its right to divide from. */
+  .bgroup.row > .segbtn:not(:last-of-type)::after{content:"";position:absolute;
+        top:0;right:0;bottom:0;width:1px;background:var(--seg-divider);pointer-events:none}
   /* Segment Button re-read 14 Sep 2026: 32px tall, 32px minimum, 8px side
      padding; a text label sits in its own 6px-padded box, so a text button
      pads 14px. Was 28 / 6. */
