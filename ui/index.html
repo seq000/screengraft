@@ -159,7 +159,8 @@
     --s2:8px; --s3:12px; --s4:16px; --s6:24px; --s9:48px;
     /* 120ms originally, per the visual-language notes. asked for a bit
        slower on 5 Sep — one token, so retuning is a one-line change. */
-    --t:180ms cubic-bezier(.2,0,0,1);
+    --t-dur:180ms;                 /* the duration alone, for delays */
+    --t:var(--t-dur) cubic-bezier(.2,0,0,1);
     --t-pop:220ms cubic-bezier(.2,0,0,1);   /* popovers travel further */
     /* Every control animates the SAME four properties on the same curve. Kept as
        one token because the failure mode here is a control that transitions its
@@ -555,7 +556,14 @@
      of this page where that is optional is a version where the check is
      optional. Two equal panes plus the rail. */
   .stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 344px;
-         min-height:0;overflow:hidden}
+         min-height:0;overflow:hidden;
+         /* The COLUMN animates, not the rail's contents: the panes have to grow
+            into the space at exactly the rate the rail gives it up, and one
+            interpolating track does that for free. Engines that will not
+            interpolate grid-template-columns simply jump, which is the
+            behaviour this replaces. The global prefers-reduced-motion rule
+            near the top of this sheet switches it off. */
+         transition:grid-template-columns var(--t)}
   /* Below ~1100px two panes and a 344px rail no longer fit, and the page starts
      scrolling sideways — which the UI audit catches as a hard failure. Stack the
      panes instead of dropping one: losing the comparison is the one thing this
@@ -567,8 +575,15 @@
      It also buys back the side-by-side comparison on a narrower window: the
      rule below stacks the panes under 1100px because two of them PLUS a 344px
      rail do not fit, and without the rail they do. */
-  .app.railoff .stage{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-  .app.railoff .rail{display:none}
+  /* A 0px THIRD track, not two tracks: the rail is still a grid item, and with
+     only two tracks declared it would be auto-placed into an implicit third
+     column and reappear at full width. */
+  .app.railoff .stage{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 0px}
+  /* display:none cannot animate, and a 0-wide rail with overflow:auto still
+     holds focusable buttons — so visibility does the hiding, delayed to the end
+     of the slide on the way out and immediate on the way in. */
+  .rail{transition:visibility 0s}
+  .app.railoff .rail{visibility:hidden;transition:visibility 0s linear var(--t-dur)}
   @media (max-width:1100px){
     .stage{grid-template-columns:minmax(0,1fr) 344px;
            grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
@@ -579,7 +594,9 @@
        FULL width rather than sharing it with the rail, which is the better
        trade here: side by side they would be ~370px each, narrower than the
        stacked pair, and the comparison is what the layout exists for. */
-    .app.railoff .stage{grid-template-columns:minmax(0,1fr)}
+    /* Two tracks again rather than one, for the same reason as above: this
+       media query places the rail in column 2 explicitly. */
+    .app.railoff .stage{grid-template-columns:minmax(0,1fr) 0px}
   }
   #types{flex-wrap:nowrap}
   /* The same omission one level down: rows constrained, column implicit.
@@ -4290,7 +4307,8 @@ $('#imp').onclick = async () => {
    the file, so it must not run while any of them is still in its temporal dead
    zone. */
 (() => {
-  const app = document.querySelector('.app'), btn = $('#railBtn');
+  const app = document.querySelector('.app'), btn = $('#railBtn'), stage = $('#stage');
+  let railWait;
   const apply = (open, relayout) => {
     app.classList.toggle('railoff', !open);
     btn.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -4301,11 +4319,20 @@ $('#imp').onclick = async () => {
     // MEASURED rather than laid out and have all just moved: the strip's
     // labels are positioned off the zoom group's box, and the blend rings'
     // WebKit fallback samples pixels at coordinates taken from the panes.
-    if (img.naturalWidth){
-      const wasFit = Math.abs(scale - fitScale) < 1e-6;
-      computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
-    }
-    drawStrip(); syncOut(); refreshRings();
+    // AFTER the slide, not during: measuring mid-transition fits the canvas to
+    // a width the pane is still leaving. The wait is read off the transition
+    // itself rather than written as a number, so it cannot drift from --t, and
+    // it collapses to ~nothing under prefers-reduced-motion, where the rule at
+    // the top of the sheet has already set the duration to zero.
+    clearTimeout(railWait);
+    const ms = (parseFloat(getComputedStyle(stage).transitionDuration) || 0) * 1000;
+    railWait = setTimeout(() => {
+      if (img.naturalWidth){
+        const wasFit = Math.abs(scale - fitScale) < 1e-6;
+        computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
+      }
+      drawStrip(); syncOut(); refreshRings();
+    }, ms + 20);
   };
   btn.onclick = () => {
     const open = app.classList.contains('railoff');   // toggling TO open
