@@ -3519,14 +3519,26 @@ function paintCorner(c, W, H, i){
   casedText(c, LBL[i], W/2 + 12, H/2 - 12, 'rgba(255,255,255,.95)');
 }
 const HANDLE_GAP_S = 4 + 1 + CASE_PAD/2 + 1;   // the same break the canvas leaves around a ring
-/* Figma 8:28 puts the strip's labels at x=59, which is the floating zoom group
-   (8 left + 32 wide) plus 19 of air. That 59 is CSS pixels, but the strip's
-   canvas is a fixed 1280 wide stretched to whatever the band measures, so the
-   two agree at exactly one window width — hence the conversion rather than a
-   literal 59. The floating loupe has no group over it and keeps the default. */
+/* Figma 8:28 puts the strip's labels at x=59, which is exactly where the
+   floating zoom group ends (8 left + 32 wide) plus 19 of air. Two things stop
+   that 59 from being a literal here.
+   The canvas is a fixed 1280 wide stretched to whatever the band measures, so
+   a number in CSS pixels and a number in canvas pixels only agree at one window
+   width — hence the conversion.
+   And the gap is measured off the GROUP rather than assumed: the labels are
+   drawn from JS while the group is laid out by CSS, so anything that changes
+   the group's width (a longer icon set, a different radius, a zoom level) would
+   silently slide it under the text. Reading its real right edge means the air
+   between them is the design's 19px whatever the group does, and the design's
+   59 is the floor for the case where the group has not been laid out yet —
+   width 0 would otherwise put the labels at the strip's edge, UNDER the group.
+   The floating loupe has no group over it and keeps the default. */
 function stripLabelInset(W){
-  const css = strip.getBoundingClientRect().width;
-  return css > 0 ? Math.round(59 * W / css) : 59;
+  const r = strip.getBoundingClientRect();
+  if (!(r.width > 0)) return Math.round(59 * W / 1280);
+  const g = document.querySelector('.stripzoom');
+  const gRight = g ? g.getBoundingClientRect().right - r.left : 40;
+  return Math.round(Math.max(59, gRight + 19) * W / r.width);
 }
 function drawStrip(){
   const a = drag || hover || pick;
