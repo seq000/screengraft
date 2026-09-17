@@ -1154,11 +1154,15 @@
      at 8+8 from the top and the right. An absolutely positioned child is laid
      out against its ancestor's PADDING box, so these are measured from the
      dock's own edges and the arithmetic is done here rather than by the box.
-     The zoom group is the file's vertical Button Group, the same component the
-     fit pane's left rail uses. Its middle segment is Contrast, not the file's
-     1x: an edge view has no "actual size" to return to, and Contrast had
-     nowhere else to live once the header went (on request, 17 Sep). */
-  .stripzoom{position:absolute;left:16px;top:25px}
+     .stripzoom is a WRAPPER, not a group (Figma's Frame 271): two Button
+     Groups stacked with 8px between them, 32 wide and 104 tall in total. The
+     zoom pair is one group and Contrast is a group of its own — the same
+     separation the fit pane's left rail makes between its zoom group and Fit,
+     and the reason for it is the same: a group reads as one family of actions,
+     and magnification and tonal treatment are not one family. The file's 1x is
+     not ported; an edge view has no "actual size" to return to. */
+  .stripzoom{position:absolute;left:16px;top:25px;
+             display:flex;flex-direction:column;gap:var(--s2);align-items:flex-start}
   /* left:auto undoes .pillwrap's own centring, which is right for the two pane
      pills and wrong for this one. */
   .pillwrap.stripstat{top:16px;left:auto;right:16px;margin:0}
@@ -1570,10 +1574,20 @@
     <!-- Both float over the strip and come AFTER it in the DOM, so they paint
          on top of it without a z-index — the same reason #outSt sits after
          #outWrap. A z-index here would cost them their blend rings. -->
-    <div class="bgroup stripzoom" role="group" aria-label="Edge view"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
-      <button class="segbtn" id="stripIn" aria-label="Zoom the edge view in" title="Zoom the edge view in — a narrower band across the boundary"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M8.5 7.5H12.5V8.5H8.5V12.5H7.5V8.5H3.5V7.5H7.5V3.5H8.5V7.5Z"/></svg></button>
-      <button class="segbtn" id="stripHC" aria-pressed="false" aria-label="High contrast" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched."><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--icon)"/><path fill="var(--icon)" d="M8 1.5a6.5 6.5 0 0 1 0 13Z"/></svg></button>
-      <button class="segbtn" id="stripOut" aria-label="Zoom the edge view out" title="Zoom the edge view out — a wider band across the boundary"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M12.5 8.5H3.5V7.5H12.5V8.5Z"/></svg></button>
+    <div class="stripzoom">
+      <div class="bgroup" role="group" aria-label="Edge view magnification"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
+        <button class="segbtn" id="stripIn" aria-label="Zoom the edge view in" title="Zoom the edge view in — a narrower band across the boundary"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M8.5 7.5H12.5V8.5H8.5V12.5H7.5V8.5H3.5V7.5H7.5V3.5H8.5V7.5Z"/></svg></button>
+        <button class="segbtn" id="stripOut" aria-label="Zoom the edge view out" title="Zoom the edge view out — a wider band across the boundary"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M12.5 8.5H3.5V7.5H12.5V8.5Z"/></svg></button>
+      </div>
+      <!-- Its own group (Figma 271:1337), a single segment, so it takes the
+           radius on all four corners from .bgroup > .segbtn:only-of-type.
+           The glyph is drawn here rather than exported: the file's icon on this
+           button is still the Fit one it was duplicated from — same path data
+           as #czFit, byte for byte — and a Fit icon on a contrast toggle would
+           say the wrong thing. Swap it for the real export once it exists. -->
+      <div class="bgroup"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
+        <button class="segbtn" id="stripHC" aria-pressed="false" aria-label="High contrast" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched."><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--icon)"/><path fill="var(--icon)" d="M8 1.5a6.5 6.5 0 0 1 0 13Z"/></svg></button>
+      </div>
     </div>
     <span class="pillwrap stripstat"><i class="ring sat" aria-hidden="true"></i><i class="ring lum" aria-hidden="true"></i><i class="ring hue" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i><span class="status" id="stripSt"></span></span>
   </footer>
