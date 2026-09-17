@@ -194,14 +194,25 @@
      the part that should give; the actions are fixed-size and must not. */
   .topbar > *{min-width:0}
   .tb-chips{overflow:hidden}
-  .tb-actions{flex:none}
+  /* Figma 15:108: three groups at 16px — the format control, the save PAIR,
+     and the rail toggle — with 8px inside the pair. Save and Send to Claude
+     belong together (272:1517 frames them); the toggle does not. */
+  .tb-actions{flex:none;display:flex;align-items:center;gap:var(--s4)}
+  .tb-save{display:flex;align-items:center;gap:var(--s2)}
   .tb-left{display:flex;align-items:center;gap:var(--s9)}
   .tb-chips{display:flex;align-items:center;gap:var(--s2)}
   .tb-arrow{color:var(--mute)}
-  /* Icon-only, so it is square rather than the base button's 12px of side
-     padding around nothing. Last in the bar, after Send to Claude. */
-  .iconbtn{width:28px;padding:0;flex:none;display:inline-flex;align-items:center;justify-content:center}
-  .tb-actions{display:flex;align-items:center;gap:var(--s2)}
+  /* Icon-only, but NOT squeezed: Figma 272:1494 is a secondary button keeping
+     the base 12px side padding around a 16px icon, so 40x28. An earlier version
+     of this forced it to 28 square and read as a different species from the
+     buttons beside it. */
+  .iconbtn{flex:none;display:inline-flex;align-items:center;justify-content:center}
+  .iconbtn svg{display:block;width:16px;height:16px}
+  /* Two glyphs, one button (icons / sidebar-opened 272:1489, sidebar-closed
+     272:1463). Each shows the rail's CURRENT state in the width of its two
+     panels, while its chevron points the way the next click will move it. */
+  #railBtn .i-closed,.app.railoff #railBtn .i-open{display:none}
+  .app.railoff #railBtn .i-closed{display:block}
   /* Mona Sans is the brand face in Figma; it is not installed on a stock Mac,
      so it degrades to the system UI face rather than to a serif. */
   /* The wordmark ships WITH the plugin. Mona Sans is the brand face in Figma and
@@ -417,7 +428,11 @@
   .seg:active{border-color:var(--edge-mid)}
   /* The track carries the border and the elevation, so a segment is a label
      until it is selected: no border, no shadow, no lift on press. */
-  .seg button{height:24px;padding:0 11px;font-size:12px;border-radius:var(--r-xs);
+  /* 70px each (Figma 84:161, so 2+70+2+70+2 = 146): a two-way choice reads as
+     one control rather than two adjacent buttons, and equal halves are most of
+     what sells that. min-width rather than width so the ghost below still
+     governs if a label ever outgrows 70. */
+  .seg button{height:24px;min-width:70px;padding:0 11px;font-size:12px;border-radius:var(--r-xs);
               background:transparent;border:0;box-shadow:none;color:var(--mute);
               font-weight:400;display:inline-flex;flex-direction:column;
               align-items:center;justify-content:center}
@@ -998,7 +1013,11 @@
      tooltip hides the only copy of the explanation from anyone not using a
      mouse. */
   .info{flex:none;width:16px;height:16px;padding:0;border:none;
-        background:none;box-shadow:none;color:var(--edge-hi);cursor:help;line-height:0}
+        /* The file draws it at #3a3a40 = --raise-hi (64:375), well below the
+           --edge-hi it used to carry. It is an affordance, not information:
+           the sentence it holds is reachable by hover AND focus, and the
+           rule below lifts it to --mute the moment anyone goes looking. */
+        background:none;box-shadow:none;color:var(--raise-hi);cursor:help;line-height:0}
   .info svg{display:block;width:16px;height:16px}
   .info:hover, .info:focus-visible{color:var(--mute)}
   /* The tooltip is anchored to the section HEADER, not to the 16px icon, and
@@ -1372,12 +1391,11 @@
       <span class="seg" id="fmt" role="radiogroup" aria-label="Output format" hidden>
         <button class="sel" data-preset="web" data-label="Web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button data-preset="prores" data-label="ProRes" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
       </span>
-      <button id="save" class="accent" disabled>Preview first</button>
-      <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
-      <!-- The frame is the same 16px box path the Fit and corner icons use, so
-           this reads as one of the set rather than something imported; the
-           filled column is the rail itself. -->
-      <button id="railBtn" class="iconbtn" aria-expanded="true" aria-controls="rail" aria-label="Settings rail"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2C1.48232 15 1.05621 14.6067 1.00488 14.1025L1 14V2C1 1.44772 1.44772 1 2 1H14L14.1025 1.00488ZM2 14H14V2H2V14Z"/><path fill="var(--icon)" d="M10 2H14V14H10V2Z"/></svg></button>
+      <span class="tb-save">
+        <button id="save" class="accent" disabled>Preview first</button>
+        <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
+      </span>
+      <button id="railBtn" class="iconbtn" aria-expanded="true" aria-controls="rail" aria-label="Settings rail"><svg class="i-open" viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M4.76855 1C4.50954 1.2888 4.30589 1.62677 4.17383 2H3C2.44772 2 2 2.44772 2 3V13C2 13.5523 2.44772 14 3 14H4.17383C4.30589 14.3732 4.50954 14.7112 4.76855 15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V3C1 1.89543 1.89543 1 3 1H4.76855Z"/><path fill="var(--icon)" d="M7 15C5.89543 15 5 14.1046 5 13V3C5 1.96435 5.78722 1.113 6.7959 1.01074L7 1H13L13.2041 1.01074C14.1457 1.1062 14.8938 1.85435 14.9893 2.7959L15 3V13C15 14.1046 14.1046 15 13 15H7ZM13 14C13.5523 14 14 13.5523 14 13V3C14 2.44771 13.5523 2 13 2H7C6.44771 2 6 2.44771 6 3V13C6 13.5523 6.44772 14 7 14H13ZM7.14648 8.64648L7.79297 8L7.14648 7.35352L7.85352 6.64648L9.20703 8L7.85352 9.35352L7.14648 8.64648Z"/></svg><svg class="i-closed" viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M8.76855 1C8.50954 1.2888 8.30589 1.62677 8.17383 2H3C2.44772 2 2 2.44772 2 3V13C2 13.5523 2.44772 14 3 14H8.17383C8.30589 14.3732 8.50954 14.7112 8.76855 15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V3C1 1.89543 1.89543 1 3 1H8.76855Z"/><path fill="var(--icon)" d="M11 15C9.89543 15 9 14.1046 9 13V3C9 1.96435 9.78722 1.113 10.7959 1.01074L11 1H13L13.2041 1.01074C14.1457 1.1062 14.8938 1.85435 14.9893 2.7959L15 3V13C15 14.1046 14.1046 15 13 15H11ZM13 14C13.5523 14 14 13.5523 14 13V3C14 2.44771 13.5523 2 13 2H11C10.4477 2 10 2.44771 10 3V13C10 13.5523 10.4477 14 11 14H13ZM10.793 8L12.1465 6.64648L12.8535 7.35352L12.207 8L12.8535 8.64648L12.1465 9.35352L10.793 8Z"/></svg></button>
     </div>
   </header>
 
@@ -1601,12 +1619,10 @@
       </div>
       <!-- Its own group (Figma 271:1337), a single segment, so it takes the
            radius on all four corners from .bgroup > .segbtn:only-of-type.
-           The glyph is drawn here rather than exported: the file's icon on this
-           button is still the Fit one it was duplicated from — same path data
-           as #czFit, byte for byte — and a Fit icon on a contrast toggle would
-           say the wrong thing. Swap it for the real export once it exists. -->
+           Glyph is icons / contrast (272:1421), which replaced the half-disc
+           drawn here while the file still had the Fit icon on this button. -->
       <div class="bgroup"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
-        <button class="segbtn" id="stripHC" aria-pressed="false" aria-label="High contrast" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched."><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--icon)"/><path fill="var(--icon)" d="M8 1.5a6.5 6.5 0 0 1 0 13Z"/></svg></button>
+        <button class="segbtn" id="stripHC" aria-pressed="false" aria-label="High contrast" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched."><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M7 2.08398C4.16237 2.56013 2 5.02706 2 8C2 10.9729 4.16245 13.4388 7 13.915V14.9268C3.60787 14.4414 1 11.5264 1 8C1 4.4736 3.6078 1.55758 7 1.07227V2.08398Z"/><path fill="var(--icon)" d="M8 1C9.90691 1 11.635 1.76326 12.8975 3H13V3.10156C14.237 4.36408 15 6.09284 15 8C15 9.90691 14.2367 11.635 13 12.8975V13H12.8975C11.635 14.2367 9.90691 15 8 15V1ZM9 13.915C9.34419 13.8573 9.67834 13.7709 10 13.6572V2.3418C9.67838 2.22811 9.34414 2.14173 9 2.08398V13.915ZM11 13.1953C11.3584 12.9879 11.6934 12.7452 12 12.4707V3.52832C11.6935 3.25392 11.3584 3.01105 11 2.80371V13.1953ZM13 11.3164C13.6315 10.3663 14 9.22632 14 8C14 6.77339 13.6317 5.63287 13 4.68262V11.3164Z"/></svg></button>
       </div>
     </div>
     <span class="pillwrap stripstat"><i class="ring sat" aria-hidden="true"></i><i class="ring lum" aria-hidden="true"></i><i class="ring hue" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i><span class="status" id="stripSt"></span></span>
