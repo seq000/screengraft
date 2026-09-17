@@ -351,6 +351,21 @@
      wells.length === 2 && wells.every(w => /none|contain/.test(getComputedStyle(w).overscrollBehaviorY)),
      wells.map(w => w.id + ':' + getComputedStyle(w).overscrollBehaviorY).join(' '));
 
+  // --- the settings rail's collapse ----------------------------------------
+  // The button says whether the rail is open; if the two ever disagree, a
+  // screen reader is told the opposite of what is on screen. Same class of bug
+  // the section/switch checks above exist for.
+  {
+    const rb = document.getElementById('railBtn'), rl = document.getElementById('rail');
+    if (rb && rl){
+      const open = rb.getAttribute('aria-expanded') === 'true';
+      ok('the rail toggle agrees with the rail', open === vis(rl),
+         `aria-expanded=${rb.getAttribute('aria-expanded')} visible=${vis(rl)}`);
+      ok('the rail toggle points at the rail it governs',
+         rb.getAttribute('aria-controls') === rl.id);
+    }
+  }
+
   // --- the edge-view dock (Figma 8:28) --------------------------------------
   // The band is FIXED at 8 + 130 + 8. It used to carry a 28px header; if some
   // future rule lets it absorb leftover height again, the strip's own

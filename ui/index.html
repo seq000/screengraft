@@ -198,6 +198,9 @@
   .tb-left{display:flex;align-items:center;gap:var(--s9)}
   .tb-chips{display:flex;align-items:center;gap:var(--s2)}
   .tb-arrow{color:var(--mute)}
+  /* Icon-only, so it is square rather than the base button's 12px of side
+     padding around nothing. Last in the bar, after Send to Claude. */
+  .iconbtn{width:28px;padding:0;flex:none;display:inline-flex;align-items:center;justify-content:center}
   .tb-actions{display:flex;align-items:center;gap:var(--s2)}
   /* Mona Sans is the brand face in Figma; it is not installed on a stock Mac,
      so it degrades to the system UI face rather than to a serif. */
@@ -543,12 +546,25 @@
      panes instead of dropping one: losing the comparison is the one thing this
      layout exists to prevent, so the axis gives way before the pairing does.
      (Found by the audit after compare stopped being optional, at 742px.) */
+  /* Collapsed (the top bar's last button). The rail is 344px of window the two
+     panes are not getting, and nothing in it is needed while you are placing a
+     corner — so it folds away and they take the room. The state is remembered.
+     It also buys back the side-by-side comparison on a narrower window: the
+     rule below stacks the panes under 1100px because two of them PLUS a 344px
+     rail do not fit, and without the rail they do. */
+  .app.railoff .stage{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .app.railoff .rail{display:none}
   @media (max-width:1100px){
     .stage{grid-template-columns:minmax(0,1fr) 344px;
            grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
     .stage > .pane:first-of-type{grid-column:1;grid-row:1}
     .stage > #outPane{grid-column:1;grid-row:2;border-top:1px solid var(--line)}
     .stage > .rail{grid-column:2;grid-row:1 / span 2}
+    /* Collapsed at this width the panes are stacked and each one is now the
+       FULL width rather than sharing it with the rail, which is the better
+       trade here: side by side they would be ~370px each, narrower than the
+       stacked pair, and the comparison is what the layout exists for. */
+    .app.railoff .stage{grid-template-columns:minmax(0,1fr)}
   }
   #types{flex-wrap:nowrap}
   /* The same omission one level down: rows constrained, column implicit.
@@ -1358,6 +1374,10 @@
       </span>
       <button id="save" class="accent" disabled>Preview first</button>
       <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
+      <!-- The frame is the same 16px box path the Fit and corner icons use, so
+           this reads as one of the set rather than something imported; the
+           filled column is the rail itself. -->
+      <button id="railBtn" class="iconbtn" aria-expanded="true" aria-controls="rail" aria-label="Settings rail"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2C1.48232 15 1.05621 14.6067 1.00488 14.1025L1 14V2C1 1.44772 1.44772 1 2 1H14L14.1025 1.00488ZM2 14H14V2H2V14Z"/><path fill="var(--icon)" d="M10 2H14V14H10V2Z"/></svg></button>
     </div>
   </header>
 
@@ -1461,7 +1481,7 @@
       </div>
     </section>
 
-    <aside class="rail">
+    <aside class="rail" id="rail">
       <div class="sect" id="secDevice" data-on="1">
         <div class="sect-top"><div class="sect-left"><h4>Device</h4></div></div>
         <div class="chips" id="types"></div>
@@ -4242,6 +4262,41 @@ $('#imp').onclick = async () => {
     const wasFit = Math.abs(scale - fitScale) < 1e-6;
     computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
   });
+})();
+
+/* ---- the settings rail collapses -----------------------------------------
+   Last button in the top bar, after Send to Claude. Nothing in the rail is
+   needed while a corner is being placed, and it is 344px the two panes are not
+   getting — so it folds away and they take the room. Remembered across
+   sessions, like the loupe mode and the strip's contrast.
+   This block sits at the very end of the script deliberately: it calls into
+   drawStrip/syncOut on toggle, and those close over consts declared throughout
+   the file, so it must not run while any of them is still in its temporal dead
+   zone. */
+(() => {
+  const app = document.querySelector('.app'), btn = $('#railBtn');
+  const apply = (open, relayout) => {
+    app.classList.toggle('railoff', !open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.title = open ? 'Hide the settings rail' : 'Show the settings rail';
+    if (!relayout) return;
+    // The panes just changed width, which is a resize in everything but name —
+    // so do what the resize handler does, then repaint the things that are
+    // MEASURED rather than laid out and have all just moved: the strip's
+    // labels are positioned off the zoom group's box, and the blend rings'
+    // WebKit fallback samples pixels at coordinates taken from the panes.
+    if (img.naturalWidth){
+      const wasFit = Math.abs(scale - fitScale) < 1e-6;
+      computeFit(); setCanvasZoom(wasFit ? fitScale : scale);
+    }
+    drawStrip(); syncOut(); refreshRings();
+  };
+  btn.onclick = () => {
+    const open = app.classList.contains('railoff');   // toggling TO open
+    remember('rail', open ? '1' : '0');
+    apply(open, true);
+  };
+  apply(recall('rail', '1') === '1', false);
 })();
 </script>
 </body>
