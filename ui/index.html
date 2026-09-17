@@ -372,13 +372,6 @@
      column and read like a segmented *bar*. justify-self:start is what
      actually holds it to its content width. */
 
-  /* A stepper should look joined. */
-  /* Stepper (Figma 28:816). NOT a bespoke control: it is ordinary Default
-     buttons butted together, so every state — hover, pressed, disabled — is
-     the button's own. The previous version was borderless, transparent and
-     24px tall, which is exactly why +/- read as a different species from the
-     buttons beside them. Only the corner radii and the shared middle border
-     are special. */
   /* ------------------------------------------------------------------
      `hidden` must actually hide. THREE components have now needed this
      patched one at a time — .cvbar, #outImg/#outVid, and the format
@@ -393,16 +386,6 @@
      next component that styles `display` without thinking about it.
      ------------------------------------------------------------------ */
   [hidden]{display:none !important}
-
-  .stepper{display:inline-flex;align-items:center}
-  .stepper button{border-radius:0}
-  .stepper button:first-child{border-top-left-radius:var(--r-sm);border-bottom-left-radius:var(--r-sm)}
-  .stepper button:last-child{border-top-right-radius:var(--r-sm);border-bottom-right-radius:var(--r-sm)}
-  /* One border between neighbours rather than two stacked. */
-  .stepper button + button{margin-left:calc(-1 * var(--bw))}
-  .stepper button:hover,.stepper button:focus-visible{position:relative;z-index:1}
-  /* The dock's stepper is Sm height but keeps 12px padding (Figma 8:31/8:33). */
-  .dock-step button{padding:0 var(--s3)}
 
   /* ------------------------------------------------------------------
      Segmented control (Figma 84:177). NOT a stepper: a stepper is ordinary
@@ -451,11 +434,14 @@
   .seg button.sel{background:var(--raise);color:var(--ink);font-weight:600}
   .seg button.sel:hover{background:var(--raise-hi)}
   .seg button.sel:active{background:var(--raise-mid);transform:none}
-  /* A toggle in the strip head. On = the raised surface every selected thing
-     on this page has (the segmented thumb, the device chip), off = a label. */
-  .striphead button[aria-pressed],#dofBoth[aria-pressed]{background:transparent;border-color:transparent;box-shadow:none;color:var(--mute)}
-  .striphead button[aria-pressed]:hover,#dofBoth[aria-pressed]:hover{color:var(--ink)}
-  .striphead button[aria-pressed="true"],#dofBoth[aria-pressed="true"]{background:var(--raise);border-color:var(--edge);color:var(--ink);font-weight:600}
+  /* A text toggle that reads as a label until it is on. On = the raised
+     surface every selected thing on this page has (the segmented thumb, the
+     device chip). The edge view's Contrast toggle used to share this rule; it
+     is a Segment Button inside the strip's own zoom group now (Figma 8:28) and
+     takes .segbtn[aria-pressed="true"] instead. */
+  #dofBoth[aria-pressed]{background:transparent;border-color:transparent;box-shadow:none;color:var(--mute)}
+  #dofBoth[aria-pressed]:hover{color:var(--ink)}
+  #dofBoth[aria-pressed="true"]{background:var(--raise);border-color:var(--edge);color:var(--ink);font-weight:600}
   /* Input chip (Figma 5:14 / 5:20). Surface and shadow are declared here rather
    than inherited from the base button rule, so the filled state is explicit and
    the .is-empty override below has something definite to override.
@@ -720,7 +706,6 @@
                max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
                display:inline-flex;line-height:20px}
   #detSt:empty,#outSt:empty{display:none}
-  .lbl{color:var(--ink);text-transform:uppercase;letter-spacing:.06em;font-size:11px;font-weight:600}
   /* overscroll-behavior:none on both wells (14 Sep 2026): a trackpad pinch is a
      wheel event we zoom on, but macOS still owns the gesture's elastic bounce.
      While the fingers were moving the browser let the well rubber-band past
@@ -1120,13 +1105,20 @@
      silently re-deviated. */
   .hint{color:var(--faint);font-size:12px;margin:8px 0 0;line-height:1.5}
 
-  /* Figma 8:28: 198px tall — 16 padding, 28 header, 8 gap, 130 strip, 16
-     padding. It is a fixed band and must never absorb leftover height. */
-  .dock{background:var(--card);padding:var(--s4);display:grid;gap:var(--s2);
-        grid-template-rows:28px 130px;flex:none;
+  /* Figma 8:28, re-read 17 Sep: 146px tall — 8 padding, 130 strip, 8 padding.
+     It is a fixed band and must never absorb leftover height. The 28px header
+     that held the zoom stepper and the status line is gone; both float over
+     the strip now, and the 52px it cost is given back to the picture. */
+  .dock{background:var(--card);padding:var(--s2);display:grid;
+        grid-template-rows:130px;flex:none;
+        /* Anchors the two floating children. It must stay z-index:auto — a
+           stacking context here would cut their blend rings off from the strip
+           behind them, which is exactly what cost the video bar its stroke in
+           v0.65.0. position:relative alone creates no context. */
+        position:relative;
         /* The rule is an inset shadow, not a border, so it does not add a
-           pixel to the band's height: 16+28+8+130+16 = 198 exactly. */
-        box-shadow:inset 0 1px 0 var(--line), inset 0 2px 0 rgba(255,255,255,.04)}
+           pixel to the band's height: 8+130+8 = 146 exactly. */
+        box-shadow:inset 0 1px 0 var(--line)}
   .dock.hidden{display:none}
   /* Version badge. Bottom-right, fixed, and deliberately the quietest thing on
      screen: --faint is the captions token (measured 3.50:1, the 1.4.3 floor for
@@ -1156,9 +1148,20 @@
   #pointat.suggest{background:var(--raise-hi);border-color:var(--edge-hi);color:var(--ink)}
   #pointat.armed{background:var(--raise-highest);border-color:var(--edge-hi);color:var(--ink)}
   .scroller.pointing canvas#c{cursor:crosshair}
-  /* Figma 8:29 is a 28px header holding 24px buttons — the header does not
-     shrink to hug them. */
-  .striphead{display:flex;align-items:center;gap:8px;font-size:12px;min-height:28px}
+  /* Both of these float OVER the strip (Figma 8:28). Their offsets in the file
+     are from the STRIP's own top-left, and the strip starts at the dock's 8px
+     padding, so each one carries that 8 too: the group at 8+8 / 8+17, the pill
+     at 8+8 from the top and the right. An absolutely positioned child is laid
+     out against its ancestor's PADDING box, so these are measured from the
+     dock's own edges and the arithmetic is done here rather than by the box.
+     The zoom group is the file's vertical Button Group, the same component the
+     fit pane's left rail uses. Its middle segment is Contrast, not the file's
+     1x: an edge view has no "actual size" to return to, and Contrast had
+     nowhere else to live once the header went (on request, 17 Sep). */
+  .stripzoom{position:absolute;left:16px;top:25px}
+  /* left:auto undoes .pillwrap's own centring, which is right for the two pane
+     pills and wrong for this one. */
+  .pillwrap.stripstat{top:16px;left:auto;right:16px;margin:0}
   canvas#strip{display:block;width:100%;height:130px;border-radius:var(--r-md);
         background:var(--well);box-shadow:inset 0 0 0 1px var(--line), inset 0 1px 3px rgba(0,0,0,.5)}
   /* Floating mode: the loupe follows the edge instead of taking a permanent band. */
@@ -1563,15 +1566,16 @@
   </div>
 
   <footer class="dock" id="dock">
-    <div class="striphead">
-      <span class="lbl">Edge view</span>
-      <span class="stepper dock-step"><button id="stripOut" aria-label="Zoom the edge view out">&minus;</button><button id="stripIn" aria-label="Zoom the edge view in">+</button></span>
-      <span class="sm" id="stripZ" style="color:var(--mute);font-variant-numeric:tabular-nums"></span>
-      <button class="sm" id="stripHC" aria-pressed="false" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched.">Contrast</button>
-      <span class="spacer"></span>
-      <span class="sm" id="stripSt" style="color:var(--mute)"></span>
-    </div>
     <canvas id="strip" width="1280" height="130"></canvas>
+    <!-- Both float over the strip and come AFTER it in the DOM, so they paint
+         on top of it without a z-index — the same reason #outSt sits after
+         #outWrap. A z-index here would cost them their blend rings. -->
+    <div class="bgroup stripzoom" role="group" aria-label="Edge view"><i class="ring" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i>
+      <button class="segbtn" id="stripIn" aria-label="Zoom the edge view in" title="Zoom the edge view in — a narrower band across the boundary"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M8.5 7.5H12.5V8.5H8.5V12.5H7.5V8.5H3.5V7.5H7.5V3.5H8.5V7.5Z"/></svg></button>
+      <button class="segbtn" id="stripHC" aria-pressed="false" aria-label="High contrast" title="Stretch the strip's own tonal range to full contrast. For a dark screen on a dark frame, where the boundary is a few levels apart. The strip only — the composite is untouched."><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--icon)"/><path fill="var(--icon)" d="M8 1.5a6.5 6.5 0 0 1 0 13Z"/></svg></button>
+      <button class="segbtn" id="stripOut" aria-label="Zoom the edge view out" title="Zoom the edge view out — a wider band across the boundary"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--icon)" d="M12.5 8.5H3.5V7.5H12.5V8.5Z"/></svg></button>
+    </div>
+    <span class="pillwrap stripstat"><i class="ring sat" aria-hidden="true"></i><i class="ring lum" aria-hidden="true"></i><i class="ring hue" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i><span class="status" id="stripSt"></span></span>
   </footer>
 </div>
 
@@ -2784,7 +2788,12 @@ function paintRingsFallback(){
   if (!IS_WEBKIT || _ringsQueued) return;
   _ringsQueued = true;
   requestAnimationFrame(() => { _ringsQueued = false;
-    const panes = [[$('#c'), $('.pane')], [$('#outImg'), $('#outPane')]];
+    // The edge-view dock is a third surface carrying groups (Figma 8:28, 17
+    // Sep), and its backdrop is the strip canvas rather than either pane's
+    // picture. Without this pair the dock's zoom group and status pill get no
+    // ring colour at all in Safari: they sit outside both panes, so the loop
+    // never reached them and .noblend leaves the ring transparent.
+    const panes = [[$('#c'), $('.pane')], [$('#outImg'), $('#outPane')], [strip, $('#dock')]];
     for (const [src, pane] of panes){
       if (!src || !pane) continue;
       const ok = src.tagName === 'CANVAS' ? src.width > 0 : (!src.hidden && src.naturalWidth > 0);
@@ -3422,7 +3431,7 @@ function setStripHC(on){
   $('#stripHC').setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 $('#stripHC').onclick = () => { setStripHC(!stripHC); drawStrip(); };
-function paintStrip(c, W, H, i, mode){
+function paintStrip(c, W, H, i, mode, padLeft = 9){
   c.setTransform(1,0,0,1,0,0);
   c.fillStyle = '#0c0c0b'; c.fillRect(0,0,W,H);
   const A = st.corners[i], B = st.corners[(i+1)%4];
@@ -3462,8 +3471,8 @@ function paintStrip(c, W, H, i, mode){
   const centre = st.corners.reduce((acc,cc)=>[acc[0]+cc[0]/4, acc[1]+cc[1]/4],[0,0]);
   const inwardIsDown = (n[0]*(centre[0]-A[0]) + n[1]*(centre[1]-A[1])) > 0;
   c.font = '600 11px system-ui'; c.textBaseline = 'middle';
-  casedText(c, 'screen', 9, inwardIsDown ? H/2 + 15 : H/2 - 15, 'rgba(255,255,255,.95)');
-  casedText(c, 'outside', 9, inwardIsDown ? H/2 - 15 : H/2 + 15, 'rgba(255,255,255,.62)');
+  casedText(c, 'screen', padLeft, inwardIsDown ? H/2 + 15 : H/2 - 15, 'rgba(255,255,255,.95)');
+  casedText(c, 'outside', padLeft, inwardIsDown ? H/2 - 15 : H/2 + 15, 'rgba(255,255,255,.62)');
 }
 function swingText(mode){
   if (mode === 'rotA') return 'the right end swings, pivot on the left';
@@ -3510,11 +3519,19 @@ function paintCorner(c, W, H, i){
   casedText(c, LBL[i], W/2 + 12, H/2 - 12, 'rgba(255,255,255,.95)');
 }
 const HANDLE_GAP_S = 4 + 1 + CASE_PAD/2 + 1;   // the same break the canvas leaves around a ring
+/* Figma 8:28 puts the strip's labels at x=59, which is the floating zoom group
+   (8 left + 32 wide) plus 19 of air. That 59 is CSS pixels, but the strip's
+   canvas is a fixed 1280 wide stretched to whatever the band measures, so the
+   two agree at exactly one window width — hence the conversion rather than a
+   literal 59. The floating loupe has no group over it and keeps the default. */
+function stripLabelInset(W){
+  const css = strip.getBoundingClientRect().width;
+  return css > 0 ? Math.round(59 * W / css) : 59;
+}
 function drawStrip(){
   const a = drag || hover || pick;
   const has = !!(st.corners && a && (a.kind === 'edge' || a.kind === 'corner') && img.naturalWidth);
   const corner = has && a.kind === 'corner';
-  $('#stripZ').textContent = '±' + stripHalf + 'px';
   if (loupeMode === 'dock'){
     $('#floatLoupe').classList.remove('on');
     const W = strip.width, H = strip.height;
@@ -3527,7 +3544,7 @@ function drawStrip(){
       paintCorner(sctx, W, H, a.i);
       $('#stripSt').textContent = `${LBL[a.i]} corner · ${(H/(2*cornerHalf())).toFixed(1)}× — the whole arc, and where each edge lands on it`;
     } else {
-      paintStrip(sctx, W, H, a.i, a.mode);
+      paintStrip(sctx, W, H, a.i, a.mode, stripLabelInset(W));
       $('#stripSt').textContent = `${EDGE_LBL[a.i]} edge · ±${stripHalf}px · ${(H/(2*stripHalf)).toFixed(1)}× across the boundary — ${swingText(a.mode)}`;
     }
   } else {

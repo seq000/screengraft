@@ -351,6 +351,41 @@
      wells.length === 2 && wells.every(w => /none|contain/.test(getComputedStyle(w).overscrollBehaviorY)),
      wells.map(w => w.id + ':' + getComputedStyle(w).overscrollBehaviorY).join(' '));
 
+  // --- the edge-view dock (Figma 8:28) --------------------------------------
+  // The band is FIXED at 8 + 130 + 8. It used to carry a 28px header; if some
+  // future rule lets it absorb leftover height again, the strip's own
+  // magnification silently changes with the window.
+  {
+    const dk = document.getElementById('dock'), sp = document.getElementById('strip');
+    if (dk && sp && !dk.classList.contains('hidden') && vis(dk)){
+      ok('the edge-view dock is the design\'s fixed 146px band',
+         Math.round(dk.getBoundingClientRect().height) === 146,
+         Math.round(dk.getBoundingClientRect().height) + 'px');
+      // The zoom group and the status pill blend their strokes against the
+      // strip BEHIND them. A stacking context on the dock cuts them off from
+      // it — the bug that cost the video bar its stroke twice (v0.65.0), and
+      // it is invisible until someone looks at the right photograph.
+      const dc = getComputedStyle(dk);
+      ok('the dock opens no stacking context, so the floating groups can blend',
+         dc.zIndex === 'auto' && dc.transform === 'none' && dc.filter === 'none' &&
+         dc.isolation !== 'isolate' && dc.mixBlendMode === 'normal',
+         `z=${dc.zIndex} transform=${dc.transform} filter=${dc.filter} isolation=${dc.isolation}`);
+      // The strip's "screen"/"outside" labels are drawn in CANVAS pixels while
+      // the group floats in CSS pixels, and the canvas is a fixed 1280 stretched
+      // to the band — so the two only agree if the inset is converted. If it is
+      // not, the labels slide under the group at some window widths and not
+      // others.
+      const gz = document.querySelector('.stripzoom');
+      if (gz && typeof stripLabelInset === 'function'){
+        const r = sp.getBoundingClientRect(), g = gz.getBoundingClientRect();
+        const labelCss = stripLabelInset(sp.width) * r.width / sp.width;
+        ok('the strip\'s labels clear the floating zoom group',
+           labelCss >= g.right - r.left + 8,
+           `label at ${labelCss.toFixed(1)}px, group ends at ${(g.right - r.left).toFixed(1)}px`);
+      }
+    }
+  }
+
   const fail = R.filter(r => !r.pass);
   return { pass: R.length - fail.length, fail: fail.length,
            failures: fail, checks: R.map(r => (r.pass ? '  ok   ' : '  FAIL ') + r.name + (r.extra ? '   ' + r.extra : '')) };
