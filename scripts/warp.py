@@ -366,10 +366,19 @@ class Plan:
                                    flags=cv2.INTER_LANCZOS4,
                                    borderMode=cv2.BORDER_REPLICATE)
 
-    def bind_grade(self, frame: np.ndarray, strength: float) -> None:
-        """Measure the light correction once, from the frame the user fitted on."""
+    def bind_grade(self, frame: np.ndarray, strength: float,
+                   light: float = None, colour: float = None) -> None:
+        """Measure the light correction once, from the frame the user fitted on.
+
+        `light` and `colour` weight the two halves separately (see
+        grade.light_params). Left unset they both fall back to `strength`,
+        which is what every sidecar written before the split carries.
+        """
+        wL = strength if light is None else light
+        wC = strength if colour is None else colour
         self.grade_params = _grade.light_params(
-            self.photo, self._prep(frame), self.warped_mask, strength) if strength > 0 else None
+            self.photo, self._prep(frame), self.warped_mask, strength,
+            light=light, colour=colour) if (wL > 0 or wC > 0) else None
 
     def _blend(self, photo_win, warped_win):
         """Emitted light over reflected light, or a plain replace.
@@ -444,7 +453,8 @@ class Plan:
 
 def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: float = 0.0,
             corner_smoothing: float = 0.0,
-            grade: float = 0.0, grain: bool = False, screen_off: np.ndarray = None,
+            grade: float = 0.0, grade_light: float = None, grade_colour: float = None,
+            grain: bool = False, screen_off: np.ndarray = None,
             specular: float = 0.75, blend: str = "replace",
             reflection: float = DEFAULT_REFLECTION,
             dof_angle: float = 0.0, dof_strength: float = 0.0,
@@ -467,7 +477,7 @@ def compose(photo: np.ndarray, screenshot: np.ndarray, corners, corner_radius: f
                 dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start,
                 dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2,
                 grain_gain=grain_gain)
-    plan.bind_grade(screenshot, grade)
+    plan.bind_grade(screenshot, grade, light=grade_light, colour=grade_colour)
     return plan.render(screenshot, screen_off=screen_off, specular=specular)
 
 
@@ -549,7 +559,8 @@ def read_frame_at(path: str, index: int = 0):
 
 def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                   corner_radius: float = 0.0, corner_smoothing: float = 0.0,
-                  grade: float = 0.0, grain: bool = False,
+                  grade: float = 0.0, grade_light: float = None,
+                  grade_colour: float = None, grain: bool = False,
                   preset: str = "web", fit_frame: int = 0, audio: bool = True,
                   frames_dir: str = None, progress=None, blend: str = "replace",
                   reflection: float = DEFAULT_REFLECTION,
@@ -588,7 +599,7 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
                 dof_angle=dof_angle, dof_strength=dof_strength, dof_start=dof_start,
                 dof_end=dof_end, dof_space=dof_space, dof_end2=dof_end2,
                 grain_gain=grain_gain)
-    plan.bind_grade(first, grade)
+    plan.bind_grade(first, grade, light=grade_light, colour=grade_colour)
 
     ph, pw = photo.shape[:2]
     cmd = [ffmpeg_exe(), "-y", "-loglevel", "error",

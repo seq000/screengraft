@@ -173,5 +173,62 @@ try:
 except ValueError:
     ok('a mismatched screen-off frame is rejected', True)
 
+
+# --- Light and Colour, split out of one grade (SG117) -----------------------
+#
+# The split exists because one control was doing two jobs: with realism on, a
+# brand orange visibly moved toward coral and a pure-black status bar lifted to
+# slate. Both are correct -- nothing on a real phone renders #000 -- but the
+# audience for this tool checks hex values, and the two effects have different
+# answers. What moves hue is the CHROMA match; what sits the screen in the
+# scene is the bounded L shift. They were already separate arithmetic inside
+# apply_light; now they have separate weights.
+print('\nLight / Colour split')
+
+_R = lambda **kw: warp.compose(photo, shot, corners, corner_radius=6.0, **kw)
+
+# THE CONTRACT. A sidecar written before this split carries `grade` and nothing
+# else, and must still replay byte for byte. It does because an unset
+# light/colour IS strength -- the same multiplication, not a near-enough one.
+_pins = []
+for _g in (0.0, 0.2, 0.35, 1.0):
+    _pins.append(np.array_equal(_R(grade=_g), _R(grade=_g, grade_light=_g, grade_colour=_g)))
+ok('a grade-only call is byte-identical to the same value split in two',
+   all(_pins), 'strengths 0.0 / 0.2 / 0.35 / 1.0')
+
+_base = _R(grade=0.0)
+_lo   = _R(grade=0.0, grade_light=0.35, grade_colour=0.0)
+_co   = _R(grade=0.0, grade_light=0.0,  grade_colour=0.35)
+_both = _R(grade=0.35)
+
+def _dlab(x):
+    a = cv2.cvtColor(_base, cv2.COLOR_BGR2LAB).astype(int)
+    b = cv2.cvtColor(x, cv2.COLOR_BGR2LAB).astype(int)
+    return (float(np.abs(b[:, :, 0] - a[:, :, 0]).mean()),
+            float(np.abs(b[:, :, 1:] - a[:, :, 1:]).mean()))
+
+_ldl, _ldab = _dlab(_lo)
+_cdl, _cdab = _dlab(_co)
+# Light must leave hue alone. Not exactly zero would be a failure of the split
+# itself, so this is the assertion that matters, not a tolerance.
+ok('Light moves L and leaves chroma alone',
+   _ldl > 0.5 and _ldab < 0.05, 'dL %.3f, d(a,b) %.3f' % (_ldl, _ldab))
+# Colour is allowed a little L movement: a,b are clipped and round-tripped
+# through uint8 BGR, and that is not free. It must still be overwhelmingly a
+# chroma move, which is what the ratio says.
+ok('Colour is overwhelmingly a chroma move',
+   _cdab > 1.0 and _cdab > _cdl * 4, 'd(a,b) %.3f against dL %.3f' % (_cdab, _cdl))
+ok('Colour moves chroma much further than Light does',
+   _cdab > _ldab * 20, '%.3f vs %.3f' % (_cdab, _ldab))
+ok('the two halves compose: light+colour together == the old single grade',
+   np.array_equal(_R(grade=0.0, grade_light=0.35, grade_colour=0.35), _both))
+# And the symptom itself: turning Colour off is what keeps the screen's own hue.
+_hue = lambda x: cv2.cvtColor(x[150:300, 200:400], cv2.COLOR_BGR2LAB).astype(float)[:, :, 1:].mean(axis=(0, 1))
+ok('with Colour at 0 the screen keeps its own hue',
+   float(np.abs(_hue(_lo) - _hue(_base)).max()) < 0.5,
+   'shift %.2f, against %.2f when Colour is on'
+   % (float(np.abs(_hue(_lo) - _hue(_base)).max()),
+      float(np.abs(_hue(_co) - _hue(_base)).max())))
+
 print('\n' + ('all checks passed' if not FAILED else 'FAILURES: ' + ', '.join(FAILED)))
 sys.exit(1 if FAILED else 0)

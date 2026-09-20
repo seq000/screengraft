@@ -1527,6 +1527,14 @@
   /* The Keys legend. max-content on the first column sizes it to the widest
      cap, so every description starts on the same x and the caps form a single
      column the eye can run down. */
+  /* Realism's two rows. label | slider | value, so the two read as a pair of
+     the same control rather than two stacked blocks -- and it is shorter than
+     the single stacked slider it replaces, on a rail that has no room. */
+  .gr-row{display:grid;grid-template-columns:max-content 1fr max-content;
+          align-items:center;gap:var(--s2)}
+  .gr-row .gr-lbl{color:var(--mute)}
+  .gr-row output{color:var(--ink);font-variant-numeric:tabular-nums;min-width:34px;
+                 text-align:right;font-size:12px}
   dl.keys{display:grid;grid-template-columns:max-content 1fr;gap:6px 10px;
           margin:8px 0 0;align-items:baseline}
   dl.keys dt{color:var(--faint);font-size:12px;white-space:nowrap}
@@ -1702,16 +1710,30 @@
         <div class="sect-top">
           <div class="sect-left">
             <h4>Realism</h4>
-            <button class="info" type="button" aria-label="About realism"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Matches the screen's white balance and grain to the light around it, so it stops reading as pasted. Off keeps the screenshot's colour exactly — right when the UI's own colour is what you're reviewing. Grain is judged here at the preview's scale: the save carries about twice as much, which is what you get if you view the file at 100%.</span></button>
+            <button class="info" type="button" aria-label="About realism"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path fill="currentColor" d="M8.36 1.01C12.06 1.2 15 4.26 15 8l-.01.36C14.8 12.06 11.74 15 8 15l-.36-.01C4.06 14.81 1.19 11.94 1.01 8.36L1 8c0-3.87 3.13-7 7-7l.36.01ZM8 2C4.69 2 2 4.69 2 8c0 3.31 2.69 6 6 6 3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6Zm.5 8l.5 0v1L7 11v-1h.5V7H7V6h1.5v4ZM7.9 4c.33 0 .6.27.6.6a.6.6 0 1 1-1.21 0c0-.33.28-.6.61-.6Z"/></svg><span class="tip" role="tooltip">Sits the screen in the light around it, so it stops reading as pasted. <b>Light</b> matches the scene's exposure and leaves hue alone. <b>Colour</b> matches its white balance — this is the one that warms a brand colour, so set it to 0 when an exact hex is the point and keep Light. Off does both. Grain is judged here at the preview's scale: the save carries about twice as much, which is what you get if you view the file at 100%.</span></button>
           </div>
           <button class="switch" id="gradeBtn" role="switch" aria-checked="true" aria-label="Realism">
             <span class="sw-track"><span class="sw-handle"></span><span class="sw-grip"></span></span>
           </button>
         </div>
         <div class="sect-body"><div class="sect-body-in">
-          <div style="display:grid;gap:var(--s2);justify-items:end">
-            <span class="sm" id="gradeVal" style="font-variant-numeric:tabular-nums"></span>
-            <input type="range" id="gradeAmt" min="0.1" max="1" step="0.05" value="0.35" aria-label="Realism strength">
+          <!-- Two halves of one measurement, not two features. See
+               grade.light_params: Light is a bounded L shift, Colour is the
+               chroma match. Colour starts at 0 in neither -- both inherit
+               whatever single strength was remembered before the split. -->
+          <div style="display:grid;gap:var(--s3)">
+            <div class="gr-row">
+              <span class="sm gr-lbl">Light</span>
+              <input type="range" id="gradeLight" min="0" max="1" step="0.05" value="0.35"
+                     aria-label="Light — match the scene's exposure">
+              <output for="gradeLight" id="gradeLightVal"></output>
+            </div>
+            <div class="gr-row">
+              <span class="sm gr-lbl">Colour</span>
+              <input type="range" id="gradeColour" min="0" max="1" step="0.05" value="0.35"
+                     aria-label="Colour — match the scene's white balance">
+              <output for="gradeColour" id="gradeColourVal"></output>
+            </div>
           </div>
           </div></div>
       </div>
@@ -3531,27 +3553,55 @@ function setSectionOpen(sect, on){
    colour exactly, which is what you want when the UI's colour is the thing under
    review. Strength is a slider because the right amount is a judgement about the
    photograph, not a constant. */
-let gradeOn  = recall('grade','1') === '1';
-let gradeAmt = parseFloat(recall('gradeAmt','0.35')) || 0.35;
-function gradeValue(){ return gradeOn ? gradeAmt : 0; }
+let gradeOn = recall('grade','1') === '1';
+/* One strength became two on 21 Sep 2026, and the reason is a real report: with
+   realism on, a brand orange visibly moved toward coral and a pure-black status
+   bar lifted to slate. Both are CORRECT -- nothing on a real phone renders #000
+   -- but one control was doing two jobs and the people using this check hex
+   values. The cut follows what grade.light_params already computes separately:
+
+     Light  -> a bounded mean shift on L. Sits the screen in the scene's
+               exposure and leaves hue alone (measured: d(a,b) 0.002).
+     Colour -> the chroma match, mean and spread. The half that warmed the
+               orange (measured: 12.98 against 0.00 with it off).
+
+   Anyone who had a strength saved keeps it: both halves inherit it, so the
+   first render after this ships is the one they had. */
+const _oldAmt = parseFloat(recall('gradeAmt','0.35')) || 0.35;
+let gLight  = parseFloat(recall('gradeLight',  String(_oldAmt)));
+let gColour = parseFloat(recall('gradeColour', String(_oldAmt)));
+if (!(gLight  >= 0)) gLight  = _oldAmt;
+if (!(gColour >= 0)) gColour = _oldAmt;
+/* The master value. Everything server-side that asks "is the realism pass doing
+   anything at all" -- grain, chiefly -- is keyed on `grade`, so it is the
+   larger of the two rather than either one. */
+function gradeValue(){ return gradeOn ? Math.max(gLight, gColour) : 0; }
+function gradeLightValue(){ return gradeOn ? gLight : 0; }
+function gradeColourValue(){ return gradeOn ? gColour : 0; }
 function paintGrade(){
-  setSwitch($('#gradeBtn'), gradeOn);          // hides the slider when off
-  $('#gradeVal').textContent = Math.round(gradeAmt * 100) + '%';
-  const sl = $('#gradeAmt');
-  sl.value = gradeAmt;
-  sl.style.setProperty('--p', (gradeAmt - 0.1) / 0.9);
+  setSwitch($('#gradeBtn'), gradeOn);          // hides the sliders when off
+  for (const [id, v] of [['gradeLight', gLight], ['gradeColour', gColour]]){
+    const sl = $('#' + id);
+    sl.value = v;
+    sl.style.setProperty('--p', v);            // span is 0-1 now, so no rescale
+    $('#' + id + 'Val').textContent = Math.round(v * 100) + '%';
+  }
 }
-function setGrade(on, amt){
+function setGrade(on){
   gradeOn = on;
-  if (amt !== undefined) gradeAmt = amt;
-  remember('grade', on ? '1' : '0'); remember('gradeAmt', String(gradeAmt));
+  remember('grade', on ? '1' : '0');
+  remember('gradeLight', String(gLight));
+  remember('gradeColour', String(gColour));
   paintGrade();
 }
 $('#gradeBtn').onclick = () => { setGrade(!gradeOn); autoPreview(); };
 // Repaint live while dragging, re-render only on release: a full compose per
 // input event would queue renders faster than they finish.
-$('#gradeAmt').oninput  = e => { gradeAmt = parseFloat(e.target.value); paintGrade(); };
-$('#gradeAmt').onchange = e => { setGrade(true, parseFloat(e.target.value)); autoPreview(); };
+for (const [id, set] of [['gradeLight',  v => gLight  = v],
+                         ['gradeColour', v => gColour = v]]){
+  $('#' + id).oninput  = e => { set(parseFloat(e.target.value)); paintGrade(); };
+  $('#' + id).onchange = e => { set(parseFloat(e.target.value)); setGrade(true); autoPreview(); };
+}
 
 /* Emissive screen. A display emits light AND reflects the room; `replace` models
    only the first, which is why a true-black UI lands as a hole. Off by default so
@@ -4334,6 +4384,8 @@ async function playClip(){
   try{
     await api('/api/preview_video', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen',
                                      device: st.type, grade: gradeValue(),
+                                     grade_light: gradeLightValue(),
+                                     grade_colour: gradeColourValue(),
                                      reflection: emisValue(), fit_frame: +$('#vframe').value});
   }catch(e){
     building = false;
@@ -4391,7 +4443,7 @@ async function renderPreview(){
   const say = t => { if (!building && $('#liveWrap').hidden) s.textContent = t; };
   say('Rendering…');
   try{
-    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/preview', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type, grade: gradeValue(), grade_light: gradeLightValue(), grade_colour: gradeColourValue(), reflection: emisValue()});
     const im = $('#outImg');
     im.onload = () => {
       outNat = im.naturalWidth;
@@ -4524,7 +4576,9 @@ async function renderVideo(){
   setRenderProgress(0);
   try{
     await api('/api/render', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type,
-                              grade: gradeValue(), reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
+                              grade: gradeValue(), grade_light: gradeLightValue(),
+                              grade_colour: gradeColourValue(),
+                              reflection: emisValue(), preset, fit_frame: +$('#vframe').value});
   }catch(e){
     setRenderProgress(null);
     toast('err','Could not start the render: '+e.message);
@@ -4569,7 +4623,7 @@ $('#save').onclick = async () => {
   if (st.video) return renderVideo();
   const b = $('#save'); b.textContent = 'Saving…'; b.disabled = true;
   try{
-    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type, grade: gradeValue(), reflection: emisValue()});
+    const r = await api('/api/save', {corners: st.corners, radius_frac: radiusValue(), smoothing: smoothingValue(), dof_angle: dofAngle(), dof_strength: dofStrength(), dof_start: dofStartV(), dof_end: dofEndV(), dof_end2: dofEnd2V(), dof_space: 'screen', device: st.type, grade: gradeValue(), grade_light: gradeLightValue(), grade_colour: gradeColourValue(), reflection: emisValue()});
     b.textContent = saveLabel();
     // The real destination, not a hardcoded one: --out-dir means saves usually
     // land in the project folder now, and telling the user "~/Desktop" when
@@ -4658,7 +4712,10 @@ $('#imp').onclick = async () => {
   }
   setLoupeMode(loupeMode);
   setStripHC(stripHC);
-  setGrade(gradeOn, gradeAmt);
+  // One argument since the Light/Colour split: the two amounts are module
+  // state, already recalled above. Passing the old `gradeAmt` here threw a
+  // ReferenceError that killed the rest of boot.
+  setGrade(gradeOn);
   setEmis(emisOn, emisAmt);
   setDof(dofOn, dofAng, dofStr);
   setRadiusOn(radiusOn);

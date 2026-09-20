@@ -587,10 +587,32 @@ PREVIEW_WIDTH = 720
 PREVIEW_SECONDS = 6.0
 
 
+def _grade_args(b):
+    """The realism weights: one legacy value, and the two halves that split it.
+
+    `grade` stays the single master, and it is what every sidecar written
+    before 21 Sep 2026 carries. `grade_light` and `grade_colour` weight the two
+    halves separately when the page sends them; ABSENT means "same as grade",
+    which is precisely what makes an old sidecar replay byte for byte rather
+    than merely closely (grade.light_params does the same defaulting, and
+    test_grade.py pins the identity at four strengths).
+
+    The page sends all three: `grade` as max(light, colour), so every
+    downstream default keyed on `grade > 0` -- grain, chiefly -- still means
+    "is the realism pass doing anything at all".
+    """
+    gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
+    gl = b.get("grade_light")
+    gc = b.get("grade_colour")
+    return (gr,
+            None if gl is None else float(gl),
+            None if gc is None else float(gc))
+
+
 def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, preset, fit_frame,
                    blend="replace", reflection=None, result=None, kind="render",
                    start_frame=0, max_frames=None, *, smoothing=0.0, dof=None,
-                   grain_gain=1.0):
+                   grain_gain=1.0, grade_light=None, grade_colour=None):
     """Encode the clip, and only if that SUCCEEDS publish what it produced.
 
     `result` is the sidecar this render would write. It is handed to the worker
@@ -610,7 +632,9 @@ def _render_worker(photo, video_path, corners, dest, radius_px, gr, grain, prese
     try:
         info = W.compose_video(photo, video_path, corners, dest,
                                corner_radius=radius_px, corner_smoothing=smoothing,
-                               grade=gr, grain=grain, grain_gain=grain_gain,
+                               grade=gr, grade_light=grade_light,
+                               grade_colour=grade_colour,
+                               grain=grain, grain_gain=grain_gain,
                                preset=preset, fit_frame=fit_frame, progress=progress,
                                blend=blend,
                                reflection=(W.DEFAULT_REFLECTION if reflection is None
@@ -1303,7 +1327,7 @@ class Handler(BaseHTTPRequestHandler):
                                 else _fit_frame())
                 first = W.read_frame_at(spath, fit_frame)
                 radius_px = frac * first.shape[1]
-                gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
+                gr, gl, gc = _grade_args(b)
                 grain = bool(b.get("grain", gr > 0))
                 blend, reflection = _blend_args(b)
                 # Downscale the PHOTO and scale the quad with it, rather than
@@ -1344,7 +1368,9 @@ class Handler(BaseHTTPRequestHandler):
                                            fit_frame, max_frames),
                                      kwargs={"smoothing": _smoothing(b),
                                              "dof": _dof_args(b),
-                                             "grain_gain": _grain_gain(b)}).start()
+                                             "grain_gain": _grain_gain(b),
+                                             "grade_light": gl,
+                                             "grade_colour": gc}).start()
                 except BaseException:
                     with RENDER_LOCK:
                         RENDER.update(state="error", message="could not start the preview")
@@ -1375,7 +1401,7 @@ class Handler(BaseHTTPRequestHandler):
                                 else _fit_frame())
                 first = W.read_frame_at(spath, fit_frame)
                 radius_px = frac * first.shape[1]
-                gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
+                gr, gl, gc = _grade_args(b)
                 grain = bool(b.get("grain", gr > 0))
                 blend, reflection = _blend_args(b)
                 dof = _dof_args(b)
@@ -1397,7 +1423,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = {"output": dest, "photo": ppath, "screenshot": spath,
                           "corners": corners, "radius_frac": frac, "radius_px": radius_px,
                           "device": b.get("device"), "corner_smoothing": _smoothing(b),
-                          "grade": gr, "grain": grain, "grain_gain": _grain_gain(b),
+                          "grade": gr, "grade_light": gl, "grade_colour": gc,
+                          "grain": grain, "grain_gain": _grain_gain(b),
                           "video": True, "preset": preset, "fit_frame": fit_frame,
                           "blend": blend, "reflection": reflection,
                           "dof_angle": dof["dof_angle"], "dof_strength": dof["dof_strength"],
@@ -1431,7 +1458,9 @@ class Handler(BaseHTTPRequestHandler):
                                            blend, reflection, result),
                                      kwargs={"smoothing": _smoothing(b),
                                              "dof": dof,
-                                             "grain_gain": result["grain_gain"]}).start()
+                                             "grain_gain": result["grain_gain"],
+                                             "grade_light": result["grade_light"],
+                                             "grade_colour": result["grade_colour"]}).start()
                 except BaseException:
                     # If the thread cannot even be created, the flag must not
                     # outlive the request.
@@ -1451,14 +1480,15 @@ class Handler(BaseHTTPRequestHandler):
                 # composite is the right output when the screenshot's own colour
                 # is the point (a brand review), and the grade is the right one
                 # when the photograph is (a portfolio shot).
-                gr = float(b.get("grade") if b.get("grade") is not None else 0.0)
+                gr, gl, gc = _grade_args(b)
                 blend, reflection = _blend_args(b)
                 smoothing = _smoothing(b)
                 dof = _dof_args(b)
                 grain_gain = _grain_gain(b)
                 out = W.compose(photo, shot, corners, radius_px,
                                 corner_smoothing=smoothing,
-                                grade=gr, grain=bool(b.get("grain", gr > 0)),
+                                grade=gr, grade_light=gl, grade_colour=gc,
+                                grain=bool(b.get("grain", gr > 0)),
                                 grain_gain=grain_gain,
                                 blend=blend, reflection=reflection, **dof)
                 SESSION.update(corners=corners, radius_frac=frac, device=b.get("device"),
@@ -1494,7 +1524,8 @@ class Handler(BaseHTTPRequestHandler):
                 result = {"output": dest, "photo": ppath, "screenshot": spath, "corners": corners,
                           "radius_frac": frac, "radius_px": radius_px, "device": b.get("device"),
                           "corner_smoothing": smoothing,
-                          "grade": gr, "grain": bool(b.get("grain", gr > 0)),
+                          "grade": gr, "grade_light": gl, "grade_colour": gc,
+                          "grain": bool(b.get("grain", gr > 0)),
                           "grain_gain": grain_gain,
                           "blend": blend, "reflection": reflection,
                           "dof_angle": dof["dof_angle"], "dof_strength": dof["dof_strength"],

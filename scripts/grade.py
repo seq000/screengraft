@@ -62,7 +62,8 @@ def _stats(lab: np.ndarray, sel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def light_params(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
-                 strength: float = DEFAULT_STRENGTH):
+                 strength: float = DEFAULT_STRENGTH,
+                 light: float = None, colour: float = None):
     """Measure the correction ONCE, so it can be applied to many frames.
 
     Split out of match_light for video. The correction depends on the
@@ -74,7 +75,30 @@ def light_params(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
     Returns None when there is too little context to measure honestly, which
     the caller must treat as "leave the frame alone".
     """
-    if strength <= 0:
+    # LIGHT and COLOUR are the same measurement, weighted separately.
+    #
+    # Split on request, 21 Sep 2026, from a real finding: with realism on, a
+    # brand orange visibly shifted toward coral and a pure-black status bar
+    # lifted to slate. Both are CORRECT -- nothing on a real phone renders #000
+    # -- but one control was doing two jobs, and the audience for this tool
+    # cares about exact hex. What moved the orange is the chroma match, not the
+    # exposure shift, so the useful cut is exactly the one this function
+    # already makes internally:
+    #
+    #   light  -> L only: a bounded mean shift. Sits the screen in the scene's
+    #             exposure and leaves hue alone.
+    #   colour -> a,b only: mean AND spread. The white-balance and saturation
+    #             match, and the one that moved the orange.
+    #
+    # Nothing about the arithmetic changed; only who scales which half.
+    #
+    # THE COMPATIBILITY CONTRACT: `strength` alone still works and still means
+    # what it meant. When light/colour are not given they ARE strength, so an
+    # old sidecar -- which carries `grade` and knows nothing of this split --
+    # replays through identical multiplications. test_sidecar.py pins it.
+    wL = float(strength if light is None else light)
+    wC = float(strength if colour is None else colour)
+    if wL <= 0 and wC <= 0:
         return None
     ring = surround_ring(mask)
     if int(ring.sum()) < 500:
@@ -88,10 +112,13 @@ def light_params(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
     m_in, s_in = _stats(lab_warp, inside)
     return {
         "m_in": m_in, "s_in": s_in, "m_out": m_out, "s_out": s_out,
-        "strength": float(strength),
+        # Kept under its old name and still the chroma weight, so apply_light()
+        # on a params dict from anywhere behaves as it always did.
+        "strength": wC,
+        "light": wL, "colour": wC,
         # Same clamp as match_light: a screen is emissive and may be brighter
         # than the room, so L moves by a bounded mean shift only.
-        "dL": float(np.clip(m_out[0] - m_in[0], -12.0, 12.0)) * float(strength),
+        "dL": float(np.clip(m_out[0] - m_in[0], -12.0, 12.0)) * wL,
     }
 
 
@@ -102,7 +129,9 @@ def apply_light(warped: np.ndarray, params) -> np.ndarray:
     lab_warp = cv2.cvtColor(warped, cv2.COLOR_BGR2LAB).astype(np.float64)
     m_in, s_in = params["m_in"], params["s_in"]
     m_out, s_out = params["m_out"], params["s_out"]
-    strength = params["strength"]
+    # The chroma weight. `colour` when the params came from the split path,
+    # `strength` for any dict built before it existed.
+    strength = float(params.get("colour", params["strength"]))
     out = lab_warp.copy()
     for c in (1, 2):
         moved = (lab_warp[:, :, c] - m_in[c]) * float(s_out[c] / s_in[c]) + m_out[c]
@@ -114,7 +143,8 @@ def apply_light(warped: np.ndarray, params) -> np.ndarray:
 
 
 def match_light(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
-                strength: float = DEFAULT_STRENGTH) -> np.ndarray:
+                strength: float = DEFAULT_STRENGTH,
+                light: float = None, colour: float = None) -> np.ndarray:
     """Move the injected screen's cast and exposure toward the surrounding light.
 
     Chroma (a,b) is matched on mean AND spread — a cast is exactly a chroma mean
@@ -127,7 +157,8 @@ def match_light(photo: np.ndarray, warped: np.ndarray, mask: np.ndarray,
     # One implementation, two entry points: measuring and applying are the same
     # arithmetic whether it runs on a still or on frame 900 of a clip. Keeping a
     # second copy here is how the two paths would drift.
-    return apply_light(warped, light_params(photo, warped, mask, strength))
+    return apply_light(warped, light_params(photo, warped, mask, strength,
+                                            light=light, colour=colour))
 
 
 GRAIN_GATE = 20.0        # grey levels: above this a residual is an edge, not grain
