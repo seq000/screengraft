@@ -9,6 +9,121 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.67.0] - 2026-09-21
+
+Chrome, copy and busy states, all measured. Three of the changes below are
+declarations that had never applied at all — a CSS shorthand and a `var()`
+naming a token that does not exist both fail silently and look correct in the
+source.
+
+### Added
+
+- One busy state for every slow operation — `busy(el, label)`. It arms after
+  250ms, so a fast operation never flashes a spinner it did not need, and it
+  counts seconds past 2, because a number that keeps moving is the difference
+  between slow and stuck. Detection, Point at screen, loading a `.fit.json`
+  and loading the photograph all use it.
+  Why it was needed, measured on a 4000x4000 photograph: the cold fetch and
+  browser decode take **0.15s**, and `scripts/detect.py` takes **11.24s** — it
+  runs at full resolution. The wait was always detection, and a static
+  "Detecting..." held for eleven seconds is indistinguishable from a page that
+  has stopped.
+- `Esc` and the trackpad pinch are in the Keys legend. Pinch has always zoomed
+  — the wheel handler takes `ctrlKey` as well as `metaKey` — and was never
+  written down. `Esc` is the way out of the fit canvas's Tab cycle, so the one
+  line saying how to get in had no counterpart.
+
+### Changed
+
+- Every Button and Segmented-control token re-read from the design file. The
+  button had no token of its own for the REST state: it borrowed the shared
+  raise/edge ladders, and both had drifted. `--btn-rest` `#2b2c31` and
+  `--btn-rest-edge` `#46464e` complete the family; `--btn-hover` `#2b2b30`;
+  `--btn-press-edge` `#46464e`; `--acc-dis` `#992800` with `--acc-dis-edge`
+  `#f23b0d` (its old value is PRESSED only, so `--acc-press-edge` now exists).
+  The disabled primary label measures 7.53:1 on the darker container.
+- Weight 600 is gone from every control. All sixteen Button variants and both
+  segments are regular, which also retired the segmented control's hidden
+  ghost label — it existed to stop the control reflowing when the selection
+  changed weight, and there is no weight change now.
+- Save and Send to Claude are ordinary Default buttons. They carried an accent
+  class so they could be accent-coloured **while disabled**, which meant a cold
+  load showed two lit buttons offering actions that could not be taken.
+- The Keys legend is a description list, one key per row, with the caps in a
+  single column. As prose it read acceptably in a wide rail and badly in a
+  narrow one, with the caps landing mid-sentence and mid-wrap.
+- Corner-rail glyphs re-exported: shorter arms, so the four read as brackets
+  rather than a nearly-closed box, and the frame moved to the border ladder.
+- The input chip's unselected Active state takes a grey stroke, not the accent.
+  It was the one place a control that is merely READY wore the colour reserved
+  for the next action — and with an empty chip nothing has been chosen yet.
+- Key caps are a step larger.
+
+### Removed
+
+- Three messages that named a step or a control the auto-preview workflow had
+  already removed: the toast on load, "Preview first" on the Save button, and
+  "Press Preview" in the result pane's status pill. "Preview first" was only
+  ever on screen for the 350ms preview debounce — except after a **failed**
+  preview, where it persisted, telling the user to do the thing that had just
+  failed.
+
+### Fixed
+
+- Clearing the photograph left it drawable. `draw()` guarded on the `<img>`'s
+  `naturalWidth` alone and clearing wiped only the canvas, so one click in the
+  fit pane repainted a photograph the chip said was gone. `draw()` asks the
+  application state now, and clearing releases the decode (~64MB on a 4K file).
+- `detect()` had no error handler, so a failed request left "Detecting..."
+  spinning permanently — the one state the page could never leave.
+- The photograph `<img>` had no `onerror`, so a file that would not decode left
+  the page silent: no canvas, no message, nothing to do next.
+- The busy spinner's accent arc never rendered. `.status.busy::before` asked
+  for `var(--accent)`, which is not a token in this project, so the declaration
+  was invalid and the lit arc fell back to the label's own grey.
+- Key caps never rendered at the size the stylesheet specified. The rule used
+  `font: 11px/1.6 inherit`, an invalid shorthand — `inherit` is not a permitted
+  font-family there — so the whole declaration was dropped and the caps
+  inherited the surrounding 12px.
+- Pressed no longer moves the button. Half a CSS pixel is a whole device pixel
+  at 2x, so it read as a jump rather than a depression, and inside a clipping
+  parent it pushed the bottom stroke out of the box.
+- The fit canvas no longer traps Tab. It is captured only while the canvas
+  itself holds focus; `Esc` gives focus back.
+- A device chip that is already active no longer re-applies its preset over a
+  hand-set corner radius.
+- The depth-of-field advanced row no longer clips its wrapped controls.
+
+## [0.66.0] - 2026-09-18
+
+### Changed
+
+- The edge-view dock re-ported from the design file: the 28px header is gone
+  and the zoom controls and status float over the strip itself. Contrast is its
+  own group below the zoom pair.
+- The settings rail collapses, from a toggle last in the top bar, and slides
+  rather than vanishing.
+- Top bar button groups, both sidebar glyphs, the real contrast icon, and a
+  darker section info icon.
+
+### Fixed
+
+- The rectified strip's label inset is measured off the zoom group rather than
+  a literal 59px, so it stays clear at any canvas width.
+
+## [0.65.0] - 2026-09-17
+
+### Changed
+
+- The slider, the Segment Button divider and the result pane's video bottom
+  rail rebuilt from the design file.
+- `--hi`, the top inner highlight, removed from every control.
+
+### Fixed
+
+- The video bar no longer clips its drop shadow, and its blend-mode ring
+  stroke is no longer blocked by a stacking context.
+
 ## [0.64.2] - 2026-09-14
 
 ### Changed
