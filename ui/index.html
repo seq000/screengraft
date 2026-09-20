@@ -531,6 +531,19 @@
           height:22px;padding:0 10px;border-radius:999px;background:var(--sunk);
           border:1px solid var(--line);box-shadow:none;transition:var(--t-all)}
   .status::before{font-size:11px}
+  /* The depth-of-field advanced row: two buttons and a whole sentence sharing
+     a ~296px rail. As a NOWRAP flex row every item shrank below its own label,
+     the labels wrapped inside boxes with a fixed height (button.sm is 24px,
+     .status is 22px), and .sect-body{overflow:hidden} sliced whatever stuck
+     out — "Both sides" rendered as "Both ·˙·" and the measured note stopped
+     mid-word (found 20 Sep by a UI test pass).
+     The fix is the ROW, not the container: the buttons keep their natural
+     width, and the note takes a line of its own and grows to fit. A fixed
+     height is right for a one-line pill and wrong for a sentence. */
+  .dof-adv{flex-wrap:wrap}
+  .dof-adv > button{flex:none}
+  .dof-adv > .status{flex:1 1 100%;height:auto;min-height:22px;
+                     padding-top:3px;padding-bottom:3px;align-items:flex-start}
   .status.ok{color:var(--ok);font-weight:400} .status.ok::before{content:"\2713";font-weight:600}
   .status.warn{color:var(--warn);font-weight:600} .status.warn::before{content:"!";font-weight:400}
   .status.err{color:var(--err);font-weight:600} .status.err::before{content:"\00d7"}
@@ -1598,7 +1611,7 @@
               <span class="sm" id="dofStrVal" style="font-variant-numeric:tabular-nums"></span>
             </div>
             <input type="range" id="dofStr" min="0" max="1" step="0.05" value="0.3" aria-label="Blur strength at the far edge">
-            <div style="display:flex;align-items:center;gap:var(--s2)">
+            <div class="dof-adv" style="display:flex;align-items:center;gap:var(--s2)">
               <button class="sm" id="dofBoth" aria-pressed="false" title="Blur on both sides of the focus line — the depth of field's near and far limits, for a phone whose middle is sharp and both ends soft. Off, the plane of focus is at the screen's edge and blur grows one way.">Both sides</button>
               <button class="sm" id="dofMeasure" title="Read the direction and a starting strength off the photo's own bezel">Measure from photo</button>
               <span class="status sm" id="dofSt" style="min-width:0"></span>
@@ -1623,7 +1636,7 @@
              the VIEW you are fitting it in. Grouping them by that rather than
              by modifier is what makes the list scannable while you are mid-fit
              and looking for one of them. -->
-        <p class="hint"><kbd>&larr;&uarr;&rarr;&darr;</kbd> nudge 1px · <kbd>&#8679;</kbd>+arrow 10px · <kbd>Tab</kbd> next edge</p>
+        <p class="hint"><kbd>&larr;&uarr;&rarr;&darr;</kbd> nudge 1px · <kbd>&#8679;</kbd>+arrow 10px · <kbd>Tab</kbd> next edge (click the photo first)</p>
         <p class="hint"><kbd>&#8984;</kbd>+scroll zoom to pointer · <kbd>Space</kbd>+drag pan · scroll pans</p>
       </div>
     </aside>
@@ -3064,9 +3077,21 @@ cv.onpointerup = cv.onpointercancel = () => { drag = null; draw(); drawStrip(); 
 cv.onpointerleave = () => { if (!drag){ hover = null; draw(); drawStrip(); } };
 
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape'){ closePop(); return; }
+  // Escape also releases the canvas, so Tab-cycling is never a one-way door.
+  if (e.key === 'Escape'){ closePop(); if (document.activeElement === cv) cv.blur(); return; }
   if (!st.corners || document.querySelector('.pop.on')) return;
   if (e.key === 'Tab'){
+    // Tab is the BROWSER's focus key everywhere except the fit canvas itself.
+    // This was taken at window level with no target check, so the moment a fit
+    // existed a keyboard user could never reach the top bar or the rail: focus
+    // stayed where it was and the EDGE advanced instead. Reported 20 Sep with
+    // the focus ring visibly stuck on a device chip while the edge cycled —
+    // WCAG 2.1.1, and the KEYS legend's "Tab next edge" is why it looked
+    // deliberate rather than broken.
+    // The canvas is tabindex="-1": it holds focus only after a click on it,
+    // which is exactly when cycling edges is what Tab should mean. Escape
+    // above gives it back.
+    if (document.activeElement !== cv) return;
     e.preventDefault();
     const i = pick && pick.kind==='edge' ? (pick.i+1)%4 : 0;
     pick = {kind:'edge', i}; draw(); drawStrip(); return;
@@ -4271,7 +4296,12 @@ $('#imp').onclick = async () => {
   const types = $('#types');
   for (const t of ['phone','tablet','laptop','desktop']){
     const b=document.createElement('button'); b.className='chip'; b.dataset.t=t; b.textContent=t;   /* Chip is one size in Figma (5:6): h28, 12px */
-    b.onclick=()=>{setType(t); applyPreset(); autoPreview();}; types.appendChild(b);
+    // Re-clicking the device you are ALREADY on used to re-apply its preset and
+    // silently overwrite a hand-set corner radius — phone → phone jumped 10.2%
+    // back to 15.4% (found 20 Sep). Picking the device you already have is a
+    // no-op; the preset dropdown is the deliberate way to re-apply one.
+    b.onclick=()=>{ if (st.type === t) return; setType(t); applyPreset(); autoPreview(); };
+    types.appendChild(b);
   }
   setLoupeMode(loupeMode);
   setStripHC(stripHC);
