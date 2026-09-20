@@ -2408,6 +2408,10 @@ async function clearSource(role){
     // Nothing to draw on: the canvas goes back to its empty state rather
     // than showing the last photograph with no way to act on it.
     const c = $('#c'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    // Belt and braces, and worth it on its own: a 4000x4000 decode is ~64MB of
+    // pixels held for a photograph the user has just removed. Dropping it makes
+    // the stale-repaint above impossible rather than merely unpainted.
+    img.removeAttribute('src');
     // ... and the edge view, which would otherwise keep showing a strip of a
     // photograph that is no longer here.
     for (const id of ['strip', 'stripF']) {
@@ -2717,6 +2721,8 @@ async function maybeStart(){
   // There was no onerror at all, so a photo that failed to decode left the page
   // silent for good: no canvas, no message, nothing to do next.
   img.onerror = () => {
+    // Clearing the photo drops img's src on purpose; that is not a failure.
+    if (!st.photo) { settle(); return; }
     settle();
     s.className = 'status err';
     s.textContent = 'That photo could not be opened — try another, or drop the file in again.';
@@ -3250,7 +3256,16 @@ function draw(){
   if (!$('#liveWrap').hidden) placeLiveVideo();
   ctx.setTransform(cvDpr, 0, 0, cvDpr, 0, 0);          // CSS px from here on; the store is cvDpr times larger
   ctx.clearRect(0,0,cvW,cvH);
-  if (!img.naturalWidth) return;
+  // st.photo FIRST, and this is the whole bug reported 21 Sep 2026: clear the
+  // photo, then click anywhere in the fit pane, and the photograph came back
+  // while the chip still read "Choose a photo…". The guard here was
+  // `img.naturalWidth` alone -- the <img> keeps its decoded pixels until
+  // something replaces them, and clearSource only wiped the CANVAS, so the
+  // image was still 4000x4000 and perfectly drawable. The click ran
+  // cv.onpointerdown -> no hit -> draw(), and draw() repainted what it still
+  // had. Asking the <img> whether there is a photo was the mistake: the <img>
+  // is a cache, st.photo is the answer.
+  if (!(st.photo && img.naturalWidth)) return;
   ctx.drawImage(img, 0,0, cvW, cvH);
   if (!st.corners) return;
   const P = st.corners.map(([x,y]) => [x*scale, y*scale]);
