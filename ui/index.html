@@ -1586,7 +1586,13 @@
         fitted quad by the browser. Not the composite — the composite already
         has a frame burned into it, so playing over that would show two screens.
       --><div id="liveWrap" hidden><img id="liveBg" alt=""><video id="liveVid" loop muted playsinline></video></div></div>
-      <span class="pillwrap"><i class="ring sat" aria-hidden="true"></i><i class="ring lum" aria-hidden="true"></i><i class="ring hue" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i><span class="status" id="outSt">Press Preview</span></span>
+      <span class="pillwrap"><i class="ring sat" aria-hidden="true"></i><i class="ring lum" aria-hidden="true"></i><i class="ring hue" aria-hidden="true"></i><i class="ring lift" aria-hidden="true"></i><!-- Empty on purpose. It read "Press Preview" until 20 Sep 2026, which named
+           a button that does not exist: the compare pane renders on its own after
+           every correction, so there is nothing to press. The pane already says
+           what it is waiting for in its own body text, and .pillwrap:has(>
+           .status:empty) hides the pill until there is something true to put in
+           it. -->
+      <span class="status" id="outSt"></span></span>
       <!-- Video controls. Hidden entirely for a still source: a scrubber over a
            screenshot is a control that can only confuse. The fit itself is
            unchanged — you match the edges on one frame and every frame gets the
@@ -3888,21 +3894,25 @@ let outNat = 0, autoTimer = null;
    would do. On a tool whose whole pitch is that the output is exact, a label
    that disagrees with its action is not a small thing. */
 function saveLabel(){ return st.video ? 'Render' : 'Save'; }
-/* The labels that mean "there is something to do". markStale's 'Preview first'
-   and the in-flight 'Saving…' / progress text must survive a source change, so
+/* The in-flight 'Saving…' / progress text must survive a source change, so
    relabelling only touches a button that is currently offering the action. */
 function relabelSave(){
   const b = $('#save');
   if (b.textContent === 'Save' || b.textContent === 'Render') b.textContent = saveLabel();
 }
 function markStale(){
+  // This used to relabel the button 'Preview first'. Removed 20 Sep 2026 on
+  // request, and the request was right on inspection: with the compare pane
+  // open by default, EVERY caller of markStale that has all three inputs is
+  // followed by autoPreview() within the same interaction -- pointerup after a
+  // drag, the same line after a keyboard nudge, the end of pointAt(), the
+  // callers of setFrac. So the label was only ever on screen for the 350ms
+  // debounce. The one place it PERSISTED was a failed /api/preview, where it
+  // told the user to do the thing they had just done and that had just failed.
+  // Dead in the happy path, wrong in the sad one. The button keeps its own
+  // verb and simply reads as unavailable; the status line says why.
   const b = $('#save'); b.disabled = true;
-  // "Preview first" is an instruction, and an instruction the user cannot
-  // follow is worse than no label: with a source still missing there is no
-  // preview to make. So the button keeps its own verb and simply reads as
-  // unavailable, and only names the missing step once that step is the one
-  // actually standing in the way (by request, 20 Sep 2026).
-  b.textContent = (st.photo && st.shot && st.corners) ? 'Preview first' : saveLabel();
+  b.textContent = saveLabel();
   // Exactly one lit action at a time — the Figma Button component says the
   // accent marks the NEXT action and that only one may be on screen. With no
   // current render there is nothing to save, so nothing is lit: Preview stays
