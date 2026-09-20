@@ -1037,6 +1037,112 @@ def has_rounded_corners(result) -> bool:
     return spread <= MAX_RADIUS_SPREAD
 
 
+# ---------------------------------------------------------------------------
+# Working resolution.
+#
+# Detection ran at whatever resolution the photograph happened to be, and the
+# cost is quadratic: a 4000x4000 photo measured **11.24s** on 20 Sep 2026,
+# against 0.15s for the browser to fetch and decode the same file. Eleven
+# seconds of a designer's attention, every time they pick a big photo.
+#
+# The cap is **2400px on the short side, measured here** -- not the JS port's
+# 1600. That difference is the whole story of this change, so it is written
+# down rather than assumed.
+#
+# figma/src/engine/detect.js caps at 1600 and benches 27/27/0 there, so 1600
+# was the obvious number to copy. Swept over the 9 photographs in the corpus
+# whose short side exceeds the cap, comparing each capped answer against the
+# same photograph's full-resolution answer:
+#
+#     cap    total s   worst quad shift   worst radius shift
+#     full      41.2          --                 --
+#     1600       7.9        3.57%              19.3%
+#     2000      12.6        3.43%              18.6%
+#     2400      15.1        3.58%               5.0%
+#     3000      24.2        0.02%               0.4%
+#
+# 1600 moves the MEASURED CORNER RADIUS by 19% on both 4000x4000 photographs,
+# and the radius is not a starting position a person corrects -- it is the
+# number that shapes the corner mask on the saved composite. 2400 takes that to
+# 0.2% on those two while keeping 4K detection at ~1.7s against 13.3s.
+#
+# The residual 3.58% at 2400 is ONE photograph, iPhone-10_17-pro, which shifts
+# by ~3.5% at every cap below its own size -- it is scale-sensitive rather than
+# cap-sensitive, so there is no cap that fixes it short of not downscaling. It
+# stays inside the bench's 5%-of-screen-width band, and the quad is a starting
+# position the fit pane exists to correct.
+#
+# Why not the JS port's 1600, then? Because the two are not measuring the same
+# thing: that bench scores quads against human labels, and a 19% radius error
+# does not show up in a quad score at all. Worth re-checking the JS side.
+#
+# What this does NOT touch: the composite. Everything downstream -- the warp,
+# the grade, the corner mask, the saved file -- still works from the full
+# resolution photograph. This is a cap on the SEARCH, not on the output, which
+# is the whole point: on request, 21 Sep 2026 -- downscale for detection, show
+# full resolution in the preview.
+#
+# The pipeline runs entirely in working coordinates so that every internal
+# threshold, area ratio and diagonal stays self-consistent; only the geometry
+# that leaves detect() is scaled back. Radii come back too -- `photo_px` and
+# `per_corner_px` are pixel counts and must mean full-resolution pixels to
+# their caller -- while `frac_of_width` is a ratio and is already correct at
+# any scale, which is the reason the UI prefers it.
+#
+# INTER_AREA, not the default: downscaling with bilinear aliases, and an
+# aliased edge is precisely what an edge detector is looking at.
+# Overridable so the A/B above can be re-run without editing this file:
+#     SCREENGRAFT_DETECT_MAX=0    detect at full resolution (the old behaviour)
+#     SCREENGRAFT_DETECT_MAX=1600 the JS port's cap
+# Unset is the shipped 2400.
+WORK_MAX_SHORT = int(os.environ.get("SCREENGRAFT_DETECT_MAX", "2400") or 0) or None
+
+
+def work_scale(shape) -> float:
+    """Factor to multiply the photograph by before searching it. 1.0 = as-is."""
+    h, w = shape[:2]
+    short = min(int(h), int(w))
+    # A 10% deadband, so a photograph a little over the cap is left alone. A
+    # 1603px short side would otherwise be resampled to 1600 -- a 0.2% saving,
+    # paid for with a resize and a different set of pixels under the detector,
+    # which is the worst trade available: all of the risk of a change and none
+    # of the benefit.
+    if not WORK_MAX_SHORT or short <= WORK_MAX_SHORT * 1.1:
+        return 1.0
+    return float(WORK_MAX_SHORT) / float(short)
+
+
+def _shrink(img, s):
+    if img is None or s >= 1.0:
+        return img
+    return cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+
+
+def _scale_quad(quad, k):
+    return [[round(float(x) * k, 1), round(float(y) * k, 1)] for x, y in quad]
+
+
+def _rescale_result(r, k):
+    """Put a result found in working coordinates back into photograph pixels."""
+    if r is None or k == 1.0:
+        return r
+    r["corners"] = _scale_quad(r["corners"], k)
+    if r.get("_corners_np") is not None:
+        r["_corners_np"] = np.asarray(r["_corners_np"], dtype=float) * k
+    cr = r.get("corner_radius")
+    if cr:
+        # frac_of_width is deliberately NOT touched: it is r/width, and both
+        # scaled by the same factor, so it survived the downscale unchanged.
+        if cr.get("photo_px") is not None:
+            cr["photo_px"] = round(float(cr["photo_px"]) * k, 1)
+        if cr.get("per_corner_px"):
+            cr["per_corner_px"] = [round(float(v) * k, 1) for v in cr["per_corner_px"]]
+    for o in (r.get("other") or []):
+        if o.get("corners"):
+            o["corners"] = _scale_quad(o["corners"], k)
+    return r
+
+
 def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
            trace=None):
     """Run both detectors; arbitrate on how the two quads nest.
@@ -1067,23 +1173,45 @@ def detect(gray: np.ndarray, tone=None, method="auto", color=None, click=None,
     # channel generated. It is an OBSERVER: nothing downstream reads it,
     # and the answer is identical with and without -- which is asserted, because
     # an instrument that perturbs what it measures is worse than none.
+    # Search a capped copy; see WORK_MAX_SHORT above. Everything below this
+    # point -- including the click, the shape handed to arbitrate(), and every
+    # trace row -- is in WORKING coordinates, and the single conversion back
+    # happens on the way out.
+    s = work_scale(gray.shape)
+    g = _shrink(gray, s)
+    col = _shrink(color, s) if color is not None else None
+    clk = [click[0] * s, click[1] * s] if (click is not None and s < 1.0) else click
+
     results = []
     if method in ("auto", "tone"):
-        r = detect_tone(gray, tone, click=click, trace=trace)
+        r = detect_tone(g, tone, click=clk, trace=trace)
         if r:
             results.append(r)
     if method in ("auto", "edge") and tone is None:
-        r = detect_edges(gray, click=click, trace=trace)
+        r = detect_edges(g, click=clk, trace=trace)
         if r:
             results.append(r)
-    if method in ("auto", "saturation") and tone is None and color is not None:
-        r = detect_saturation(color, click=click, trace=trace)
+    if method in ("auto", "saturation") and tone is None and col is not None:
+        r = detect_saturation(col, click=clk, trace=trace)
         if r:
             results.append(r)
 
+    k = 1.0 / s if s < 1.0 else 1.0
+    if trace is not None and k != 1.0:
+        # The trace is an observer and nothing downstream reads it, but a
+        # debugging artefact in a coordinate space the photograph does not use
+        # is a trap for whoever opens it next.
+        for row in trace:
+            if row.get("quad"):
+                row["quad"] = _scale_quad(row["quad"], k)
+
     if not results:
         return None
-    return arbitrate(results, gray.shape[:2], click)
+    out = arbitrate(results, g.shape[:2], clk)
+    if out is not None:
+        out["work_scale"] = round(s, 4)
+        _rescale_result(out, k)
+    return out
 
 
 def arbitrate(results, shape, click=None):
