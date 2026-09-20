@@ -206,17 +206,10 @@
      — outside the viewport and unclickable. The chips carry a filename and are
      the part that should give; the actions are fixed-size and must not. */
   .topbar > *{min-width:0}
-  /* The horizontal clip is wanted — a long filename is the part that should
-     give. The VERTICAL one is not, and CSS will not let you have one without
-     the other: overflow-x:hidden forces overflow-y to compute as auto/hidden
-     too. With the container hugging the chip exactly, button:active's
-     translateY(.5px) pushed the chip's bottom edge 0.47px outside it and the
-     clip ate the whole 0.5px stroke — the button looked like it lost its
-     bottom border while held down. Reported 20 Sep with a screen recording.
-     2px of vertical slack gives the press somewhere to go. The container
-     becomes 36 tall, which still centres on a whole pixel in the 56px bar
-     (10), so the chip still starts at 12 and every hairline stays crisp. */
-  .tb-chips{overflow:hidden;padding-block:2px}
+  /* overflow:hidden clips the horizontal only in spirit — CSS couples the
+     axes — but nothing needs vertical room any more now that pressed does not
+     move. A long filename is still the part that gives. */
+  .tb-chips{overflow:hidden}
   /* Figma 15:108: three groups at 16px — the format control, the save PAIR,
      and the rail toggle — with 8px inside the pair. Save and Send to Claude
      belong together (272:1517 frames them); the toggle does not. */
@@ -279,8 +272,15 @@
          padding:0 var(--s3);height:28px;font-size:13px;cursor:pointer;
          transition:var(--t-all), transform var(--t)}
   button:hover{background:var(--btn-hover);border-color:var(--btn-hover-edge)}
+  /* Pressed does NOT move. It used to carry translateY(.5px) — half a CSS
+     pixel, so one device pixel at 2x — and that read as the button jumping on
+     every click rather than depressing. It also put the button's own 0.5px
+     stroke on a half-pixel boundary, and inside any clipping parent it pushed
+     the bottom edge out of the box: the top-bar chips visibly lost their
+     bottom stroke while held (20 Sep). The darker surface and the darker
+     border already say pressed, and they say it without motion. */
   button:active{background:var(--btn-press);border-color:var(--btn-press-edge);
-                box-shadow:none;transform:translateY(.5px)}
+                box-shadow:none}
   button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
   /* Default/Disabled RECESSES: surface/raise-low with border/edge-low, label at
      text/faint x 50%. It used to keep the raised surface and dim only the label.
@@ -308,8 +308,7 @@
   button.primary{background:var(--acc-btn-rest);color:var(--acc-ink);
                  border-color:var(--acc-stroke);font-weight:600;box-shadow:none}
   button.primary:hover{background:var(--acc);border-color:var(--acc-stroke)}
-  button.primary:active{background:var(--acc-press);border-color:var(--acc-dis-edge);
-                        transform:translateY(.5px)}
+  button.primary:active{background:var(--acc-press);border-color:var(--acc-dis-edge)}
   /* An accent-family button that is enabled but is NOT the next action reads
      as an ordinary neutral control. */
   button.accent:not(:disabled):not(.primary){
