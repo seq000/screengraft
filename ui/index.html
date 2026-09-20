@@ -4431,10 +4431,14 @@ $('#imp').onclick = async () => {
     $('#ver').textContent = 'v' + s.version + (s.build ? ' · ' + s.build : '');
     $('#ver').classList.toggle('dev', !!s.build);
   }
-  // Say up front where Save will put things. With --out-dir this is usually the
-  // project folder, and a designer should not have to press Save to find out.
-  toast('info', 'Fit the four edges, then Preview. Saves go to' + toastPath(homePath(s.out_dir || '')),
-        { ms: 9000, dismissible: true });
+  // There used to be a toast here on every load, saying "Fit the four edges,
+  // then Preview" and naming the save folder. Removed 20 Sep 2026 on request.
+  // It was the one message that fired when the user had done nothing, so it
+  // greeted every single session -- including the hundredth -- with an
+  // instruction and a long path, over the picker that had just opened by
+  // itself. The instruction is already in the fit pane's own status line, and
+  // the save folder is named in the toast that appears AFTER a save, which is
+  // the moment it is actually wanted. Nothing replaced it: no toast on load.
   const types = $('#types');
   for (const t of ['phone','tablet','laptop','desktop']){
     const b=document.createElement('button'); b.className='chip'; b.dataset.t=t; b.textContent=t;   /* Chip is one size in Figma (5:6): h28, 12px */
