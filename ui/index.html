@@ -1292,6 +1292,11 @@
   .toast.err{border-color:var(--edge)}
   .toast.err .g, .toast.err .msg{color:var(--warn)}
   .toast .msg{min-width:0;word-break:break-word}
+  /* The one action a toast may carry. Sm height and the neutral surface: it is
+     an offer beside the message, not the next step, so it takes no accent —
+     that means "the next action" and Send to Claude already has it. */
+  .toast .act{display:inline-flex;align-items:center;margin-top:8px;
+              height:24px;padding:0 9px;font-size:12px;border-radius:var(--r-sm)}
   .toast .x{flex:none;margin:-3px -4px 0 4px;width:22px;height:22px;padding:0;
             background:none;border:none;box-shadow:none;color:var(--mute);
             font-size:15px;line-height:22px;border-radius:var(--r-sm);opacity:0;
@@ -1801,6 +1806,20 @@ function toastPath(p){
   return `<span class="path">${esc.replace(/\//g, '/<wbr>')}</span>`;
 }
 
+/* "Open folder" on the save toast. A browser cannot open a file manager from
+   an http page, so the page asks the server, which runs on the machine.
+   Delegated from the container rather than wired per toast: a toast is created
+   and destroyed constantly, and one listener outlives all of them. It fails
+   soft on purpose — the page has a second host with no filesystem at all, and
+   there the route simply is not there. */
+$('#toasts')?.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-reveal]');
+  if (!b) return;
+  b.disabled = true;
+  try { await api('/api/reveal', { path: decodeURIComponent(b.dataset.reveal) }); }
+  catch (err) { b.disabled = false; toast('err', 'Could not open the folder: ' + err.message); }
+});
+
 function toast(kind, html, opts = {}) {
   const wrap = $('#toasts');
   if (!wrap) return null;
@@ -1837,7 +1856,11 @@ function toast(kind, html, opts = {}) {
      there is nowhere down for it to go. */
   let startX = 0, startY = 0, dragging = false;
   el.addEventListener('pointerdown', e => {
-    if (e.target.closest('.x')) return;
+    // Anything clickable in a toast must bail out BEFORE the capture below:
+    // setPointerCapture retargets the resulting click to the toast, so a
+    // button inside it never sees one. The dismiss × has always needed this;
+    // .act (Open folder) needs it for exactly the same reason.
+    if (e.target.closest('.x, .act')) return;
     dragging = true; startX = e.clientX; startY = e.clientY;
     el.dataset.dragging = 'true';
     try { el.setPointerCapture(e.pointerId); } catch (err) {}
@@ -4180,8 +4203,11 @@ $('#save').onclick = async () => {
     // Naming the fit file here is the whole reason it is discoverable: it is
     // written silently beside the mockup, and a file nobody knows about is a
     // file nobody drags back in.
+    // encodeURIComponent, not an HTML escape: the path goes into an attribute
+    // and a filename may legally contain quotes. This cannot break out of it.
     toast('ok', 'Saved' + toastPath(homePath(r.output))
-      + (r.fit_file ? `<span class="path" style="margin-top:8px;color:var(--mute)">The fit is beside it as ${r.fit_file.split('/').pop()} — drop that back on this page to reuse these corners.</span>` : ''),
+      + (r.fit_file ? `<span class="path" style="margin-top:8px;color:var(--mute)">The fit is beside it as ${r.fit_file.split('/').pop()} — drop that back on this page to reuse these corners.</span>` : '')
+      + `<button type="button" class="act" data-reveal="${encodeURIComponent(r.output)}">Open folder</button>`,
       { ms: 9000, dismissible: true });
     const imp = $('#imp');
     imp.disabled = false; imp.textContent = 'Send to Claude';

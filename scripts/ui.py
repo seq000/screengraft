@@ -1077,6 +1077,35 @@ class Handler(BaseHTTPRequestHandler):
                 except RenderBusy as exc:
                     return self._json({"error": str(exc)}, 409)
 
+            if u.path == "/api/reveal":
+                # Show a saved file in the desktop's file manager. The PAGE
+                # cannot do this -- a browser will not open a Finder window
+                # from an http origin -- and this server is the half of
+                # screengraft that runs on the user's machine, so it is the
+                # only thing that can.
+                #
+                # _safe_local_path is the whole security story and it already
+                # guards /file: it expands ~, resolves symlinks, refuses any
+                # path outside HOME, and requires a file that exists. The
+                # command is an argument LIST handed to the OS, never a string
+                # through a shell, so a path cannot become an argument or a
+                # second command however it is spelled.
+                try:
+                    p = _safe_local_path(b.get("path") or "")
+                except (PermissionError, FileNotFoundError, TypeError) as exc:
+                    return self._json({"error": str(exc)}, 400)
+                if sys.platform == "darwin":
+                    cmd = ["open", "-R", p]            # reveals AND selects it
+                elif os.name == "nt":
+                    cmd = ["explorer", "/select,", p]  # exits 1 even on success
+                else:
+                    cmd = ["xdg-open", os.path.dirname(p)]
+                try:
+                    subprocess.run(cmd, capture_output=True, timeout=10, check=False)
+                except (OSError, subprocess.SubprocessError) as exc:
+                    return self._json({"error": f"could not open the folder: {exc}"}, 500)
+                return self._json({"ok": True})
+
             if u.path == "/api/figma":
                 return self._json(SESSION.enqueue({
                     "type": "figma_export", "url": b["url"],
