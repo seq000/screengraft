@@ -493,15 +493,27 @@
      chosen source reads as a selection. Empty = its own recessed, dashed
      surface with a mid-grey label. Active = a file is being dragged OVER the
      chip: accent stroke and label on the empty one, accent fill on the filled. */
-  .inputchip{display:inline-flex;align-items:center;gap:var(--s2);max-width:220px;
+  /* The gap lives on the THUMB as a margin, not here as a flex gap: a gap
+     survives its neighbour collapsing to zero width, so an empty chip would
+     keep 8px of nothing between a thumbnail that is not there and its label.
+     As a margin it collapses with the thumb. The chip's own width is auto, so
+     it follows the thumb frame by frame — the only thing it animates itself is
+     the padding it gives back when the clear button leaves. */
+  .inputchip{display:inline-flex;align-items:center;max-width:220px;
              height:32px;padding:0 12px 0 6px;border-radius:999px;color:var(--ink);
-             background:var(--raise-hi);border:var(--bw) solid var(--edge-hi)}
+             background:var(--raise-hi);border:var(--bw) solid var(--edge-hi);
+             transition:var(--t-all), padding var(--t)}
   .inputchip:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .inputchip:active{background:var(--raise-mid);border-color:var(--edge-hi)}
   .inputchip.over,.inputchip.over:hover{background:var(--acc);border-color:var(--acc-stroke);
                                         color:var(--acc-ink)}
-  .inputchip .sw{width:22px;height:22px;border-radius:999px;flex:none;
-                 background:var(--sunk);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+  .inputchip .sw{width:22px;height:22px;margin-right:var(--s2);border-radius:999px;flex:none;
+                 background:var(--sunk);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);
+                 /* Scale from the left edge so the disc grows INTO the chip and
+                    the label is pushed, rather than both sliding apart. */
+                 transform-origin:left center;
+                 transition:width var(--t), margin-right var(--t),
+                            transform var(--t), opacity var(--t)}
   .inputchip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
   /* Empty is the SAME box as filled — 32px tall, same padding, same 22px
      avatar. Only the surface, border style and label colour change. It was
@@ -512,7 +524,14 @@
   .inputchip.is-empty:active{background:var(--raise-low);border-color:var(--edge-mid)}
   .inputchip.is-empty.over,.inputchip.is-empty.over:hover{background:var(--float);
                    border-color:var(--acc-stroke);color:var(--acc-stroke)}
-  .inputchip.is-empty .sw{box-shadow:inset 0 0 0 1px var(--line)}
+  /* Empty shows NO thumbnail — there is nothing to show, and a placeholder
+     disc read as a broken image. It collapses to zero width AND zero scale:
+     the width is what moves the label and grows the chip, the scale is what
+     makes it look like the picture arrives rather than the box stretching. */
+  .inputchip.is-empty .sw{width:0;margin-right:0;transform:scale(0);opacity:0;
+                          background:none;box-shadow:none}
+  /* No thumb to hug, so the label gets the same 12px both sides. */
+  .inputchip.is-empty{padding-left:12px}
   /* The clear control is a SIBLING of the chip in the markup, not a child:
      the chip is one <button>, and a button inside a button is invalid HTML
      that browsers repair unpredictably. It is drawn INSIDE the pill though --
@@ -529,10 +548,29 @@
      the root. */
   .chipwrap{position:relative;display:inline-flex;min-width:0;z-index:52}
   .chipwrap .inputchip:not(.is-empty){padding-right:30px}
-  .chipclear{position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  /* It waits for its space. The chip spends --t-dur growing and opening the
+     30px of right padding this sits in; only then does the cross fade and
+     scale in, so it never appears on top of a label still sliding underneath
+     it. Leaving is the reverse and immediate — it goes first, then the chip
+     closes up behind it.
+     visibility, not [hidden]: the global [hidden]{display:none!important} rule
+     cannot animate, and visibility still takes the button out of the tab order
+     and the accessibility tree while it is away. */
+  .chipclear{position:absolute;right:5px;top:50%;transform:translateY(-50%) scale(.6);
              width:22px;height:22px;padding:0;border-radius:999px;flex:none;
              display:inline-flex;align-items:center;justify-content:center;
-             color:var(--ink);background:var(--raise-hi);border:1px solid var(--edge)}
+             opacity:0;visibility:hidden;pointer-events:none;
+             color:var(--ink);background:var(--raise-hi);border:1px solid var(--edge);
+             transition:opacity 120ms cubic-bezier(.2,0,0,1),
+                        transform 120ms cubic-bezier(.2,0,0,1),
+                        background-color var(--t), border-color var(--t),
+                        visibility 0s linear 120ms}
+  .chipclear.on{opacity:1;visibility:visible;pointer-events:auto;
+                transform:translateY(-50%) scale(1);
+                transition:opacity 120ms cubic-bezier(.2,0,0,1) var(--t-dur),
+                           transform 120ms cubic-bezier(.2,0,0,1) var(--t-dur),
+                           background-color var(--t), border-color var(--t),
+                           visibility 0s}
   /* The cross is drawn, not typed. As the &times; character at 15px it sat
      above centre in its disc -- a glyph carries its own ascent and side
      bearings and no line-height setting centres it in a 22px circle ("X icon
@@ -541,7 +579,7 @@
      glyphs took in v0.42.0. */
   .chipclear svg{display:block;width:10px;height:10px}
   .chipclear:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
-  .chipclear:active{background:var(--raise-mid);transform:translateY(-50%)}
+  .chipclear:active{background:var(--raise-mid)}
 
   /* Status carries meaning in THREE channels: glyph, weight, luminance —
      never hue alone. */
@@ -1428,9 +1466,9 @@
     <div class="tb-left">
       <span class="brand">Screengraft</span><span id="sess" hidden></span>
       <div class="tb-chips">
-        <span class="chipwrap"><button class="inputchip is-empty" id="chip1"><span class="sw" id="sw1"></span><span class="nm">Choose a photo…</span></button><button class="chipclear" id="clear1" data-role="photo" aria-label="Remove photo" title="Remove the photo and start over. A fit you saved for it comes back when you pick it again." hidden><svg aria-hidden="true" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></span>
+        <span class="chipwrap"><button class="inputchip is-empty" id="chip1"><span class="sw" id="sw1"></span><span class="nm">Choose a photo…</span></button><button class="chipclear" id="clear1" data-role="photo" aria-label="Remove photo" title="Remove the photo and start over. A fit you saved for it comes back when you pick it again."><svg aria-hidden="true" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></span>
         <span class="tb-arrow">&rarr;</span>
-        <span class="chipwrap"><button class="inputchip is-empty" id="chip2"><span class="sw" id="sw2"></span><span class="nm">Choose a screenshot…</span></button><button class="chipclear" id="clear2" data-role="screenshot" aria-label="Remove screenshot" title="Remove the screenshot. The fit on the photo is kept." hidden><svg aria-hidden="true" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></span>
+        <span class="chipwrap"><button class="inputchip is-empty" id="chip2"><span class="sw" id="sw2"></span><span class="nm">Choose a screenshot…</span></button><button class="chipclear" id="clear2" data-role="screenshot" aria-label="Remove screenshot" title="Remove the screenshot. The fit on the photo is kept."><svg aria-hidden="true" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></span>
       </div>
     </div>
     <span class="spacer"></span>
@@ -2154,7 +2192,7 @@ async function clearSource(role){
   chip.title = '';
   $('#sw'+n).style.background = '';
   $('#pv'+n).innerHTML = '<span class="empty">Select a recent image</span>';
-  $('#clear'+n).hidden = true;
+  $('#clear'+n).classList.remove('on');
   document.querySelectorAll('#recent'+n+' .th').forEach(x=>x.classList.remove('sel'));
   dropResult();
   if (role==='photo'){
@@ -2228,7 +2266,7 @@ function setChosen(role, path, size, el, meta){
   chip.title = `${homePath(path)}\n${size[0]}×${size[1]}`
     + (meta && meta.video ? ` · ${meta.frames} frames @ ${Math.round(meta.fps)}fps` : '');
   $('#sw'+n).style.background = `center/cover no-repeat url("${srcURL(thumb, ver)}")`;
-  $('#clear'+n).hidden = false;
+  $('#clear'+n).classList.add('on');
   // A fit the server recognised from this photograph's own pixels. Held
   // rather than applied here: the quad only means anything once there is a
   // screenshot to put inside it, which is what maybeStart() waits for.
