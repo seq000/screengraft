@@ -186,9 +186,21 @@
        grid-template-columns:minmax(0,1fr);min-height:0;
        padding-bottom:32px;background:var(--bg)}
 
+  /* The bottom rule is an INSET SHADOW, not a border, for the same reason the
+     dock's is — and here it is not only about height, it is about which device
+     pixel things land on. A 1px border under box-sizing:border-box leaves a
+     55px content box; centring the 32px chip row in an ODD height puts it at
+     y=11.5. The chips carry a 0.5px stroke (--bw), which only survives because
+     a half CSS pixel snaps to one whole device pixel — and that assumption
+     holds only when the element's EDGES sit on whole device pixels. At 11.5 the
+     bottom edge straddles the boundary, renders faint or vanishes at dpr 2, and
+     the chip reads as pressed. Reported 20 Sep with a screenshot of exactly
+     that. As an inset shadow the content box is the full 56, the row centres on
+     y=12, and the rule is drawn in the same place it was before. */
   .topbar{display:flex;align-items:center;gap:8px;padding:0 12px 0 var(--s4);height:56px;
-          background:var(--card);border-bottom:1px solid var(--line);
-          box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 1px 0 rgba(0,0,0,.25)}
+          background:var(--card);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.04), inset 0 -1px 0 var(--line),
+                     0 1px 0 rgba(0,0,0,.25)}
   /* A nowrap flex row whose children keep min-width:auto cannot shrink
      below their content, so at 742px Save and Send to Claude sat at x=750..885
      — outside the viewport and unclickable. The chips carry a filename and are
