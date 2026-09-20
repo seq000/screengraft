@@ -1507,6 +1507,13 @@
       display:inline-block;
       color:var(--mute);background:var(--sunk)}
   kbd.sym{font-size:14px}
+  /* The Keys legend. max-content on the first column sizes it to the widest
+     cap, so every description starts on the same x and the caps form a single
+     column the eye can run down. */
+  dl.keys{display:grid;grid-template-columns:max-content 1fr;gap:6px 10px;
+          margin:8px 0 0;align-items:baseline}
+  dl.keys dt{color:var(--faint);font-size:12px;white-space:nowrap}
+  dl.keys dd{margin:0;color:var(--faint);font-size:12px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -1751,14 +1758,17 @@
       </div>
       <div class="sect" id="secKeys" data-on="1">
         <div class="sect-top"><div class="sect-left"><h4>Keys</h4></div></div>
-        <!-- Three lines, split by what they act on: the QUAD you are fitting,
-             the FOCUS that decides whether the quad keys reach it, and the VIEW
-             you are fitting it in. Grouping them by that rather than by modifier
-             is what makes the list scannable while you are mid-fit and looking
-             for one of them. It was two lines until 20 Sep 2026, when the first
-             one grew past three wrapped rows and the grouping stopped being
-             legible -- the split is free, the wrap was not. -->
-        <!-- Checked line by line against the handlers on 20 Sep 2026 and it held,
+        <!-- One row per key, in the order you meet them: place the quad, move
+             between its parts, then move the view you are placing it in.
+
+             A <dl>, because these ARE term/description pairs -- saying so in the
+             markup is also what lets a screen reader read a key and its meaning
+             as one unit. It ran as prose lines until 20 Sep 2026, which read
+             fine in a wide rail and badly in a narrow one: the caps ended up
+             mid-sentence and mid-wrap, so finding one meant reading the line
+             rather than scanning a column.
+
+             Checked line by line against the handlers the same day and it held,
              with two gaps, both fixed here. (a) The arrows do nothing until an
              edge or corner is SELECTED (`if (!pick) return`) -- "nudge 1px"
              implied they always work. (b) Escape was undocumented, and it is the
@@ -1766,10 +1776,20 @@
              to get IN had no counterpart telling you how to get out. Also named
              the trackpad pinch: the wheel handler takes ctrlKey as well as
              metaKey, so a pinch has always zoomed, unmentioned, on the gesture
-             most people reach for first on this hardware. -->
-        <p class="hint"><kbd class="sym">&larr;&uarr;&rarr;&darr;</kbd> nudge the selected edge 1px · <kbd class="sym">&#8679;</kbd>+arrow 10px</p>
-        <p class="hint"><kbd>Tab</kbd> next edge · <kbd>Esc</kbd> release — after a click on the photo</p>
-        <p class="hint"><kbd class="sym">&#8984;</kbd>+scroll or pinch zoom to pointer · <kbd>Space</kbd>+drag pan · scroll pans</p>
+             most people reach for first on this hardware.
+
+             Those two conditions sit in the note BELOW the list rather than in
+             parentheses on a row, because each qualifies several rows. -->
+        <dl class="keys">
+          <dt><kbd class="sym">&larr;&uarr;&rarr;&darr;</kbd></dt><dd>nudge 1px</dd>
+          <dt><kbd class="sym">&#8679;</kbd>+arrow</dt><dd>nudge 10px</dd>
+          <dt><kbd>Tab</kbd></dt><dd>next edge</dd>
+          <dt><kbd>Esc</kbd></dt><dd>release the photo</dd>
+          <dt><kbd class="sym">&#8984;</kbd>+scroll or pinch</dt><dd>zoom to the pointer</dd>
+          <dt><kbd>Space</kbd>+drag</dt><dd>pan</dd>
+          <dt><kbd>scroll</kbd></dt><dd>pan</dd>
+        </dl>
+        <p class="hint">Arrows act on the selected edge or corner. <kbd>Tab</kbd> and <kbd>Esc</kbd> need a click on the photo first.</p>
       </div>
     </aside>
   </div>
