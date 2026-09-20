@@ -160,6 +160,13 @@
     /* 120ms originally, per the visual-language notes. asked for a bit
        slower on 5 Sep — one token, so retuning is a one-line change. */
     --t-dur:180ms;                 /* the duration alone, for delays */
+    /* The source chip's grow/collapse runs slower than the app's general
+       motion on purpose: it is a shape change across ~100px, not a state
+       flip, and at 180ms it read as a snap rather than a movement. The cross
+       that follows it is quicker, and waits out this duration first. Tune
+       these two and the whole chip sequence moves with them. */
+    --t-chip:260ms;
+    --t-chip-cross:150ms;
     --t:var(--t-dur) cubic-bezier(.2,0,0,1);
     --t-pop:220ms cubic-bezier(.2,0,0,1);   /* popovers travel further */
     /* Every control animates the SAME four properties on the same curve. Kept as
@@ -502,7 +509,7 @@
   .inputchip{display:inline-flex;align-items:center;max-width:220px;
              height:32px;padding:0 12px 0 6px;border-radius:999px;color:var(--ink);
              background:var(--raise-hi);border:var(--bw) solid var(--edge-hi);
-             transition:var(--t-all), padding var(--t)}
+             transition:var(--t-all), padding var(--t-chip) cubic-bezier(.2,0,0,1)}
   .inputchip:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .inputchip:active{background:var(--raise-mid);border-color:var(--edge-hi)}
   .inputchip.over,.inputchip.over:hover{background:var(--acc);border-color:var(--acc-stroke);
@@ -512,8 +519,10 @@
                  /* Scale from the left edge so the disc grows INTO the chip and
                     the label is pushed, rather than both sliding apart. */
                  transform-origin:left center;
-                 transition:width var(--t), margin-right var(--t),
-                            transform var(--t), opacity var(--t)}
+                 transition:width var(--t-chip) cubic-bezier(.2,0,0,1),
+                            margin-right var(--t-chip) cubic-bezier(.2,0,0,1),
+                            transform var(--t-chip) cubic-bezier(.2,0,0,1),
+                            opacity var(--t-chip) cubic-bezier(.2,0,0,1)}
   .inputchip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
   /* Empty is the SAME box as filled — 32px tall, same padding, same 22px
      avatar. Only the surface, border style and label colour change. It was
@@ -561,14 +570,14 @@
              display:inline-flex;align-items:center;justify-content:center;
              opacity:0;visibility:hidden;pointer-events:none;
              color:var(--ink);background:var(--raise-hi);border:1px solid var(--edge);
-             transition:opacity 120ms cubic-bezier(.2,0,0,1),
-                        transform 120ms cubic-bezier(.2,0,0,1),
+             transition:opacity var(--t-chip-cross) cubic-bezier(.2,0,0,1),
+                        transform var(--t-chip-cross) cubic-bezier(.2,0,0,1),
                         background-color var(--t), border-color var(--t),
-                        visibility 0s linear 120ms}
+                        visibility 0s linear var(--t-chip-cross)}
   .chipclear.on{opacity:1;visibility:visible;pointer-events:auto;
                 transform:translateY(-50%) scale(1);
-                transition:opacity 120ms cubic-bezier(.2,0,0,1) var(--t-dur),
-                           transform 120ms cubic-bezier(.2,0,0,1) var(--t-dur),
+                transition:opacity var(--t-chip-cross) cubic-bezier(.2,0,0,1) var(--t-chip),
+                           transform var(--t-chip-cross) cubic-bezier(.2,0,0,1) var(--t-chip),
                            background-color var(--t), border-color var(--t),
                            visibility 0s}
   /* The cross is drawn, not typed. As the &times; character at 15px it sat
