@@ -206,7 +206,17 @@
      — outside the viewport and unclickable. The chips carry a filename and are
      the part that should give; the actions are fixed-size and must not. */
   .topbar > *{min-width:0}
-  .tb-chips{overflow:hidden}
+  /* The horizontal clip is wanted — a long filename is the part that should
+     give. The VERTICAL one is not, and CSS will not let you have one without
+     the other: overflow-x:hidden forces overflow-y to compute as auto/hidden
+     too. With the container hugging the chip exactly, button:active's
+     translateY(.5px) pushed the chip's bottom edge 0.47px outside it and the
+     clip ate the whole 0.5px stroke — the button looked like it lost its
+     bottom border while held down. Reported 20 Sep with a screen recording.
+     2px of vertical slack gives the press somewhere to go. The container
+     becomes 36 tall, which still centres on a whole pixel in the 56px bar
+     (10), so the chip still starts at 12 and every hairline stays crisp. */
+  .tb-chips{overflow:hidden;padding-block:2px}
   /* Figma 15:108: three groups at 16px — the format control, the save PAIR,
      and the rail toggle — with 8px inside the pair. Save and Send to Claude
      belong together (272:1517 frames them); the toggle does not. */
