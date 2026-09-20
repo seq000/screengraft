@@ -509,7 +509,8 @@
   .inputchip{display:inline-flex;align-items:center;max-width:220px;
              height:32px;padding:0 12px 0 6px;border-radius:999px;color:var(--ink);
              background:var(--raise-hi);border:var(--bw) solid var(--edge-hi);
-             transition:var(--t-all), padding var(--t-chip) cubic-bezier(.2,0,0,1)}
+             transition:var(--t-all), padding var(--t-chip) cubic-bezier(.2,0,0,1),
+                        width var(--t-chip) cubic-bezier(.2,0,0,1)}
   .inputchip:hover{background:var(--raise-highest);border-color:var(--edge-hi)}
   .inputchip:active{background:var(--raise-mid);border-color:var(--edge-hi)}
   .inputchip.over,.inputchip.over:hover{background:var(--acc);border-color:var(--acc-stroke);
@@ -2191,13 +2192,55 @@ async function loadRecent(){
    the corners, the screenshot owns the video state and the fitted frame,
    either owns the result. The server does the same to the session
    (/api/clear), so a reload agrees with what is on screen. */
+/* The chip is sized by its content, and content changes in ONE frame: the
+   label swaps between "Choose a photo…" and a filename, and the box arrives at
+   its new width before the thumbnail has moved at all. That is the jump — the
+   thumb and the padding were animating politely while the width had already
+   finished. `auto` cannot be transitioned, so the width is measured on both
+   sides of the change and animated explicitly between the two.
+   Released back to auto once it lands, because a fixed width would stop a
+   later filename or a window resize from reflowing the chip normally.
+   Found 20 Sep by reading a screen recording frame by frame. */
+const chipMs = () => parseFloat(getComputedStyle(document.documentElement)
+                       .getPropertyValue('--t-chip')) || 260;
+function reshapeChip(chip, apply){
+  const from = chip.getBoundingClientRect().width;
+  // Pin BEFORE the content changes, so the swap cannot paint at its new
+  // natural width even for a frame — and so the measurement below, which
+  // forces a layout, cannot commit that width as the transition's start.
+  chip.style.width = from + 'px';
+  apply();
+  // Measure the target on a GHOST, not on the live chip. The live thumbnail is
+  // mid-transition at this instant and still reports width 0, so measuring
+  // here lands ~30px short and the chip finishes with a second, untimed step
+  // when the pin is released. The ghost carries the same classes and content
+  // with transitions off, so it is already at rest.
+  const ghost = chip.cloneNode(true);
+  ghost.removeAttribute('id');
+  ghost.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+  ghost.style.cssText = 'position:absolute;left:-9999px;top:0;width:auto;' +
+                        'visibility:hidden;pointer-events:none;transition:none';
+  chip.parentElement.appendChild(ghost);
+  const to = ghost.getBoundingClientRect().width;
+  ghost.remove();
+  if (Math.abs(to - from) < 0.5){ chip.style.width = ''; return; }
+  void chip.offsetWidth;                        // commit the start
+  chip.style.width = to + 'px';
+  // Back to auto once it lands: a fixed width would stop a later filename or a
+  // window resize from reflowing the chip normally.
+  clearTimeout(chip._reshape);
+  chip._reshape = setTimeout(() => { chip.style.width = ''; }, chipMs() + 40);
+}
+
 async function clearSource(role){
   try { await api('/api/clear', {role}); }
   catch(e){ alert(e.message); return; }
   const n = role==='photo'?1:2;
   const chip = $('#chip'+n);
-  chip.classList.add('is-empty');
-  chip.querySelector('.nm').textContent = role==='photo' ? 'Choose a photo…' : 'Choose a screenshot…';
+  reshapeChip(chip, () => {
+    chip.classList.add('is-empty');
+    chip.querySelector('.nm').textContent = role==='photo' ? 'Choose a photo…' : 'Choose a screenshot…';
+  });
   chip.title = '';
   $('#sw'+n).style.background = '';
   $('#pv'+n).innerHTML = '<span class="empty">Select a recent image</span>';
@@ -2260,14 +2303,16 @@ function setChosen(role, path, size, el, meta){
   const ver = (meta && meta.mtime) || Date.now();
   $('#pv'+n).innerHTML = `<img src="${srcURL(thumb, ver)}" alt="">`;
   const chip = $('#chip'+n);
-  chip.classList.remove('is-empty');
   // The file's own name and nothing else. The size and, for a clip, the frame
   // count used to follow it in the same 12px, which pushed the one thing that
   // identifies the file into an ellipsis; they live on hover now, with the
   // full path. An upload's session copy is "<role>-<epoch>-<name>", so the
   // server sends the original name back as `name`.
   const shown = (meta && meta.name) || path.split('/').pop();
-  chip.querySelector('.nm').textContent = shown;
+  reshapeChip(chip, () => {
+    chip.classList.remove('is-empty');
+    chip.querySelector('.nm').textContent = shown;
+  });
   // A different file in either role: the composite on screen is of the old
   // one. Dropped here, before the state changes, so nothing downstream can
   // narrate over it; maybeStart() re-renders once the fit is ready.
