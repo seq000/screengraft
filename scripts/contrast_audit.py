@@ -89,7 +89,7 @@ def solid(name, backdrop='card'):
 ACCEPTED = {
     'accent label · rest':       'the design (Button 4:14, 13 Sep 2026) makes rest the SOLID accent, the same '
                                  'surface as hover, so this is the hover shortfall already accepted, now at rest '
-                                 'too: 3.70:1 for a 13px/600 label. The accent is not to be muted to chase it; '
+                                 'too: 3.70:1 for a 13px/400 label. The accent is not to be muted to chase it; '
                                  'pressed (#bb2b00) passes.',
     'accent label · hover':      'same surface as rest now; accepted with it.',
     'accent label · disabled':   'WCAG exempts disabled controls (1.4.3). Kept legible rather than faded.',
@@ -100,7 +100,7 @@ ACCEPTED = {
     'seg track edge vs card':    'same call as border/edge, which it now uses.',
     'seg thumb vs its track':    ('the LABEL is the channel here, not the surface. Selected reads '
                                   '11.89:1 on the thumb against 5.97:1 for unselected on the track, '
-                                  'a 2.60:1 step between the two labels, plus 400 -> 600 weight. '
+                                  'a 2.60:1 step between the two labels. The weight cue is GONE as of 20 Sep 2026 -- 84:177 has both segments at regular -- so selection now rests on label colour plus the thumb surface, two channels not three. '
                                   'The raised surface is the third, redundant cue — the same call '
                                   'the status pill makes, and the reason the component is a track '
                                   'with a thumb rather than two lit buttons. Raising it means '

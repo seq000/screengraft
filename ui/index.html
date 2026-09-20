@@ -68,14 +68,32 @@
        polished Button matrix (4:14): hover's border is border/edge-mid, and
        pressed keeps border/edge rather than dimming to edge-low — pressing a
        control must not make it look unavailable. Both had drifted. */
-    --btn-hover:#333337; --btn-hover-edge:#494a50;
-    --btn-press:#1c1c20; --btn-press-edge:#3a3b41;
+    /* Re-read 20 Sep 2026 and the family is now COMPLETE: rest had no token
+       of its own, so the button borrowed --raise/--edge and had quietly
+       diverged from button/secondary/container|border/default. Every value
+       below is read straight off 4:14. --btn-rest-edge (#46464e) is the border
+       every raised control wears — the Default button at rest AND pressed, and
+       the segmented track — which is why it is one token used in three places
+       rather than a new step in the --edge ladder.
+       NOTE: hover's surface (#2b2b30) is now a hair DARKER than rest
+       (#2b2c31), so hover is carried almost entirely by the border stepping to
+       edge-mid. That is what the file says; it looks like the hover variant
+       kept the old rest value when rest moved. Flagged for the design file. */
+    --btn-rest:#2b2c31;  --btn-rest-edge:#46464e;
+    --btn-hover:#2b2b30; --btn-hover-edge:#494a50;
+    --btn-press:#1c1c20; --btn-press-edge:#46464e;
     /* Accent disabled keeps the label READABLE rather than fading the whole
        button — the Button component in Figma says so explicitly. */
     /* Re-read 13 Sep 2026: primary/container/disabled is the SOLID press
        colour with the solid stroke and the solid label — the design fades
        nothing here, it recesses. Was three alpha variants. */
-    --acc-dis:#bb2b00; --acc-dis-edge:#ff6833; --acc-dis-ink:#fbf9f9;
+    /* Re-read 20 Sep 2026: primary/container/disabled stepped down again,
+       #bb2b00 -> #992800, and its border is now the accent itself rather than
+       the lighter stroke. #bb2b00 is primary/container/PRESSED only, which is
+       --acc-press — the two had been sharing one value and the pressed state
+       was borrowing --acc-dis-edge for its border, so it now has its own. */
+    --acc-dis:#992800; --acc-dis-edge:#f23b0d; --acc-dis-ink:#fbf9f9;
+    --acc-press-edge:#f23b0d;
     /* Strokes are 0.5px throughout the component sets (button, chip, input
        chip, segmented, switch, button group). A half pixel snaps to one device
        pixel on any screen, so it never vanishes; on a Retina Mac it is the
@@ -274,8 +292,8 @@
      ------------------------------------------------------------------ */
   /* Both sizes are radius/sm (6px) — re-read from Button 4:14 on 13 Sep 2026,
      where every variant carries the same radius. Md had been 8 since 11 Sep. */
-  button{font:inherit;color:var(--ink);background:var(--raise);
-         border:var(--bw) solid var(--edge);border-radius:var(--r-sm);
+  button{font:inherit;color:var(--ink);background:var(--btn-rest);
+         border:var(--bw) solid var(--btn-rest-edge);border-radius:var(--r-sm);
          padding:0 var(--s3);height:28px;font-size:13px;cursor:pointer;
          transition:var(--t-all), transform var(--t)}
   button:hover{background:var(--btn-hover);border-color:var(--btn-hover-edge)}
@@ -312,21 +330,25 @@
 
   /* Primary. The accent means exactly one thing: the next action, so only one
      of these is lit at a time (see the accent hand-off in the JS). */
+  /* Weight 400, not 600: every one of the sixteen Button variants in 4:14 is
+     SF Pro Regular. The bold primary was a carry-over from before the matrix
+     existed, and it made the accent shout twice. */
   button.primary{background:var(--acc-btn-rest);color:var(--acc-ink);
-                 border-color:var(--acc-stroke);font-weight:600;box-shadow:none}
+                 border-color:var(--acc-stroke);font-weight:400;box-shadow:none}
   button.primary:hover{background:var(--acc);border-color:var(--acc-stroke)}
-  button.primary:active{background:var(--acc-press);border-color:var(--acc-dis-edge)}
-  /* An accent-family button that is enabled but is NOT the next action reads
-     as an ordinary neutral control. */
-  button.accent:not(:disabled):not(.primary){
-    background:var(--raise); color:var(--ink); border-color:var(--edge);
-    font-weight:400}
-  /* Radius is deliberately NOT restated in these three rules any more. It is the
-     base button's, so .sm keeps winning on size — an accent .sm button used to
-     be handed --r-md by specificity alone. */
-  button.accent:disabled,button.primary:disabled{
+  button.primary:active{background:var(--acc-press);border-color:var(--acc-press-edge)}
+  /* The `.accent` class is gone (20 Sep 2026). Save and Send to Claude wore it
+     so that they could be accent-coloured while DISABLED — which is exactly
+     backwards: before anything is loaded the top bar showed two lit orange
+     buttons offering actions that could not be taken. They are ordinary
+     Default buttons now and gain `.primary` only when they genuinely are the
+     next action, which is the rule the Button component states.
+     Radius is deliberately NOT restated below. It is the base button's, so .sm
+     keeps winning on size — an accent .sm button used to be handed --r-md by
+     specificity alone. */
+  button.primary:disabled{
     background:var(--acc-dis); border-color:var(--acc-dis-edge);
-    color:var(--acc-dis-ink); font-weight:600; box-shadow:none; opacity:1}
+    color:var(--acc-dis-ink); font-weight:400; box-shadow:none; opacity:1}
 
   /* ------------------------------------------------------------------
      Render, while it is rendering: the button IS the progress bar.
@@ -451,7 +473,7 @@
      the thumb is 24px tall at radius/xs. Hover lifts the thumb to raise-hi
      and the track's stroke to edge-mid; pressed drops the thumb to raise-mid. */
   .seg{display:inline-flex;align-items:center;gap:2px;padding:2px;
-       background:var(--raise-low);border:var(--bw) solid var(--edge);
+       background:var(--raise-low);border:var(--bw) solid var(--btn-rest-edge);
        border-radius:var(--r-sm);transition:var(--t-all)}
   .seg:hover{border-color:var(--edge-mid)}
   .seg:active{border-color:var(--edge-mid)}
@@ -465,22 +487,23 @@
               background:transparent;border:0;box-shadow:none;color:var(--mute);
               font-weight:400;display:inline-flex;flex-direction:column;
               align-items:center;justify-content:center}
-  /* Each segment is as wide as its label at the SELECTED weight, whichever
-     weight it is showing. Without this the control reflowed on every switch:
-     600 is wider than 400, so selecting "ProRes" grew that segment, and the
-     whole control — left edge included — moved (reported 12 Sep 2026).
-     A zero-height ghost of the label at 600 sits under the visible one and
-     sets the width; `data-label` carries the text. Not padding. */
-  .seg button::after{content:attr(data-label);font-weight:600;height:0;
-                     overflow:hidden;visibility:hidden;pointer-events:none}
+  /* There used to be a zero-height ghost of the label at weight 600 here,
+     sizing each segment to its SELECTED width so the control did not reflow
+     when the selection moved (600 is wider than 400, so selecting "ProRes"
+     grew that segment and the whole control shifted — reported 12 Sep 2026).
+     The ghost is gone because its cause is: 84:177 has BOTH segments at
+     regular, selected and not, so no width changes on selection and the
+     `data-label` attributes in the markup are now inert. Selection is carried
+     by the thumb surface and the label colour, which is the stronger signal
+     anyway. Put the ghost back if a weight difference ever returns. */
   .seg button:hover{background:transparent;color:var(--ink)}
   .seg button:active{background:transparent;transform:none}
   /* The thumb. Its three surfaces are the Default button's own, which is the
      point of the component: one raised thing, behaving like every other raised
      thing on the page. */
-  .seg button.sel{background:var(--raise);color:var(--ink);font-weight:600}
+  .seg button.sel{background:var(--btn-rest);color:var(--ink);font-weight:400}
   .seg button.sel:hover{background:var(--raise-hi)}
-  .seg button.sel:active{background:var(--raise-mid);transform:none}
+  .seg button.sel:active{background:var(--btn-hover);transform:none}
   /* A text toggle that reads as a label until it is on. On = the raised
      surface every selected thing on this page has (the segmented thumb, the
      device chip). The edge view's Contrast toggle used to share this rule; it
@@ -1496,8 +1519,8 @@
         <button class="sel" data-preset="web" data-label="Web" role="radio" aria-checked="true" title="H.264 at CRF 16 — near-visually-lossless, plays anywhere.">Web</button><button data-preset="prores" data-label="ProRes" role="radio" aria-checked="false" title="ProRes 422 HQ — bigger file, no chroma subsampling. For a case study or further editing.">ProRes</button>
       </span>
       <span class="tb-save">
-        <button id="save" class="accent" disabled>Preview first</button>
-        <button id="imp" class="accent" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
+        <button id="save" disabled>Save</button>
+        <button id="imp" disabled title="Send the saved file to Claude so it appears in the chat">Send to Claude</button>
       </span>
       <button id="railBtn" class="iconbtn" aria-expanded="true" aria-controls="rail" aria-label="Settings rail"><svg class="i-open" viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M4.76855 1C4.50954 1.2888 4.30589 1.62677 4.17383 2H3C2.44772 2 2 2.44772 2 3V13C2 13.5523 2.44772 14 3 14H4.17383C4.30589 14.3732 4.50954 14.7112 4.76855 15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V3C1 1.89543 1.89543 1 3 1H4.76855Z"/><path fill="var(--icon)" d="M7 15C5.89543 15 5 14.1046 5 13V3C5 1.96435 5.78722 1.113 6.7959 1.01074L7 1H13L13.2041 1.01074C14.1457 1.1062 14.8938 1.85435 14.9893 2.7959L15 3V13C15 14.1046 14.1046 15 13 15H7ZM13 14C13.5523 14 14 13.5523 14 13V3C14 2.44771 13.5523 2 13 2H7C6.44771 2 6 2.44771 6 3V13C6 13.5523 6.44772 14 7 14H13ZM7.14648 8.64648L7.79297 8L7.14648 7.35352L7.85352 6.64648L9.20703 8L7.85352 9.35352L7.14648 8.64648Z"/></svg><svg class="i-closed" viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--mute)" d="M8.76855 1C8.50954 1.2888 8.30589 1.62677 8.17383 2H3C2.44772 2 2 2.44772 2 3V13C2 13.5523 2.44772 14 3 14H8.17383C8.30589 14.3732 8.50954 14.7112 8.76855 15H3L2.7959 14.9893C1.85435 14.8938 1.1062 14.1457 1.01074 13.2041L1 13V3C1 1.89543 1.89543 1 3 1H8.76855Z"/><path fill="var(--icon)" d="M11 15C9.89543 15 9 14.1046 9 13V3C9 1.96435 9.78722 1.113 10.7959 1.01074L11 1H13L13.2041 1.01074C14.1457 1.1062 14.8938 1.85435 14.9893 2.7959L15 3V13C15 14.1046 14.1046 15 13 15H11ZM13 14C13.5523 14 14 13.5523 14 13V3C14 2.44771 13.5523 2 13 2H11C10.4477 2 10 2.44771 10 3V13C10 13.5523 10.4477 14 11 14H13ZM10.793 8L12.1465 6.64648L12.8535 7.35352L12.207 8L12.8535 8.64648L12.1465 9.35352L10.793 8Z"/></svg></button>
     </div>
@@ -3873,7 +3896,13 @@ function relabelSave(){
   if (b.textContent === 'Save' || b.textContent === 'Render') b.textContent = saveLabel();
 }
 function markStale(){
-  const b = $('#save'); b.disabled = true; b.textContent = 'Preview first';
+  const b = $('#save'); b.disabled = true;
+  // "Preview first" is an instruction, and an instruction the user cannot
+  // follow is worse than no label: with a source still missing there is no
+  // preview to make. So the button keeps its own verb and simply reads as
+  // unavailable, and only names the missing step once that step is the one
+  // actually standing in the way (by request, 20 Sep 2026).
+  b.textContent = (st.photo && st.shot && st.corners) ? 'Preview first' : saveLabel();
   // Exactly one lit action at a time — the Figma Button component says the
   // accent marks the NEXT action and that only one may be on screen. With no
   // current render there is nothing to save, so nothing is lit: Preview stays
