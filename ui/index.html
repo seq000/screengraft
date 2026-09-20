@@ -653,8 +653,14 @@
   /* A real spinner, not a static glyph. The old "\22ef" ellipsis never moved,
      so a wait that genuinely was in progress looked identical to a dead UI —
      which is exactly what it felt like while the agent wasn't running. */
+  /* --acc, not --accent. It said `var(--accent)` from the day it was written
+     and there is no such token in this file, so the declaration was invalid at
+     computed-value time and border-top-color fell back to currentColor. The
+     ring still turned -- the lit arc was just the label's own grey instead of
+     the accent, which is why nobody caught it by looking. Second one of these
+     today; see the kbd font shorthand. */
   .status.busy::before{content:"";width:9px;height:9px;border-radius:50%;
-          border:1.5px solid var(--line);border-top-color:var(--accent);
+          border:1.5px solid var(--line);border-top-color:var(--acc);
           animation:sg-spin .7s linear infinite}
   @keyframes sg-spin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){
@@ -2210,12 +2216,66 @@ function casedText(c, text, x, y, color){
    The page reads the bytes and the SERVER judges them: whether this is the
    photograph the fit was made for is a question only the side holding the
    pixels can answer. */
+/* One busy state for every operation on this page that can take a while.
+
+   Measured 20 Sep 2026, because the report was "the 4K image takes time to
+   load" and the guess attached to it was detection. The guess was right and
+   the description was not: a cold 4000x4000 photo fetches and decodes in about
+   150ms, while `scripts/detect.py` on the same file takes **11.2s** -- it runs
+   at full resolution, it does not downscale. So the wait is real, it is
+   detection, and it was already being narrated -- just not well enough to be
+   believed, because a static "Detecting..." for eleven seconds is
+   indistinguishable from a page that has stopped.
+
+   Two things fix that, and neither is a bigger spinner. A counter that keeps
+   moving is the difference between slow and stuck, which the Figma import has
+   understood since it was written -- this is that pattern, lifted out of it so
+   three more callers can have it. And the 250ms delay means a fast operation
+   never flashes a spinner it did not need, which is why this can be used on
+   everything without making the page feel busier than it is.
+
+   `settle(restore)` ends it. Pass true when the caller does NOT write its own
+   status afterwards and the line held something worth putting back; pass false
+   when the caller is about to overwrite it anyway. */
+function busy(el, label, opts){
+  const o = opts || {};
+  const delay = o.delay == null ? 250 : o.delay;
+  const countFrom = o.countFrom == null ? 2 : o.countFrom;
+  const t0 = Date.now();
+  const prev = {cls: el.className, html: el.innerHTML, title: el.title};
+  // Keep a size modifier the caller had set; only the state word changes.
+  const cls = 'status ' + (/\bsm\b/.test(prev.cls) ? 'sm ' : '') + 'busy';
+  let armed = false, tick = null;
+  const paint = () => {
+    const n = Math.round((Date.now() - t0) / 1000);
+    el.className = cls;
+    el.innerHTML = n >= countFrom ? `${label} <span class="el">${n}s</span>` : `${label}…`;
+  };
+  const arm = setTimeout(() => { armed = true; paint(); tick = setInterval(paint, 1000); }, delay);
+  // A timer is throttled to about once a minute in a hidden tab, and this is
+  // exactly the wait somebody switches away from. Repaint on return so the
+  // number is right the moment they look at it again.
+  document.addEventListener('visibilitychange', paint);
+  return function settle(restore){
+    clearTimeout(arm);
+    if (tick){ clearInterval(tick); tick = null; }
+    document.removeEventListener('visibilitychange', paint);
+    if (armed && restore){ el.className = prev.cls; el.innerHTML = prev.html; el.title = prev.title; }
+    armed = false;
+  };
+}
 async function loadFitFile(file){
   const s = $('#detSt');
+  // Declared out here so the catch can end the counter too.
+  let settle = () => {};
   try {
     const text = await file.text();
-    s.className = 'status busy'; s.textContent = 'Reading that fit…';
+    // /api/fit hashes the photograph's decoded pixels to decide whether this
+    // fit belongs to it, so it costs more on a big photo, for the same reason
+    // detection does.
+    settle = busy(s, 'Reading that fit');
     const r = await api('/api/fit', {fit: JSON.parse(text)});
+    settle(false);
     st.corners = r.corners.map(c => c.slice());
     st.measured = null;
     st.quadFrom = 'file';
@@ -2238,6 +2298,7 @@ async function loadFitFile(file){
     pick = {kind:'edge', i:0};
     draw(); drawStrip(); autoPreview();
   } catch (e) {
+    settle(false);
     s.className = 'status warn'; s.textContent = 'That fit could not be used';
     s.title = e.message || '';
     toast('err', 'Could not load that fit: ' + (e.message || e));
@@ -2627,10 +2688,42 @@ function distToSeg(p,a,b){
   return {d: vlen(sub(p, add(a, mul(ab,t)))), t};
 }
 
+/* Loading the photograph is the one long step on this page that said nothing.
+   `detect()` has narrated itself since it existed, and it runs AFTER this, so a
+   4K photo spent its whole fetch-and-decode in silence with the picker already
+   closed and the canvas still empty -- which reads as the click not having
+   landed. Reported 20 Sep 2026, with detection as the suspected cause; it was
+   not, and the measured order is: set img.src -> fetch the full-resolution file
+   -> browser decode -> onload -> computeFit/draw -> only then detect().
+
+   Armed on a 250ms delay so a small photo never flashes a spinner it does not
+   need, and it counts seconds past 2 for the same reason the Figma import does:
+   a number that keeps moving is the difference between slow and stuck.
+
+   The previous status is CAPTURED and handed back on settle rather than
+   blanked. One caller (setChosen, changing the screenshot under an existing
+   fit) writes "the fit on the photo is kept" and then calls in here, and the
+   branch below that keeps existing corners writes nothing -- so clearing would
+   have eaten somebody else's message. */
+let photoBusy = null;                // settle() for a load still in flight
 async function maybeStart(){
   if (!st.photo) return;
   const ready = !!st.shot;           // the screenshot gates the fit, not the photo
+  const s = $('#detSt');
+  if (photoBusy) photoBusy(true);    // a second pick mid-load: retire the first
+  const done = busy(s, 'Loading the photo');
+  const settle = () => { done(true); photoBusy = null; };
+  photoBusy = settle;
+  // There was no onerror at all, so a photo that failed to decode left the page
+  // silent for good: no canvas, no message, nothing to do next.
+  img.onerror = () => {
+    settle();
+    s.className = 'status err';
+    s.textContent = 'That photo could not be opened — try another, or drop the file in again.';
+    s.title = homePath(st.photo || '');
+  };
   img.onload = () => {
+    settle();
     computeFit(); setCanvasZoom(fitScale);
     refreshRings();
     if (!ready){
@@ -2839,9 +2932,11 @@ $('#scroller').addEventListener('pointerdown', e => {
   pointAt(p[0], p[1]);
 }, true);
 async function pointAt(x, y){
-  const s = $('#detSt'); s.className = 'status busy'; s.textContent = 'Reading that point…';
+  const s = $('#detSt');
+  const settle = busy(s, 'Reading that point');
   try {
     const r = await api('/api/detect', {click: [x, y]});
+    settle(false);
     if (r.found){
       st.corners = r.corners; st.measured = r.corner_radius; st.quadFrom = 'detected';
       orientQuad();
@@ -2857,6 +2952,7 @@ async function pointAt(x, y){
       s.title = r.message || '';
     }
   } catch (err) {
+    settle(false);
     s.className = 'status warn'; s.textContent = 'Could not read that point: ' + err.message;
   }
   pick = {kind:'edge', i:0};
@@ -2871,8 +2967,29 @@ document.querySelectorAll('[data-jump]').forEach(b => {
 });
 
 async function detect(){
-  const s = $('#detSt'); s.className='status busy'; s.textContent = 'Detecting…';
-  const r = await api('/api/detect', {});
+  const s = $('#detSt');
+  // The longest wait on the page: 11.2s measured on a 4000x4000 photo, because
+  // detect.py runs at full resolution. The counter is what makes that read as
+  // working rather than hung.
+  const settle = busy(s, 'Detecting');
+  let r;
+  // There was no catch here at all, so a request that failed left 'Detecting…'
+  // spinning for good -- the one state the page could never leave.
+  try { r = await api('/api/detect', {}); }
+  catch (e){
+    settle(false);
+    s.className = 'status err';
+    s.textContent = 'Detection failed — try Point at screen, or place the edges by hand';
+    s.title = e.message || '';
+    suggestPointing(true);
+    st.corners = defaultQuad(); st.quadFrom = 'default';
+    if (!st.type) setType('phone');
+    applyPreset();
+    pick = {kind:'edge', i:0};
+    draw(); drawStrip(); autoPreview();
+    return;
+  }
+  settle(false);
   if (r.found){
     st.corners = r.corners; st.measured = r.corner_radius; st.quadFrom = 'detected';
     orientQuad();
