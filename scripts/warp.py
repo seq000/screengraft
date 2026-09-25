@@ -602,6 +602,16 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
     plan.bind_grade(first, grade, light=grade_light, colour=grade_colour)
 
     ph, pw = photo.shape[:2]
+    # H.264/yuv420p (and ProRes 422) subsample chroma 2x horizontally, and
+    # 4:2:0 vertically too, so an odd width or height is refused -- and ffmpeg
+    # refuses by dying mid-stream, which reaches us as "[Errno 32] Broken pipe"
+    # on the first frame write. The preview route evened its own proxy size
+    # (ui.py) but a full render runs at the PHOTO's size, so any photograph
+    # with an odd dimension failed to render at all (1424x879, 25 Sep 2026).
+    # Pad by replicating the last row/column: one duplicated edge pixel is
+    # invisible, whereas cropping would drop a row of the photograph.
+    pad_b, pad_r = ph % 2, pw % 2
+    ph, pw = ph + pad_b, pw + pad_r
     cmd = [ffmpeg_exe(), "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{pw}x{ph}",
            "-r", f"{fps}", "-i", "-"]
@@ -643,7 +653,14 @@ def compose_video(photo: np.ndarray, video_path: str, corners, output: str,
             if frames_dir:
                 cv2.imwrite(os.path.join(frames_dir, f"{count:06d}.png"), out,
                             [cv2.IMWRITE_PNG_COMPRESSION, 1])
-            proc.stdin.write(out.tobytes())
+            if pad_b or pad_r:
+                out = cv2.copyMakeBorder(out, 0, pad_b, 0, pad_r, cv2.BORDER_REPLICATE)
+            try:
+                proc.stdin.write(out.tobytes())
+            except BrokenPipeError:
+                # ffmpeg has exited; its stderr, read below, says why. Raising
+                # the bare pipe error here would hide the one useful sentence.
+                break
             count += 1
             if progress and count % 10 == 0:
                 progress(count, total_hint)
