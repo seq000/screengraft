@@ -9,6 +9,37 @@ One convention worth knowing: entries say what was **measured**, not what was
 attempted. Where a change was driven by a real photograph or a real failure, the
 numbers are here.
 
+## [0.68.0] - 2026-09-25
+
+### Changed
+
+- **Realism is two strengths, Light and Colour.** From a real report: with
+  realism on, a brand orange moved toward coral and a pure-black status bar
+  lifted to slate. Light shifts only L (exposure; measured hue shift 0.002),
+  Colour carries the white balance and saturation (2.273). With Colour at 0 the
+  screen's own hue moves 0.00, against 12.98 with it on. An unset Light/Colour
+  is the old single strength, so every earlier sidecar replays byte for byte
+  (pinned in `test_grade.py` and `test_sidecar.py`).
+- **Detection searches a copy capped at 2400px on the short side**; the warp,
+  grade, corner mask and saved file still use the full-resolution photograph.
+  Across the 9 corpus photos above the cap: 41.2s -> 15.1s total, worst corner
+  radius shift 5.0% (a 1600px cap moved it 19%, which is why it is not 1600).
+
+### Fixed
+
+- **A video render of a photo with an odd width or height failed with
+  "[Errno 32] Broken pipe".** H.264 and ProRes refuse odd dimensions and ffmpeg
+  exits on the first frame; the preview evened its own proxy size, the full
+  render never did. Odd sides are now padded by one replicated edge pixel
+  (1424x879 renders as 1424x880, nothing cropped), and a genuine ffmpeg failure
+  reports ffmpeg's own message instead of the pipe error. Verified with a
+  4020-frame render of the photograph that failed.
+- **Safari: dropping a `.fit.json` on the page opened the JSON instead of
+  loading the fit** — and took the workbench with it. Safari leaves
+  `dataTransfer.items` empty during a drag, so the page never claimed the drop;
+  it now asks `dataTransfer.types`. A file dropped where nothing takes it can no
+  longer navigate away from the session.
+
 ## [0.67.0] - 2026-09-21
 
 Chrome, copy and busy states, all measured. Three of the changes below are
