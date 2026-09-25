@@ -2328,15 +2328,26 @@ async function loadFitFile(file){
 }
 // Capture phase, so the per-role drop zones never see a fit file and try to
 // decode it as an image.
-addEventListener('dragover', e => {
-  if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) e.preventDefault();
-}, true);
+// Is a file being dragged? Ask `types`, not `items`: Safari leaves `items`
+// empty during dragover, so an items-only test never cancelled the drag there,
+// the drop event never fired, and Safari navigated away to the dropped .json --
+// taking the whole workbench with it.
+function draggingFiles(e){
+  const dt = e.dataTransfer; if (!dt) return false;
+  if ([...(dt.types || [])].includes('Files')) return true;
+  return [...(dt.items || [])].some(i => i.kind === 'file');
+}
+addEventListener('dragover', e => { if (draggingFiles(e)) e.preventDefault(); }, true);
 addEventListener('drop', e => {
   const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
   if (!f || !/\.json$/i.test(f.name)) return;      // not ours: let the zones have it
   e.preventDefault(); e.stopPropagation();
   loadFitFile(f);
 }, true);
+// A file dropped where nothing takes it must not become a navigation: the page
+// is the session, and leaving it loses the fit. Bubble phase, so the zones and
+// the fit loader above have already had their turn.
+addEventListener('drop', e => { if (draggingFiles(e)) e.preventDefault(); });
 
 /* ===== pickers (popovers over the canvas) ===== */
 // "Used 3 h ago", "used yesterday" -- when a source was last chosen.
@@ -2533,7 +2544,7 @@ for (const [n, role] of [[1,'photo'],[2,'screenshot']]){
   // onto "Choose a photo" and it lands in that role without opening the
   // popover. Same upload path as the popover's drop zone.
   const chip = $('#chip'+n);
-  chip.ondragover = e => { if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); chip.classList.add('over'); } };
+  chip.ondragover = e => { if (draggingFiles(e)) { e.preventDefault(); chip.classList.add('over'); } };
   // Leaving with a drag only un-lights the chip if its popover is not the
   // reason it is lit.
   const popOpen = () => $('#pop'+n).classList.contains('on');
